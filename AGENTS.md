@@ -1,0 +1,12 @@
+# Rules
+- Do only what I explicitly ask. No extra actions, files, refactors, or commands.
+- If a request is ambiguous or touches anything not asked for, stop and ask.
+- Never write to external services (Figma, git remotes, deploys) or install/delete anything without my confirmation.
+- spec/ is the source of truth. Read spec/*.md before any task.
+- Status labels: build only [Locked]. For [Draft], propose or stub only. For [Open] or unlabeled, ask me.
+- Never invent requirements. If the spec is unclear or contradicts itself, stop and ask.
+- Work from one file in spec/changes/ at a time; stay inside its Tasks and Out of scope.
+- If code and spec disagree, tell me. Don't silently pick one.
+- Don't edit main spec/ files unless running /merge-change.
+- Tiny tweaks (text, color, spacing; one file, no behavior change) may be done directly on request.
+- After any task, report what you did and what you did not do.
