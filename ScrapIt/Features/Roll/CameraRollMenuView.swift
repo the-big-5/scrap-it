@@ -10,7 +10,7 @@ struct CameraRollMenuView: View {
                 .ignoresSafeArea()
 
             // Blurred Home shelves background per Figma node 670:5276
-            HomeShelvesScene(
+            ShelfView(
                 scrapbooks: [],
                 onTapCamera: {},
                 onTapScrapbook: { _ in }

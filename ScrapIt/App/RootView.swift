@@ -1,18 +1,14 @@
 import SwiftData
 import SwiftUI
 
-struct ContentView: View {
+struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var authViewModel = AuthViewModel()
-    @State private var flowViewModel = RollFlowViewModel()
 
     var body: some View {
         Group {
             if let currentUser = authViewModel.currentUser {
-                HomeContainerView(
-                    currentUser: currentUser,
-                    flowViewModel: flowViewModel
-                )
+                MainTabView(currentUser: currentUser)
             } else {
                 WelcomeSignInView(authViewModel: authViewModel)
             }
@@ -24,7 +20,7 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    RootView()
         .modelContainer(
             for: [
                 UserProfile.self,

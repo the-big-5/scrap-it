@@ -1,302 +1,26 @@
-import AVFoundation
-import CoreImage
-import CoreImage.CIFilterBuiltins
-import Observation
 import SwiftData
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
-
-enum CameraFlashChoice: String, CaseIterable {
-    case auto = "AUTO"
-    case on = "ON"
-    case off = "OFF"
-}
-
-@Observable
-final class CameraController: NSObject {
-    var flashChoice: CameraFlashChoice = .auto
-    var isLivePhotoEnabled: Bool = true
-    var isGridVisible: Bool = false
-    var isUsingFrontCamera: Bool = false
-    var zoomFactor: CGFloat = 1.0
-    var isCameraAuthorized: Bool = false
-    var isCapturing: Bool = false
-    var shutterFlashOpacity: Double = 0.0
-
-    let captureSession = AVCaptureSession()
-    private let photoOutput = AVCapturePhotoOutput()
-    private var currentDevice: AVCaptureDevice?
-    private var continuation: CheckedContinuation<Data, Never>?
-    private var shotSequenceNumber: Int = 0
-
-    func startSession() {
-        let status = AVCaptureDevice.authorizationStatus(for: .video)
-        switch status {
-        case .authorized:
-            isCameraAuthorized = true
-            configureSessionIfNeeded()
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.isCameraAuthorized = granted
-                    if granted {
-                        self.configureSessionIfNeeded()
-                    }
-                }
-            }
-        default:
-            isCameraAuthorized = false
-        }
-    }
-
-    func stopSession() {
-        guard captureSession.isRunning else { return }
-        let session = captureSession
-        DispatchQueue.global(qos: .userInitiated).async {
-            session.stopRunning()
-        }
-    }
-
-    private func configureSessionIfNeeded() {
-        guard !captureSession.isRunning else { return }
-        captureSession.beginConfiguration()
-        captureSession.sessionPreset = .photo
-
-        // Remove existing inputs
-        for input in captureSession.inputs {
-            captureSession.removeInput(input)
-        }
-
-        let position: AVCaptureDevice.Position = isUsingFrontCamera ? .front : .back
-        if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position),
-           let input = try? AVCaptureDeviceInput(device: device),
-           captureSession.canAddInput(input) {
-            captureSession.addInput(input)
-            currentDevice = device
-        }
-
-        if captureSession.outputs.isEmpty && captureSession.canAddOutput(photoOutput) {
-            captureSession.addOutput(photoOutput)
-        }
-
-        captureSession.commitConfiguration()
-
-        let session = captureSession
-        DispatchQueue.global(qos: .userInitiated).async {
-            session.startRunning()
-        }
-    }
-
-    func toggleCameraPosition() {
-        isUsingFrontCamera.toggle()
-        zoomFactor = 1.0
-        if captureSession.isRunning {
-            let session = captureSession
-            session.stopRunning()
-        }
-        configureSessionIfNeeded()
-    }
-
-    func cycleZoom() {
-        let steps: [CGFloat] = [1.0, 1.5, 2.0, 3.0]
-        if let idx = steps.firstIndex(of: zoomFactor) {
-            zoomFactor = steps[(idx + 1) % steps.count]
-        } else {
-            zoomFactor = 1.0
-        }
-        #if os(iOS)
-        if let device = currentDevice {
-            do {
-                try device.lockForConfiguration()
-                let clamped = min( max(1.0, zoomFactor), device.activeFormat.videoMaxZoomFactor )
-                device.videoZoomFactor = clamped
-                device.unlockForConfiguration()
-            } catch {}
-        }
-        #endif
-    }
-
-    func cycleFlash() {
-        let all = CameraFlashChoice.allCases
-        if let idx = all.firstIndex(of: flashChoice) {
-            flashChoice = all[(idx + 1) % all.count]
-        }
-    }
-
-    func captureShot(filter: RollFilter, rollName: String) async -> Data {
-        shotSequenceNumber += 1
-        withAnimation(.easeOut(duration: 0.08)) {
-            shutterFlashOpacity = 0.85
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(110))
-            withAnimation(.easeIn(duration: 0.18)) {
-                shutterFlashOpacity = 0.0
-            }
-        }
-
-        if captureSession.isRunning && !captureSession.inputs.isEmpty {
-            let rawData = await withCheckedContinuation { (cont: CheckedContinuation<Data, Never>) in
-                self.continuation = cont
-                let settings = AVCapturePhotoSettings()
-                if self.photoOutput.supportedFlashModes.contains(.auto) {
-                    switch self.flashChoice {
-                    case .auto: settings.flashMode = .auto
-                    case .on: settings.flashMode = .on
-                    case .off: settings.flashMode = .off
-                    }
-                }
-                self.photoOutput.capturePhoto(with: settings, delegate: self)
-            }
-            return Self.applyFilmFilter(to: rawData, filter: filter, shotIndex: shotSequenceNumber, rollName: rollName)
-        } else {
-            return Self.generateFilmFrameData(
-                filter: filter,
-                shotIndex: shotSequenceNumber,
-                rollName: rollName,
-                isLivePhoto: isLivePhotoEnabled
-            )
-        }
-    }
-
-    static func applyFilmFilter(
-        to imageData: Data,
-        filter: RollFilter,
-        shotIndex: Int,
-        rollName: String
-    ) -> Data {
-        #if canImport(UIKit)
-        guard let uiImage = UIImage(data: imageData),
-              let ciInput = CIImage(image: uiImage) else {
-            return generateFilmFrameData(filter: filter, shotIndex: shotIndex, rollName: rollName, isLivePhoto: false)
-        }
-        let context = CIContext()
-        let outputCI: CIImage
-        switch filter {
-        case .cinematicBW400:
-            let noir = CIFilter.photoEffectNoir()
-            noir.inputImage = ciInput
-            outputCI = noir.outputImage ?? ciInput
-        case .colorPrint200:
-            let chrome = CIFilter.photoEffectChrome()
-            chrome.inputImage = ciInput
-            outputCI = chrome.outputImage ?? ciInput
-        }
-        if let cgImage = context.createCGImage(outputCI, from: outputCI.extent) {
-            let filtered = UIImage(cgImage: cgImage, scale: uiImage.scale, orientation: uiImage.imageOrientation)
-            return filtered.jpegData(compressionQuality: 0.85) ?? imageData
-        }
-        #endif
-        return imageData
-    }
-
-    static func generateFilmFrameData(
-        filter: RollFilter,
-        shotIndex: Int,
-        rollName: String,
-        isLivePhoto: Bool
-    ) -> Data {
-        #if canImport(UIKit)
-        let size = CGSize(width: 720, height: 540)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { ctx in
-            let rect = CGRect(origin: .zero, size: size)
-            if filter == .cinematicBW400 {
-                UIColor(white: 0.14, alpha: 1.0).setFill()
-                ctx.fill(rect)
-                UIColor(white: 0.28, alpha: 1.0).setFill()
-                ctx.fill(CGRect(x: 40, y: 40, width: size.width - 80, height: size.height - 80))
-            } else {
-                UIColor(red: 0.28, green: 0.20, blue: 0.14, alpha: 1.0).setFill()
-                ctx.fill(rect)
-                UIColor(red: 0.86, green: 0.65, blue: 0.38, alpha: 1.0).setFill()
-                ctx.fill(CGRect(x: 40, y: 40, width: size.width - 80, height: size.height - 80))
-            }
-
-            let stamp = "\(rollName.uppercased()) • SHOT #\(String(format: "%02d", shotIndex)) • \(filter.shortLabel)\(isLivePhoto ? " • LIVE" : "")"
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.monospacedSystemFont(ofSize: 20, weight: .bold),
-                .foregroundColor: UIColor.white
-            ]
-            stamp.draw(at: CGPoint(x: 64, y: size.height - 92), withAttributes: attrs)
-        }
-        return image.jpegData(compressionQuality: 0.85) ?? Data()
-        #else
-        return Data()
-        #endif
-    }
-}
-
-extension CameraController: AVCapturePhotoCaptureDelegate {
-    nonisolated func photoOutput(
-        _ output: AVCapturePhotoOutput,
-        didFinishProcessingPhoto photo: AVCapturePhoto,
-        error: (any Error)?
-    ) {
-        let data = photo.fileDataRepresentation() ?? Data()
-        Task { @MainActor in
-            self.continuation?.resume(returning: data)
-            self.continuation = nil
-        }
-    }
-}
-
-// MARK: - Live AVFoundation Video Preview Layer
-
-#if canImport(UIKit)
-struct CameraPreviewLayerView: UIViewRepresentable {
-    let session: AVCaptureSession
-
-    func makeUIView(context: Context) -> PreviewUIView {
-        let view = PreviewUIView()
-        view.videoPreviewLayer.session = session
-        view.videoPreviewLayer.videoGravity = .resizeAspectFill
-        return view
-    }
-
-    func updateUIView(_ uiView: PreviewUIView, context: Context) {
-        uiView.videoPreviewLayer.session = session
-    }
-
-    final class PreviewUIView: UIView {
-        override class var layerClass: AnyClass {
-            AVCaptureVideoPreviewLayer.self
-        }
-
-        var videoPreviewLayer: AVCaptureVideoPreviewLayer {
-            layer as! AVCaptureVideoPreviewLayer
-        }
-    }
-}
-#endif
-
-// MARK: - Capture Session Screen (Figma node 708:4941)
 
 struct CaptureSessionView: View {
     @Environment(\.modelContext) private var modelContext
-    @State private var camera = CameraController()
 
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
 
-    private var session: CaptureSession? {
-        flowViewModel.activeSession
+    private var camera: CameraController {
+        flowViewModel.camera
     }
 
     private var isHost: Bool {
-        session?.hostUserID == currentUser.appleUserID
+        flowViewModel.isHost(currentUser)
     }
 
     private var remainingShotsText: String {
-        let remaining = session?.remainingSlots ?? 36
-        return String(format: "%02d", remaining)
+        flowViewModel.remainingShotsText
     }
 
     private var totalShotsText: String {
-        "/\(session?.rollSize ?? 36)"
+        flowViewModel.totalShotsText
     }
 
     var body: some View {
@@ -320,11 +44,10 @@ struct CaptureSessionView: View {
         }
         .navigationBarBackButtonHidden(true)
         .onAppear {
-            camera.startSession()
-            flowViewModel.cloudService.updateQueuedCount(modelContext: modelContext)
+            flowViewModel.cameraDidAppear(modelContext: modelContext)
         }
         .onDisappear {
-            camera.stopSession()
+            flowViewModel.cameraDidDisappear()
         }
         .alert("Roll Finished", isPresented: $flowViewModel.showLastSlotRaceAlert) {
             Button("Open Scrapbook") {
@@ -433,12 +156,7 @@ struct CaptureSessionView: View {
                         }
                     }
                     Button {
-                        if let currentHost = session?.hostUserID {
-                            flowViewModel.handleHostDisconnect(
-                                disconnectedHostID: currentHost,
-                                modelContext: modelContext
-                            )
-                        }
+                        flowViewModel.simulateHostDisconnect(modelContext: modelContext)
                     } label: {
                         Label("Simulate Host Disconnect Handover", systemImage: "person.badge.key.fill")
                     }
@@ -534,13 +252,7 @@ struct CaptureSessionView: View {
                 // Metallic Circular Shutter Button
                 Button {
                     Task {
-                        let imageData = await camera.captureShot(
-                            filter: session?.filter ?? .colorPrint200,
-                            rollName: session?.name ?? "Roll"
-                        )
-                        await flowViewModel.recordCapturedShot(
-                            imageData: imageData,
-                            livePhotoMovieData: camera.isLivePhotoEnabled ? Data("live".utf8) : nil,
+                        await flowViewModel.shutterTapped(
                             currentUser: currentUser,
                             modelContext: modelContext
                         )
@@ -633,7 +345,7 @@ struct CaptureSessionView: View {
                         )
 
                     #if canImport(UIKit)
-                    if camera.isCameraAuthorized && camera.captureSession.isRunning {
+                    if camera.isPreviewReady {
                         CameraPreviewLayerView(session: camera.captureSession)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                             .padding(6)
@@ -650,6 +362,7 @@ struct CaptureSessionView: View {
                     // Shutter flash feedback
                     RoundedRectangle(cornerRadius: 14)
                         .fill(Color.white.opacity(camera.shutterFlashOpacity))
+                        .animation(.easeOut(duration: 0.1), value: camera.shutterFlashOpacity)
                         .padding(6)
                         .allowsHitTesting(false)
 
@@ -675,11 +388,11 @@ struct CaptureSessionView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "person.2.fill")
                                     .font(.system(size: 10))
-                                Text("\(session?.participantIDs.count ?? 1)")
+                                Text("\(flowViewModel.participantCount)")
                                     .font(.system(size: 11, weight: .semibold))
 
-                                if !flowViewModel.cloudService.isOnline || flowViewModel.cloudService.queuedOfflineCount > 0 {
-                                    Text("• \(flowViewModel.cloudService.queuedOfflineCount) queued")
+                                if flowViewModel.showsOfflineStatus {
+                                    Text("• \(flowViewModel.queuedShotCount) queued")
                                         .font(.system(size: 10, weight: .semibold))
                                         .foregroundStyle(ScrapTheme.cameraGold)
                                 }
@@ -817,26 +530,5 @@ struct CaptureSessionView: View {
                     .padding(.trailing, -24)
             }
         }
-    }
-}
-
-struct CameraGridOverlay: View {
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            Path { path in
-                path.move(to: CGPoint(x: w / 3, y: 0))
-                path.addLine(to: CGPoint(x: w / 3, y: h))
-                path.move(to: CGPoint(x: 2 * w / 3, y: 0))
-                path.addLine(to: CGPoint(x: 2 * w / 3, y: h))
-                path.move(to: CGPoint(x: 0, y: h / 3))
-                path.addLine(to: CGPoint(x: w, y: h / 3))
-                path.move(to: CGPoint(x: 0, y: 2 * h / 3))
-                path.addLine(to: CGPoint(x: w, y: 2 * h / 3))
-            }
-            .stroke(Color.white.opacity(0.35), lineWidth: 1)
-        }
-        .allowsHitTesting(false)
     }
 }

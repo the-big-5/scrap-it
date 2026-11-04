@@ -5,15 +5,14 @@ import UIKit
 #endif
 
 struct ScrapbookGridView: View {
-    @Environment(\.modelContext) private var modelContext
     @Query private var scrapbooks: [Scrapbook]
 
     let scrapbookID: UUID
     var currentUser: UserProfile
-    @Bindable var flowViewModel: RollFlowViewModel
+    var viewModel: ScrapbookViewModel
 
     private var scrapbook: Scrapbook? {
-        scrapbooks.first(where: { $0.id == scrapbookID }) ?? flowViewModel.activeScrapbook
+        viewModel.scrapbook(id: scrapbookID, in: scrapbooks)
     }
 
     private let columns = [
@@ -29,13 +28,13 @@ struct ScrapbookGridView: View {
             VStack(spacing: 0) {
                 // Header
                 ZStack {
-                    Text(scrapbook?.title ?? "Shared Scrapbook")
+                    Text(viewModel.title(for: scrapbook))
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(ScrapTheme.charcoal)
 
                     HStack {
                         BackCircleButton {
-                            flowViewModel.navigationPath.removeAll()
+                            viewModel.goBack()
                         }
                         Spacer()
                     }
@@ -64,10 +63,8 @@ struct ScrapbookGridView: View {
                                 .padding(.vertical, 48)
                             } else {
                                 LazyVGrid(columns: columns, spacing: 16) {
-                                    ForEach(
-                                        scrapbook.photos.sorted(by: { $0.timestamp < $1.timestamp })
-                                    ) { photo in
-                                        ScrapbookPhotoCard(photo: photo)
+                                    ForEach(viewModel.sortedPhotos(of: scrapbook)) { photo in
+                                        ScrapbookPhotoCard(photo: photo, viewModel: viewModel)
                                     }
                                 }
                             }
@@ -109,14 +106,11 @@ struct ScrapbookGridView: View {
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(ScrapTheme.charcoal)
 
-                Text(scrapbook.createdDate.formatted(date: .abbreviated, time: .shortened))
+                Text(viewModel.dateText(for: scrapbook))
                     .font(.system(size: 13))
                     .foregroundStyle(ScrapTheme.secondaryText)
 
-                let coOwners = scrapbook.memberNames.isEmpty
-                    ? currentUser.name
-                    : scrapbook.memberNames.joined(separator: ", ")
-                Text("Co-owners: \(coOwners)")
+                Text(viewModel.coOwnersText(for: scrapbook, fallbackName: currentUser.name))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(ScrapTheme.secondaryText)
                     .lineLimit(1)
@@ -133,89 +127,5 @@ struct ScrapbookGridView: View {
                         .stroke(ScrapTheme.charcoal, lineWidth: 1.2)
                 )
         )
-    }
-}
-
-struct ScrapbookPhotoCard: View {
-    @Environment(\.modelContext) private var modelContext
-    @Bindable var photo: ScrapPhoto
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .topLeading) {
-                ScrapDataImageView(data: photo.imageData)
-                    .frame(height: 148)
-                    .frame(maxWidth: .infinity)
-                    .background(ScrapTheme.filmStripDark)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                if photo.livePhotoMovieData != nil {
-                    HStack(spacing: 3) {
-                        Image(systemName: "livephoto")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("LIVE")
-                            .font(.system(size: 9, weight: .bold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.black.opacity(0.65)))
-                    .padding(6)
-                }
-            }
-
-            TextField("Add a caption...", text: $photo.caption)
-                .font(.system(size: 13))
-                .foregroundStyle(ScrapTheme.charcoal)
-                .onSubmit {
-                    try? modelContext.save()
-                }
-
-            HStack {
-                Text(photo.authorName)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(ScrapTheme.secondaryText)
-                Spacer()
-                Text(photo.timestamp.formatted(date: .omitted, time: .shortened))
-                    .font(.system(size: 10))
-                    .foregroundStyle(ScrapTheme.secondaryText.opacity(0.8))
-            }
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(ScrapTheme.charcoal.opacity(0.85), lineWidth: 1)
-                )
-        )
-    }
-}
-
-struct ScrapDataImageView: View {
-    let data: Data
-
-    var body: some View {
-        #if canImport(UIKit)
-        if let uiImage = UIImage(data: data) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
-        } else {
-            placeholder
-        }
-        #else
-        placeholder
-        #endif
-    }
-
-    private var placeholder: some View {
-        ZStack {
-            ScrapTheme.filmStripDark
-            Image(systemName: "photo")
-                .font(.system(size: 28))
-                .foregroundStyle(.white.opacity(0.7))
-        }
     }
 }

@@ -5,7 +5,7 @@ import SwiftUI
 struct ScrapIt: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
         }
         .modelContainer(
             for: [

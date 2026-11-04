@@ -94,8 +94,7 @@ struct JoinRollView: View {
 
                 Button("Join") {
                     Task {
-                        await flowViewModel.joinRollWithCode(
-                            code: flowViewModel.enteredJoinCode,
+                        await flowViewModel.submitJoinCode(
                             currentUser: currentUser,
                             modelContext: modelContext
                         )
@@ -111,25 +110,10 @@ struct JoinRollView: View {
 
     private func codeBinding(for index: Int) -> Binding<String> {
         Binding(
-            get: {
-                guard index < flowViewModel.joinCodeCharacters.count else { return "" }
-                return flowViewModel.joinCodeCharacters[index]
-            },
+            get: { flowViewModel.joinCodeCharacter(at: index) },
             set: { newValue in
-                let upper = newValue.uppercased().filter { $0.isLetter || $0.isNumber }
-                if upper.count > 1 {
-                    // Support pasting full 6-character code
-                    let chars = Array(upper.prefix(6))
-                    for (offset, ch) in chars.enumerated() where offset < 6 {
-                        flowViewModel.joinCodeCharacters[offset] = String(ch)
-                    }
-                    focusedBox = min(5, chars.count - 1)
-                } else {
-                    let single = String(upper.suffix(1))
-                    flowViewModel.joinCodeCharacters[index] = single
-                    if !single.isEmpty && index < 5 {
-                        focusedBox = index + 1
-                    }
+                if let next = flowViewModel.updateJoinCode(at: index, with: newValue) {
+                    focusedBox = next
                 }
             }
         )

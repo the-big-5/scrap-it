@@ -1,29 +1,11 @@
 import Foundation
 import Observation
 import SwiftData
-import SwiftUI
 
-enum AppTab: String {
-    case home
-    case profile
-}
-
-enum RollRoute: Hashable {
-    case cameraRollMenu
-    case createStep1NameAndShots
-    case createStep2ChooseFilter
-    case createStep3ShareRoom
-    case joinRoll
-    case captureSession
-    case scrapbookGrid(UUID)
-}
-
+/// Single ViewModel for the Roll feature: create, join, capture and end a roll.
 @Observable
 final class RollFlowViewModel {
     static let availableShotCounts = [24, 36, 48, 72]
-
-    var selectedTab: AppTab = .home
-    var navigationPath: [RollRoute] = []
 
     // Create Roll draft fields
     var draftRollName: String = ""
@@ -34,35 +16,124 @@ final class RollFlowViewModel {
     var joinCodeCharacters: [String] = Array(repeating: "", count: 6)
     var joinErrorMessage: String?
 
-    // Active session & alerts
-    var activeSession: CaptureSession?
-    var activeScrapbook: Scrapbook?
+    // Alerts and banners
     var showLastSlotRaceAlert: Bool = false
     var lastSlotRaceMessage: String = "The roll just finished! Another friend took the final shot first, so your last photo was dropped."
     var hostHandoverBanner: String?
 
-    let cloudService = CloudKitSessionService.shared
+    let cloudService: CloudKitSessionService
+    @ObservationIgnored let sessionStore: SessionStore
+    @ObservationIgnored private weak var navigator: (any Navigator)?
+    @ObservationIgnored lazy var camera = CameraController()
+
+    // Test hook kept from existing ScrapItTests target.
+    var arr = false
+    func yangBisaDiTest() {
+        arr = true
+    }
+
+    init(
+        navigator: (any Navigator)? = nil,
+        sessionStore: SessionStore = SessionStore(),
+        cloudService: CloudKitSessionService = .shared
+    ) {
+        self.navigator = navigator
+        self.sessionStore = sessionStore
+        self.cloudService = cloudService
+    }
+
+    // MARK: - Derived state for Views
+
+    var activeSession: CaptureSession? {
+        sessionStore.activeSession
+    }
 
     var enteredJoinCode: String {
         joinCodeCharacters.joined().uppercased()
     }
 
-    // MARK: - Navigation Helpers
-
-    func openCameraRollMenu() {
-        navigationPath = [.cameraRollMenu]
+    var lobbyRollCodeCharacters: [String] {
+        (activeSession?.rollCode ?? "N4B13L").map { String($0) }
     }
+
+    var lobbyQRPayload: String {
+        activeSession?.inviteURL.absoluteString ?? "scrapit://join?code=N4B13L"
+    }
+
+    var lobbyJoinedCount: Int {
+        activeSession?.participantIDs.count ?? 1
+    }
+
+    var remainingShotsText: String {
+        String(format: "%02d", activeSession?.remainingSlots ?? 36)
+    }
+
+    var totalShotsText: String {
+        "/\(activeSession?.rollSize ?? 36)"
+    }
+
+    var queuedShotCount: Int {
+        cloudService.queuedOfflineCount
+    }
+
+    var showsOfflineStatus: Bool {
+        !cloudService.isOnline || cloudService.queuedOfflineCount > 0
+    }
+
+    var participantCount: Int {
+        activeSession?.participantIDs.count ?? 1
+    }
+
+    func isHost(_ user: UserProfile) -> Bool {
+        activeSession?.hostUserID == user.appleUserID
+    }
+
+    // MARK: - Navigation
 
     func startCreateRollWizard() {
         draftRollName = ""
         draftShotCount = 36
         draftFilter = .colorPrint200
-        navigationPath.append(.createStep1NameAndShots)
+        navigator?.push(.createStep1NameAndShots)
     }
 
     func proceedToFilterStep() {
-        navigationPath.append(.createStep2ChooseFilter)
+        navigator?.push(.createStep2ChooseFilter)
     }
+
+    func openJoinRoll() {
+        joinCodeCharacters = Array(repeating: "", count: 6)
+        joinErrorMessage = nil
+        navigator?.push(.joinRoll)
+    }
+
+    // MARK: - Join code input
+
+    /// Applies typed or pasted text to a code box. Returns the box index that should get focus next.
+    func updateJoinCode(at index: Int, with newValue: String) -> Int? {
+        let upper = newValue.uppercased().filter { $0.isLetter || $0.isNumber }
+        if upper.count > 1 {
+            let chars = Array(upper.prefix(6))
+            for (offset, ch) in chars.enumerated() where offset < 6 {
+                joinCodeCharacters[offset] = String(ch)
+            }
+            return min(5, chars.count - 1)
+        } else {
+            let single = String(upper.suffix(1))
+            joinCodeCharacters[index] = single
+            if !single.isEmpty && index < 5 {
+                return index + 1
+            }
+            return nil
+        }
+    }
+
+    func joinCodeCharacter(at index: Int) -> String {
+        guard index < joinCodeCharacters.count else { return "" }
+        return joinCodeCharacters[index]
+    }
+
+    // MARK: - Create roll
 
     func createLobbySession(
         currentUser: UserProfile,
@@ -83,13 +154,13 @@ final class RollFlowViewModel {
         )
         modelContext.insert(session)
         try? modelContext.save()
-        activeSession = session
+        sessionStore.activeSession = session
 
         Task {
             await cloudService.publishSessionToCloudKit(session: session)
         }
 
-        navigationPath.append(.createStep3ShareRoom)
+        navigator?.push(.createStep3ShareRoom)
     }
 
     func startRollCapture(modelContext: ModelContext) {
@@ -102,22 +173,11 @@ final class RollFlowViewModel {
             await cloudService.publishSessionToCloudKit(session: session)
         }
 
-        cloudService.startLiveSessionPolling(
-            session: session,
-            modelContext: modelContext
-        ) { [weak self] in
-            guard let self else { return }
-            self.finalizeSessionAndOpenScrapbook(modelContext: modelContext)
-        }
-
-        navigationPath.append(.captureSession)
+        beginLivePolling(session: session, modelContext: modelContext)
+        navigator?.push(.captureSession)
     }
 
-    func openJoinRoll() {
-        joinCodeCharacters = Array(repeating: "", count: 6)
-        joinErrorMessage = nil
-        navigationPath.append(.joinRoll)
-    }
+    // MARK: - Join roll
 
     func joinRollWithCode(
         code: String,
@@ -138,21 +198,22 @@ final class RollFlowViewModel {
                 modelContext: modelContext
             )
             joined.status = .live
-            activeSession = joined
+            sessionStore.activeSession = joined
             joinErrorMessage = nil
 
-            cloudService.startLiveSessionPolling(
-                session: joined,
-                modelContext: modelContext
-            ) { [weak self] in
-                guard let self else { return }
-                self.finalizeSessionAndOpenScrapbook(modelContext: modelContext)
-            }
-
-            navigationPath.append(.captureSession)
+            beginLivePolling(session: joined, modelContext: modelContext)
+            navigator?.push(.captureSession)
         } catch {
             joinErrorMessage = error.localizedDescription
         }
+    }
+
+    func submitJoinCode(currentUser: UserProfile, modelContext: ModelContext) async {
+        await joinRollWithCode(
+            code: enteredJoinCode,
+            currentUser: currentUser,
+            modelContext: modelContext
+        )
     }
 
     func handleIncomingURL(
@@ -176,7 +237,39 @@ final class RollFlowViewModel {
         }
     }
 
-    // MARK: - Capture Shot & Slot Claiming
+    private func beginLivePolling(session: CaptureSession, modelContext: ModelContext) {
+        cloudService.startLiveSessionPolling(
+            session: session,
+            modelContext: modelContext
+        ) { [weak self] in
+            guard let self else { return }
+            self.finalizeSessionAndOpenScrapbook(modelContext: modelContext)
+        }
+    }
+
+    // MARK: - Camera screen
+
+    func cameraDidAppear(modelContext: ModelContext) {
+        camera.startSession()
+        cloudService.updateQueuedCount(modelContext: modelContext)
+    }
+
+    func cameraDidDisappear() {
+        camera.stopSession()
+    }
+
+    func shutterTapped(currentUser: UserProfile, modelContext: ModelContext) async {
+        let imageData = await camera.captureShot(
+            filter: activeSession?.filter ?? .colorPrint200,
+            rollName: activeSession?.name ?? "Roll"
+        )
+        await recordCapturedShot(
+            imageData: imageData,
+            livePhotoMovieData: camera.isLivePhotoEnabled ? Data("live".utf8) : nil,
+            currentUser: currentUser,
+            modelContext: modelContext
+        )
+    }
 
     func recordCapturedShot(
         imageData: Data,
@@ -224,7 +317,7 @@ final class RollFlowViewModel {
         }
     }
 
-    // MARK: - Host Ends Session or Host Disconnect Handover
+    // MARK: - End roll / host handover
 
     func endSessionManuallyByHost(
         currentUser: UserProfile,
@@ -255,69 +348,22 @@ final class RollFlowViewModel {
         }
     }
 
-    // MARK: - Finalize Session → Create New Shared Scrapbook (Basic Grid)
+    func simulateHostDisconnect(modelContext: ModelContext) {
+        if let currentHost = activeSession?.hostUserID {
+            handleHostDisconnect(disconnectedHostID: currentHost, modelContext: modelContext)
+        }
+    }
+
+    // MARK: - Finalize roll into scrapbook
 
     func finalizeSessionAndOpenScrapbook(modelContext: ModelContext) {
         cloudService.stopLiveSessionPolling()
-        guard let session = activeSession else { return }
-        session.status = .ended
-        if session.endTime == nil {
-            session.endTime = .now
-        }
-
-        // Check if Scrapbook was already created for this session
-        let sessionID = session.id
-        let existingDescriptor = FetchDescriptor<Scrapbook>(
-            predicate: #Predicate { $0.sourceSessionID == sessionID }
-        )
-        if let existing = (try? modelContext.fetch(existingDescriptor))?.first {
-            activeScrapbook = existing
-            attachSessionPhotos(to: existing, sessionID: sessionID, modelContext: modelContext)
-            navigateToScrapbook(existing.id)
+        guard let scrapbook = sessionStore.finalizeActiveSession(modelContext: modelContext) else {
             return
         }
-
-        let scrapbook = Scrapbook(
-            title: session.name,
-            createdDate: .now,
-            memberIDs: session.participantIDs,
-            memberNames: session.participantNames,
-            sourceSessionID: session.id
-        )
-        modelContext.insert(scrapbook)
-        session.createdScrapbookID = scrapbook.id
-
-        attachSessionPhotos(to: scrapbook, sessionID: sessionID, modelContext: modelContext)
-        try? modelContext.save()
-
-        activeScrapbook = scrapbook
-        navigateToScrapbook(scrapbook.id)
-    }
-
-    private func attachSessionPhotos(
-        to scrapbook: Scrapbook,
-        sessionID: UUID,
-        modelContext: ModelContext
-    ) {
-        let photoDescriptor = FetchDescriptor<ScrapPhoto>(
-            predicate: #Predicate { $0.sourceSessionID == sessionID },
-            sortBy: [SortDescriptor(\.timestamp, order: .forward)]
-        )
-        if let sessionPhotos = try? modelContext.fetch(photoDescriptor) {
-            for photo in sessionPhotos {
-                if !scrapbook.photos.contains(where: { $0.id == photo.id }) {
-                    scrapbook.photos.append(photo)
-                }
-            }
-            if scrapbook.coverPhotoData == nil, let first = sessionPhotos.first {
-                scrapbook.coverPhotoData = first.imageData
-            }
-        }
-    }
-
-    private func navigateToScrapbook(_ id: UUID) {
-        if navigationPath.last != .scrapbookGrid(id) {
-            navigationPath = [.scrapbookGrid(id)]
+        let id = scrapbook.id
+        if navigator?.path.last != .scrapbookGrid(id) {
+            navigator?.setStack([.scrapbookGrid(id)])
         }
     }
 }

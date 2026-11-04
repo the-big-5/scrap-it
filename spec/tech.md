@@ -19,6 +19,34 @@
 - CloudKit needs the iCloud entitlement and a paid developer team on a real device; the app must not crash without it
 - "iPhone Duo" device target: [Open] (not an iOS device, clarify)
 
+## Code structure [Locked]
+Feature-first MVVM. Views are dumb; all logic lives in ViewModels.
+
+```text
+ScrapIt/
+├── App/            App entry, RootView (sign-in vs Home routing), MainTabView
+├── Core/
+│   ├── Models/         SwiftData models
+│   ├── Services/       CloudKit, camera, other shared services
+│   └── DesignSystem/   Theme, shared buttons, shared illustrations
+└── Features/
+    ├── Auth/
+    ├── Home/           (e.g. Shelf/)
+    ├── Profile/
+    ├── Roll/           (menu, create, join, capture)
+    └── Scrapbook/
+```
+
+Rules:
+- Group by feature, not by layer. No global Views/ or ViewModels/ folder.
+- One @Observable ViewModel per feature, placed with that feature's Views. Sub-screens of a feature share the feature's ViewModel.
+- Views are dumb: they render ViewModel state and forward user actions to ViewModel methods. No business logic, networking, persistence or CloudKit calls in Views.
+- ViewModels must not import SwiftUI (Foundation, Observation, SwiftData only), so they stay testable.
+- No cross-feature imports. Shared code moves to Core/ (models, services, design system).
+- Services are injected into ViewModels (initializer or protocol), not created inside Views.
+- Feature-only sub-views go in that feature's Components/ folder.
+- The current code does not follow this yet; restructuring is a separate change, not started.
+
 ## Never touch
 - .xcodeproj settings, signing, or entitlements
 - Do not delete files
