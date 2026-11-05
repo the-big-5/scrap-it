@@ -1,5 +1,5 @@
 # Xcode
-## User settings & personal state (must ignore to avoid merge conflicts)
+## User settings & personal state
 xcuserdata/
 *.xcuserdatad
 *.xcscmblueprint
@@ -11,7 +11,7 @@ DerivedData/
 *.moved-aside
 *.xcuserstate
 
-## Core Data generated class files
+## Core Data
 *.xccurrentversion
 
 # macOS System Files
