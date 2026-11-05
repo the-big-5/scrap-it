@@ -4,6 +4,7 @@
 <dict>
 	<key>aps-environment</key>
 	<string>development</string>
+<<<<<<< Updated upstream
 	<key>com.apple.developer.applesignin</key>
 	<array>
 		<string>Default</string>
@@ -11,6 +12,11 @@
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
 		<string>iCloud.Brian.ScrapIt</string>
+=======
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.lepin.scrapit</string>
+>>>>>>> Stashed changes
 	</array>
 	<key>com.apple.developer.icloud-services</key>
 	<array>

@@ -11,7 +11,7 @@ struct MainTabView: View {
 
     @State private var router: AppRouter
     @State private var rollViewModel: RollFlowViewModel
-    @State private var shelfViewModel: ShelfViewModel
+    @State private var workbenchViewModel: WorkbenchViewModel
     @State private var profileViewModel: ProfileViewModel
     @State private var scrapbookViewModel: ScrapbookViewModel
 
@@ -22,7 +22,7 @@ struct MainTabView: View {
         let sessionStore = SessionStore()
         _router = State(initialValue: router)
         _rollViewModel = State(initialValue: RollFlowViewModel(navigator: router, sessionStore: sessionStore))
-        _shelfViewModel = State(initialValue: ShelfViewModel(navigator: router, sessionStore: sessionStore))
+        _workbenchViewModel = State(initialValue: WorkbenchViewModel(navigator: router, sessionStore: sessionStore))
         _profileViewModel = State(initialValue: ProfileViewModel(currentUser: currentUser))
         _scrapbookViewModel = State(initialValue: ScrapbookViewModel(navigator: router, sessionStore: sessionStore))
     }
@@ -32,42 +32,49 @@ struct MainTabView: View {
 
         NavigationStack(path: $router.path) {
             ZStack(alignment: .bottom) {
-                ScrapTheme.creamBackground
-                    .ignoresSafeArea()
-
                 Group {
                     switch router.selectedTab {
                     case .home:
-                        ShelfView(
-                            scrapbooks: scrapbooks,
-                            onTapCamera: {
-                                shelfViewModel.openCameraRoll()
-                            },
-                            onTapScrapbook: { _ in
-                                shelfViewModel.openLatestScrapbook(from: scrapbooks)
-                            }
+                        WorkbenchView(
+                            viewModel: workbenchViewModel,
+                            scrapbooks: scrapbooks
                         )
+                    case .explore:
+                        ExploreView()
                     case .profile:
+<<<<<<< Updated upstream
                         ProfileView(viewModel: profileViewModel, scrapbooksCount: scrapbooks.count, onSignOut: onSignOut)
+=======
+                        ProfileView(
+                            viewModel: profileViewModel,
+                            scrapbooksCount: scrapbooks.count
+                        )
+>>>>>>> Stashed changes
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                FloatingHomeProfileTabBar(selectedTab: $router.selectedTab)
-                    .padding(.bottom, 16)
+                if router.path.isEmpty && (!workbenchViewModel.isCameraActive || router.selectedTab != .home) {
+                    FloatingTabBarView(selectedTab: $router.selectedTab)
+                        .padding(.bottom, 40)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .ignoresSafeArea(.container, edges: .bottom)
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: workbenchViewModel.isCameraActive)
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
                 case .cameraRollMenu:
                     CameraRollMenuView(flowViewModel: rollViewModel)
-                case .createStep1NameAndShots:
-                    CreateRollStep1View(flowViewModel: rollViewModel)
-                case .createStep2ChooseFilter:
-                    CreateRollStep2FilterView(
+                case .createRollSetup:
+                    CreateRollSetupView(flowViewModel: rollViewModel)
+                case .createRollFilter:
+                    CreateRollFilterView(
                         currentUser: currentUser,
                         flowViewModel: rollViewModel
                     )
-                case .createStep3ShareRoom:
-                    CreateRollStep3ShareRoomView(
+                case .createRollLobby:
+                    CreateRollLobbyView(
                         currentUser: currentUser,
                         flowViewModel: rollViewModel
                     )

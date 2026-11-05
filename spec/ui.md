@@ -12,35 +12,40 @@ Figma node 676:3703
 - Logo is still a placeholder box [Open]
 
 ## Screen: Home [Locked]
-Figma node 613:1577
-- Illustrated hanging lamp and two shelves with objects (camera, plant, sticker toolbox, books "memories", cat figurine, film canisters)
-- Bottom tab bar: Home | Profile
-- The camera object opens "Camera Roll" (the other objects are blurred behind it in that screen). Behavior of the other objects: [Open]
-- Whether scrapbooks appear as books on the shelf: [Open]
+Figma node 853:1703 (Idle) & 1062:3371 (CameraClick)
+- Overhead desk workbench flat-lay: green cutting mat with measurement ticks, red toolbox, books, film canisters, ruler, paper scraps, stationery.
+- Interactive disposable camera resting at -14.77° on the cutting mat.
+- Camera tap interaction: camera rotates to 0.77° and centers with spring animation, background blurs and dims, "Create Roll" and "Join a Roll" action buttons spring up from bottom with solid 7pt offset drop shadows. Tapping blurred background dismisses.
+- Stacked tutorial books (open stub for tutorial flow).
+- Floating 3-tab navigation bar: Home (house.fill), Explore (magnifyingglass), Profile (person.fill).
 
 ## Screen: Camera Roll (Create / Join) [Locked]
-Figma node 670:5276
-- Back button, title "Camera Roll", camera illustration over blurred Home
-- Buttons: "Create Roll", "Join a Roll"
+Integrated directly into the Workbench active popup state (Figma node 1062:3371).
 
-## Screen: Create Roll, step 1 [Locked]
-Figma node 675:5671
-- Text field "Give this roll a name"
-- Film strip selector "Select the number of shots": 24, 36 (selected by default), 48, 72
-- Button "Next"
+## Screen: Create Roll Setup [Locked]
+Figma node 984:3556
+- Warm gradient header with stationery decorations (CreateRollHeaderDecoration).
+- "Name your roll" input field.
+- "Choose your shots" film strip selector: 24, 36 (default), 48, 72 with friendship guidance ("4-6 friends").
+- Pill button "Next".
 
-## Screen: Create Roll, step 2 choose filter [Draft]
-Figma node 675:5759 (design still in progress)
-- "Choose a filter": film canister picker ("Cinematic 400 Pro 35 Black & White", "200 Color Print") combined with a roll selection
-- Intended: the film roll animates like a carousel and shows sample photos reflecting the currently selected filter (not final in the Figma frame)
-- Button "Next"
-- How a filter is applied (photos, Live Photos, timing) and whether more filters exist: [Open]
+## Screen: Create Roll Filter [Locked]
+Figma node 675:5759
+- Header decoration and "Choose your filter".
+- Film canister picker ("Cinematic 400 Pro 35 Black & White" vs "200 Color Print") with shot badge.
+- Pill button "Next".
 
-## Screen: Create Roll, step 3 share room (lobby) [Locked]
-Figma node 675:5798
-- QR code, 6-character "Roll code" (e.g. N4B1L), "Share link"
-- Joined count ("5 Joined")
-- Button "Start Roll" (host)
+## Screen: Create Roll Lobby [Locked]
+Figma nodes 1011:5883 & 768:1382
+- Header decoration (ShareRoomHeaderDecoration), roll title, stats row showing joined count (person.2) and shot count (camera).
+- Top-right toolbar button (qrcode / invite) opens the "Invite Friend" sheet.
+- Participant avatar grid: host with "(Host)" badge, user with "(You)" badge, joined friends with photo or monogram initial badges.
+- Pill button "Start Roll" (host-enabled; guests see disabled "Waiting for host...").
+
+## Screen: Invite Friend Sheet [Locked]
+Figma node 768:1483
+- Medium-detent bottom sheet.
+- QR code representation, "Roll code:" with 6 monospace character boxes, "Copy link" clipboard button.
 
 ## Screen: Join a Roll [Draft]
 Figma node 725:6659 (placeholder, design still in progress)
@@ -103,8 +108,8 @@ Figma page "Design System #2" (628:4011), Atoms and Molecules only. Code: `Core/
 ## Assets
 All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, transparent):
 - HeroCamera (678:4897): Welcome and Camera Roll camera
-- ShelfCamera (666:4877): tappable camera on the Home shelf
-- HangingLamp (663:4866), ShelfPlank (613:4330), ShelfPlant (613:4335), ShelfStickerBox (644:3450), ShelfBooks (652:3456), ShelfCat (666:4869), ShelfCanisters (644:3453): Home scene
+- Workbench flat-lay: WorkbenchBackgroundIdle, WorkbenchBackgroundActive, DeskDisposableCamera, DeskCuttingMat, DeskSurface, DeskMeasurements, DeskFolder, DeskBookTop, DeskBookBottom, DeskRuler, DeskFilmRoll2..4, DeskStationery1..5, DeskTape1..2
+- Flow headers: CreateRollHeaderDecoration, ShareRoomHeaderDecoration
 - FilterCanisterBW (725:6301), FilterCanisterColor (725:6480): Choose filter
 
 Note: designs are still in progress, so treat Figma-derived details as [Draft] until marked Locked.

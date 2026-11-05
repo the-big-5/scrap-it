@@ -2,6 +2,7 @@
 - Do only what I explicitly ask. No extra actions, files, refactors, or commands.
 - If a request is ambiguous or touches anything not asked for, stop and ask.
 - Never write to external services (Figma, git remotes, deploys) or install/delete anything without my confirmation.
+- Never automate git push. Do NOT run `git push` automatically. Always keep commits local unless explicitly instructed to push in that specific request, or ask for confirmation first.
 - spec/ is the source of truth. Read spec/*.md before any task.
 - Status labels: build only [Locked]. For [Draft], propose or stub only. For [Open] or unlabeled, ask me.
 - Never invent requirements. If the spec is unclear or contradicts itself, stop and ask.
@@ -9,4 +10,5 @@
 - If code and spec disagree, tell me. Don't silently pick one.
 - Don't edit main spec/ files unless running /merge-change.
 - Tiny tweaks (text, color, spacing; one file, no behavior change) may be done directly on request.
+- File naming convention: Always use PascalCase and no numbers for code files (e.g., `PrimaryButton.swift`, `RollViewModel.swift`; no numbers like `View2.swift` or `ButtonV1.swift`).
 - After any task, report what you did and what you did not do.

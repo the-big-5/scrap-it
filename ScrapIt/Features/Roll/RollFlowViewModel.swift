@@ -16,6 +16,9 @@ final class RollFlowViewModel {
     var joinCodeCharacters: [String] = Array(repeating: "", count: 6)
     var joinErrorMessage: String?
 
+    // Lobby sheet
+    var isInviteSheetPresented: Bool = false
+
     // Alerts and banners
     var showLastSlotRaceAlert: Bool = false
     var lastSlotRaceMessage: String = "The roll just finished! Another friend took the final shot first, so your last photo was dropped."
@@ -94,11 +97,11 @@ final class RollFlowViewModel {
         draftRollName = ""
         draftShotCount = 36
         draftFilter = .colorPrint200
-        navigator?.push(.createStep1NameAndShots)
+        navigator?.push(.createRollSetup)
     }
 
     func proceedToFilterStep() {
-        navigator?.push(.createStep2ChooseFilter)
+        navigator?.push(.createRollFilter)
     }
 
     func openJoinRoll() {
@@ -160,7 +163,7 @@ final class RollFlowViewModel {
             await cloudService.publishSessionToCloudKit(session: session)
         }
 
-        navigator?.push(.createStep3ShareRoom)
+        navigator?.push(.createRollLobby)
     }
 
     func startRollCapture(modelContext: ModelContext) {
@@ -197,12 +200,15 @@ final class RollFlowViewModel {
                 userName: currentUser.name,
                 modelContext: modelContext
             )
-            joined.status = .live
             sessionStore.activeSession = joined
             joinErrorMessage = nil
 
-            beginLivePolling(session: joined, modelContext: modelContext)
-            navigator?.push(.captureSession)
+            if joined.status == .live {
+                beginLivePolling(session: joined, modelContext: modelContext)
+                navigator?.push(.captureSession)
+            } else {
+                navigator?.push(.createRollLobby)
+            }
         } catch {
             joinErrorMessage = error.localizedDescription
         }

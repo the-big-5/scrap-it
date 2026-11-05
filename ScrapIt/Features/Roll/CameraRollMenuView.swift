@@ -9,14 +9,10 @@ struct CameraRollMenuView: View {
             ScrapTheme.creamBackground
                 .ignoresSafeArea()
 
-            // Blurred Home shelves background per Figma node 670:5276
-            ShelfView(
-                scrapbooks: [],
-                onTapCamera: {},
-                onTapScrapbook: { _ in }
-            )
-            .blur(radius: 14)
-            .allowsHitTesting(false)
+            // Blurred Workbench background
+            DeskSurfaceView()
+                .blur(radius: 14)
+                .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 0) {
                 // Header

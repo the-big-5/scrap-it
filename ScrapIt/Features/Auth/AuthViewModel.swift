@@ -15,6 +15,7 @@ final class AuthViewModel {
     private(set) var isRestoringSession = true
     private(set) var authErrorMessage: String?
 
+<<<<<<< Updated upstream
     @ObservationIgnored private let credentialChecker: any AppleCredentialChecking
     @ObservationIgnored private let network: any NetworkStatusProviding
     @ObservationIgnored private let defaults: UserDefaults
@@ -52,6 +53,24 @@ final class AuthViewModel {
             state = try await credentialChecker.credentialState(forUserID: userID)
         } catch {
             return
+=======
+    func restoreExistingSession(modelContext: ModelContext) {
+        let descriptor = FetchDescriptor<UserProfile>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        if let profiles = try? modelContext.fetch(descriptor),
+           let existing = profiles.first {
+            currentUser = existing
+            UserDefaults.standard.set(existing.appleUserID, forKey: Self.savedUserIDKey)
+        } else {
+            #if DEBUG
+            completeSignIn(
+                appleUserID: "dev-preview-user",
+                name: "Leping",
+                modelContext: modelContext
+            )
+            #endif
+>>>>>>> Stashed changes
         }
 
         switch state {
