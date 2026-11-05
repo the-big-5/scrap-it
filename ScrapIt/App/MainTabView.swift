@@ -42,14 +42,7 @@ struct MainTabView: View {
                     case .explore:
                         ExploreView()
                     case .profile:
-<<<<<<< Updated upstream
                         ProfileView(viewModel: profileViewModel, scrapbooksCount: scrapbooks.count, onSignOut: onSignOut)
-=======
-                        ProfileView(
-                            viewModel: profileViewModel,
-                            scrapbooksCount: scrapbooks.count
-                        )
->>>>>>> Stashed changes
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
