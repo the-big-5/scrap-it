@@ -5,21 +5,71 @@ import SwiftData
 
 @Observable
 final class AuthViewModel {
-    private static let savedUserIDKey = "scrapit.signedInAppleUserID"
+    static let savedUserIDKey = "scrapit.signedInAppleUserID"
+    static let signInErrorMessage = "Couldn't sign in. Please try again."
+    static let offlineMessage = "You're offline. Connect to the internet to sign in."
 
     var currentUser: UserProfile?
     var isSignedIn: Bool { currentUser != nil }
-    var authErrorMessage: String?
+    /// True until the launch credential check finishes.
+    private(set) var isRestoringSession = true
+    private(set) var authErrorMessage: String?
 
-    func restoreExistingSession(modelContext: ModelContext) {
-        let descriptor = FetchDescriptor<UserProfile>(
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
-        if let profiles = try? modelContext.fetch(descriptor),
-           let existing = profiles.first {
-            currentUser = existing
-            UserDefaults.standard.set(existing.appleUserID, forKey: Self.savedUserIDKey)
+    @ObservationIgnored private let credentialChecker: any AppleCredentialChecking
+    @ObservationIgnored private let network: any NetworkStatusProviding
+    @ObservationIgnored private let defaults: UserDefaults
+
+    init(
+        credentialChecker: any AppleCredentialChecking = AppleCredentialChecker(),
+        network: any NetworkStatusProviding = NetworkMonitor(),
+        defaults: UserDefaults = .standard
+    ) {
+        self.credentialChecker = credentialChecker
+        self.network = network
+        self.defaults = defaults
+    }
+
+    var isOffline: Bool { !network.isOnline }
+
+    /// Message shown on Welcome: offline wins over a sign-in error.
+    var welcomeMessage: String? {
+        isOffline ? Self.offlineMessage : authErrorMessage
+    }
+
+    // MARK: - Launch
+
+    /// Enters Home only when online, a saved Apple user ID exists, Apple reports it `.authorized`,
+    /// and that user's profile exists locally. Anything else stays on Welcome.
+    func restoreExistingSession(modelContext: ModelContext) async {
+        defer { isRestoringSession = false }
+        currentUser = nil
+
+        guard let userID = defaults.string(forKey: Self.savedUserIDKey) else { return }
+        guard await network.currentStatus() else { return }
+
+        let state: ASAuthorizationAppleIDProvider.CredentialState
+        do {
+            state = try await credentialChecker.credentialState(forUserID: userID)
+        } catch {
+            return
         }
+
+        switch state {
+        case .authorized:
+            currentUser = profile(for: userID, in: modelContext)
+            if currentUser == nil {
+                defaults.removeObject(forKey: Self.savedUserIDKey)
+            }
+        default:
+            defaults.removeObject(forKey: Self.savedUserIDKey)
+        }
+    }
+
+    // MARK: - Sign in
+
+    /// Called when the user taps "Sign in with Apple", before Apple's sheet shows.
+    func beginSignIn() {
+        authErrorMessage = nil
     }
 
     func handleSignInWithAppleCompletion(
@@ -28,44 +78,63 @@ final class AuthViewModel {
     ) {
         switch result {
         case .success(let auth):
-            if let credential = auth.credential as? ASAuthorizationAppleIDCredential {
-                let userID = credential.user
-                let givenName = credential.fullName?.givenName ?? ""
-                let familyName = credential.fullName?.familyName ?? ""
-                let fullName = [givenName, familyName]
-                    .filter { !$0.isEmpty }
-                    .joined(separator: " ")
-                let resolvedName = fullName.isEmpty ? "Friend" : fullName
-                completeSignIn(
-                    appleUserID: userID,
-                    name: resolvedName,
-                    modelContext: modelContext
-                )
+            guard let credential = auth.credential as? ASAuthorizationAppleIDCredential else {
+                authErrorMessage = Self.signInErrorMessage
+                return
             }
-        case .failure:
-            // In iOS Simulator without an active iCloud account, create/restore a local Apple session
-            // so the flow can still be tested end-to-end.
-            let fallbackID = UserDefaults.standard.string(forKey: Self.savedUserIDKey)
-                ?? "apple-user-\(UUID().uuidString.prefix(8))"
-            completeSignIn(
-                appleUserID: fallbackID,
-                name: "You",
+            handleAppleIDCredential(
+                userID: credential.user,
+                fullName: credential.fullName,
                 modelContext: modelContext
             )
+        case .failure(let error):
+            handleSignInFailure(error)
         }
     }
 
-    func completeSignIn(
+    func handleAppleIDCredential(
+        userID: String,
+        fullName: PersonNameComponents?,
+        modelContext: ModelContext
+    ) {
+        guard !isOffline else { return }
+
+        let name = [fullName?.givenName, fullName?.familyName]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        completeSignIn(
+            appleUserID: userID,
+            name: name.isEmpty ? "Friend" : name,
+            modelContext: modelContext
+        )
+    }
+
+    func handleSignInFailure(_ error: any Error) {
+        if let authError = error as? ASAuthorizationError, authError.code == .canceled {
+            authErrorMessage = nil
+            return
+        }
+        authErrorMessage = Self.signInErrorMessage
+    }
+
+    // MARK: - Sign out
+
+    /// Keeps local data; only forgets who is signed in.
+    func signOut() {
+        currentUser = nil
+        authErrorMessage = nil
+        defaults.removeObject(forKey: Self.savedUserIDKey)
+    }
+
+    // MARK: - Private
+
+    private func completeSignIn(
         appleUserID: String,
         name: String,
         modelContext: ModelContext
     ) {
-        let descriptor = FetchDescriptor<UserProfile>()
-        let existing = (try? modelContext.fetch(descriptor))?.first(where: {
-            $0.appleUserID == appleUserID
-        })
-
-        if let existing {
+        if let existing = profile(for: appleUserID, in: modelContext) {
             currentUser = existing
         } else {
             let profile = UserProfile(appleUserID: appleUserID, name: name)
@@ -73,6 +142,14 @@ final class AuthViewModel {
             try? modelContext.save()
             currentUser = profile
         }
-        UserDefaults.standard.set(appleUserID, forKey: Self.savedUserIDKey)
+        authErrorMessage = nil
+        defaults.set(appleUserID, forKey: Self.savedUserIDKey)
+    }
+
+    private func profile(for appleUserID: String, in modelContext: ModelContext) -> UserProfile? {
+        let descriptor = FetchDescriptor<UserProfile>(
+            predicate: #Predicate { $0.appleUserID == appleUserID }
+        )
+        return try? modelContext.fetch(descriptor).first
     }
 }

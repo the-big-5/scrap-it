@@ -7,6 +7,7 @@ struct MainTabView: View {
     @Query(sort: \Scrapbook.createdDate, order: .reverse) private var scrapbooks: [Scrapbook]
 
     let currentUser: UserProfile
+    let onSignOut: () -> Void
 
     @State private var router: AppRouter
     @State private var rollViewModel: RollFlowViewModel
@@ -14,8 +15,9 @@ struct MainTabView: View {
     @State private var profileViewModel: ProfileViewModel
     @State private var scrapbookViewModel: ScrapbookViewModel
 
-    init(currentUser: UserProfile) {
+    init(currentUser: UserProfile, onSignOut: @escaping () -> Void) {
         self.currentUser = currentUser
+        self.onSignOut = onSignOut
         let router = AppRouter()
         let sessionStore = SessionStore()
         _router = State(initialValue: router)
@@ -46,7 +48,7 @@ struct MainTabView: View {
                             }
                         )
                     case .profile:
-                        ProfileView(viewModel: profileViewModel, scrapbooksCount: scrapbooks.count)
+                        ProfileView(viewModel: profileViewModel, scrapbooksCount: scrapbooks.count, onSignOut: onSignOut)
                     }
                 }
 

@@ -4,6 +4,7 @@ import SwiftUI
 struct ProfileView: View {
     var viewModel: ProfileViewModel
     var scrapbooksCount: Int
+    var onSignOut: () -> Void
 
     var body: some View {
         VStack(spacing: 16) {
@@ -28,6 +29,10 @@ struct ProfileView: View {
             Text(viewModel.statusText)
                 .font(.system(size: 13))
                 .foregroundStyle(ScrapTheme.secondaryText.opacity(0.8))
+                .padding(.top, 8)
+
+            // Temporary until the Profile design is ready (change 004).
+            DSButton("Sign Out", variant: .secondary, action: onSignOut)
                 .padding(.top, 8)
             Spacer()
         }

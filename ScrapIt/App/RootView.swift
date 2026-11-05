@@ -7,14 +7,17 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if let currentUser = authViewModel.currentUser {
-                MainTabView(currentUser: currentUser)
+            if authViewModel.isRestoringSession {
+                ScrapTheme.creamBackground
+                    .ignoresSafeArea()
+            } else if let currentUser = authViewModel.currentUser {
+                MainTabView(currentUser: currentUser, onSignOut: authViewModel.signOut)
             } else {
                 WelcomeSignInView(authViewModel: authViewModel)
             }
         }
-        .onAppear {
-            authViewModel.restoreExistingSession(modelContext: modelContext)
+        .task {
+            await authViewModel.restoreExistingSession(modelContext: modelContext)
         }
     }
 }
