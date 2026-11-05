@@ -18,7 +18,11 @@
 - Live transport: CloudKit only (CKShare, records, subscriptions); last-shot race uses CKModifyRecordsOperation with .ifServerRecordUnchanged; no third-party backend [Locked]. Revisit only if live collaborative scrapbooking needs more than CloudKit [Open]
 - CloudKit needs the iCloud entitlement and a paid developer team on a real device; the app must not crash without it
 - Sign in with Apple needs the `com.apple.developer.applesignin` entitlement (added in change 004) and a paid developer team. CloudKit is not needed for sign-in
-- SwiftData + CloudKit store fails to load [Open]: with the CloudKit entitlement on, SwiftData turns on CloudKit sync, but the current models are not CloudKit-compatible (non-optional attributes without defaults, `@Attribute(.unique)`). Log: "Store failed to load ... CloudKit integration requires that all attributes be optional, or have a default value set". Effect: data (including `UserProfile`) may not persist, so a signed-in user can land on Welcome after relaunch. Options: make the models CloudKit-compatible, or use `ModelConfiguration(cloudKitDatabase: .none)` for now. Needs a decision (found in change 004)
+- SwiftData syncs to the user's private CloudKit database (change 006; Development environment when run from Xcode). Models must stay CloudKit-compatible: every attribute optional or with a default, no `@Attribute(.unique)`, relationships optional. Without an iCloud account data stays local; if CloudKit setup fails the app falls back to a local-only store
+- CloudKit background pushes need Background Modes › Remote notifications (`.xcodeproj` setting, not set yet) [Open]
+- Duplicates after sync: `UserProfile` keeps the oldest per Apple user ID; duplicates of `Scrapbook`, `ScrapPhoto`, `CaptureSession` by `id` are not handled yet [Open]
+- One shared iCloud container / team for all developers: [Open] (each developer currently uses their own)
+- Before TestFlight / App Store: deploy the CloudKit schema to Production; after that, model changes can only add fields
 - "iPhone Duo" device target: [Open] (not an iOS device, clarify)
 
 ## Code structure [Locked]
@@ -28,16 +32,10 @@ Feature-first MVVM. Views are dumb; all logic lives in ViewModels.
 ScrapIt/
 ├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView
 ├── Core/
-<<<<<<< Updated upstream
-│   ├── Models/         SwiftData models
-│   ├── Services/       CloudKit, camera, other shared services
-│   └── DesignSystem/   Theme, shared buttons, shared illustrations;
-│                       DS tokens (Tokens/), DS components (Components/), fonts (Fonts/)
-=======
-│   ├── Models/         One file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus
-│   ├── Services/       CloudKitSessionService, CameraController, Navigator (AppRoute/AppTab: 3 tabs, number-free routes), SessionStore
-│   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Input), ScrapTheme, OffsetPillButtonStyle
->>>>>>> Stashed changes
+│   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus
+│   ├── Services/       CloudKitSessionService, CameraController, Navigator (AppRoute/AppTab: 3 tabs, number-free routes), SessionStore,
+│   │                   AppleCredentialChecker, NetworkMonitor
+│   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle
 └── Features/
     ├── Auth/           WelcomeSignInView, AuthViewModel
     ├── Home/           WorkbenchView, WorkbenchViewModel, Components/ (CuttingMatView, DisposableCameraView, DeskDecorationsView, DeskSurfaceView)
@@ -64,7 +62,7 @@ Rules:
 - Do not modify main spec/ files except via /merge-change
 
 ## Data models
-Stored with SwiftData, synced via CloudKit (CKShare for shared records).
+Stored with SwiftData, synced to the user's private CloudKit database. Sharing with friends (rolls, shots) goes through `CloudKitSessionService` (CloudKit records / CKShare), not SwiftData sync.
 
 ### Profile [Locked]
 - name, avatar image

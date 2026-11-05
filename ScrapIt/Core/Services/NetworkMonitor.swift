@@ -7,6 +7,8 @@ protocol NetworkStatusProviding: AnyObject {
     var isOnline: Bool { get }
     /// Waits for the first status update, then returns the current status.
     func currentStatus() async -> Bool
+    /// Returns once the device is online (right away if it already is).
+    func waitUntilOnline() async
 }
 
 @Observable
@@ -16,6 +18,7 @@ final class NetworkMonitor: NetworkStatusProviding {
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var hasStatus = false
     @ObservationIgnored private var waiters: [CheckedContinuation<Bool, Never>] = []
+    @ObservationIgnored private var onlineWaiters: [CheckedContinuation<Void, Never>] = []
 
     init() {
         monitor.pathUpdateHandler = { [weak self] path in
@@ -36,11 +39,21 @@ final class NetworkMonitor: NetworkStatusProviding {
         return await withCheckedContinuation { waiters.append($0) }
     }
 
+    func waitUntilOnline() async {
+        if hasStatus && isOnline { return }
+        await withCheckedContinuation { onlineWaiters.append($0) }
+    }
+
     private func update(_ online: Bool) {
         isOnline = online
         hasStatus = true
         let pending = waiters
         waiters.removeAll()
         pending.forEach { $0.resume(returning: online) }
+        if online {
+            let pendingOnline = onlineWaiters
+            onlineWaiters.removeAll()
+            pendingOnline.forEach { $0.resume() }
+        }
     }
 }

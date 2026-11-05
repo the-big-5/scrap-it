@@ -14,8 +14,22 @@ private struct FakeCredentialChecker: AppleCredentialChecking {
 
 private final class FakeNetwork: NetworkStatusProviding {
     var isOnline: Bool
+    private var onlineWaiters: [CheckedContinuation<Void, Never>] = []
+
     init(isOnline: Bool) { self.isOnline = isOnline }
     func currentStatus() async -> Bool { isOnline }
+
+    func waitUntilOnline() async {
+        if isOnline { return }
+        await withCheckedContinuation { onlineWaiters.append($0) }
+    }
+
+    func goOnline() {
+        isOnline = true
+        let waiters = onlineWaiters
+        onlineWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
 }
 
 private struct CheckFailed: Error {}
@@ -38,9 +52,16 @@ struct AuthViewModelTests {
         state: Result<ASAuthorizationAppleIDProvider.CredentialState, any Error> = .success(.authorized),
         online: Bool = true
     ) -> AuthViewModel {
+        makeViewModel(state: state, network: FakeNetwork(isOnline: online))
+    }
+
+    private func makeViewModel(
+        state: Result<ASAuthorizationAppleIDProvider.CredentialState, any Error>,
+        network: FakeNetwork
+    ) -> AuthViewModel {
         AuthViewModel(
             credentialChecker: FakeCredentialChecker(result: state),
-            network: FakeNetwork(isOnline: online),
+            network: network,
             defaults: defaults
         )
     }
@@ -70,6 +91,37 @@ struct AuthViewModelTests {
         #expect(vm.welcomeMessage == nil)
         #expect(defaults.string(forKey: AuthViewModel.savedUserIDKey) == "apple-123")
         #expect(profileCount() == 1)
+    }
+
+    @Test func appleNameUpdatesExistingProfile() {
+        context.insert(UserProfile(appleUserID: "apple-123", name: AuthViewModel.defaultName))
+        try? context.save()
+        let vm = makeViewModel()
+        var name = PersonNameComponents()
+        name.givenName = "Brian"
+        name.familyName = "Chang"
+
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: name, modelContext: context)
+
+        #expect(vm.currentUser?.name == "Brian Chang")
+        #expect(profileCount() == 1)
+    }
+
+    @Test func missingAppleNameKeepsProfileName() {
+        seedSignedInUser(name: "Ana")
+        let vm = makeViewModel()
+
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: PersonNameComponents(), modelContext: context)
+
+        #expect(vm.currentUser?.name == "Ana")
+    }
+
+    @Test func missingAppleNameOnFirstSignInUsesDefault() {
+        let vm = makeViewModel()
+
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil, modelContext: context)
+
+        #expect(vm.currentUser?.name == AuthViewModel.defaultName)
     }
 
     @Test func successReusesExistingProfile() {
@@ -172,14 +224,118 @@ struct AuthViewModelTests {
         #expect(!vm.isRestoringSession)
     }
 
-    @Test func restoreOfflineStaysOnWelcome() async {
+    // MARK: Offline launch (change 006)
+
+    @Test func restoreOfflineWithProfileEntersHome() async {
         seedSignedInUser()
+        let vm = makeViewModel(state: .success(.revoked), online: false)
+
+        await vm.restoreExistingSession(modelContext: context)
+
+        #expect(!vm.isRestoringSession)
+        #expect(vm.currentUser?.appleUserID == "apple-123")
+        #expect(vm.pendingCredentialCheck != nil)
+    }
+
+    @Test func restoreOfflineWithoutProfileStaysOnWelcome() async {
+        defaults.set("apple-123", forKey: AuthViewModel.savedUserIDKey)
         let vm = makeViewModel(state: .success(.authorized), online: false)
 
         await vm.restoreExistingSession(modelContext: context)
 
         #expect(vm.currentUser == nil)
+        #expect(vm.pendingCredentialCheck == nil)
         #expect(vm.welcomeMessage == AuthViewModel.offlineMessage)
+    }
+
+    @Test func deferredCheckAuthorizedStaysSignedIn() async {
+        seedSignedInUser()
+        let network = FakeNetwork(isOnline: false)
+        let vm = makeViewModel(state: .success(.authorized), network: network)
+        await vm.restoreExistingSession(modelContext: context)
+
+        network.goOnline()
+        await vm.pendingCredentialCheck?.value
+
+        #expect(vm.currentUser?.appleUserID == "apple-123")
+        #expect(defaults.string(forKey: AuthViewModel.savedUserIDKey) == "apple-123")
+    }
+
+    @Test(arguments: [
+        ASAuthorizationAppleIDProvider.CredentialState.revoked,
+        .notFound,
+        .transferred,
+    ])
+    func deferredCheckNotAuthorizedSignsOut(_ state: ASAuthorizationAppleIDProvider.CredentialState) async {
+        seedSignedInUser()
+        let network = FakeNetwork(isOnline: false)
+        let vm = makeViewModel(state: .success(state), network: network)
+        await vm.restoreExistingSession(modelContext: context)
+        #expect(vm.currentUser != nil)
+
+        network.goOnline()
+        await vm.pendingCredentialCheck?.value
+
+        #expect(vm.currentUser == nil)
+        #expect(defaults.string(forKey: AuthViewModel.savedUserIDKey) == nil)
+        #expect(profileCount() == 1, "Local data is kept")
+    }
+
+    @Test func deferredCheckErrorSignsOut() async {
+        seedSignedInUser()
+        let network = FakeNetwork(isOnline: false)
+        let vm = makeViewModel(state: .failure(CheckFailed()), network: network)
+        await vm.restoreExistingSession(modelContext: context)
+
+        network.goOnline()
+        await vm.pendingCredentialCheck?.value
+
+        #expect(vm.currentUser == nil)
+    }
+
+    @Test func signOutCancelsDeferredCheck() async {
+        seedSignedInUser()
+        let network = FakeNetwork(isOnline: false)
+        let vm = makeViewModel(state: .success(.revoked), network: network)
+        await vm.restoreExistingSession(modelContext: context)
+        let check = vm.pendingCredentialCheck
+
+        vm.signOut()
+        network.goOnline()
+        await check?.value
+
+        #expect(vm.pendingCredentialCheck == nil)
+        #expect(check?.isCancelled == true)
+    }
+
+    // MARK: Duplicate profiles (change 006)
+
+    @Test func duplicateProfilesKeepOldest() async {
+        let oldest = UserProfile(appleUserID: "apple-123", name: "Ana", createdAt: .now.addingTimeInterval(-3600))
+        context.insert(UserProfile(appleUserID: "apple-123", name: "Friend", createdAt: .now))
+        context.insert(oldest)
+        context.insert(UserProfile(appleUserID: "apple-other", name: "Budi"))
+        try? context.save()
+        defaults.set("apple-123", forKey: AuthViewModel.savedUserIDKey)
+        let vm = makeViewModel(state: .success(.authorized))
+
+        await vm.restoreExistingSession(modelContext: context)
+
+        #expect(vm.currentUser?.persistentModelID == oldest.persistentModelID)
+        #expect(vm.currentUser?.name == "Ana")
+        #expect(profileCount() == 2, "One duplicate removed, other user untouched")
+    }
+
+    @Test func signInReusesOldestDuplicate() {
+        context.insert(UserProfile(appleUserID: "apple-123", name: "Ana", createdAt: .now.addingTimeInterval(-60)))
+        context.insert(UserProfile(appleUserID: "apple-123", name: "Friend", createdAt: .now))
+        try? context.save()
+        let vm = makeViewModel()
+
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil, modelContext: context)
+
+        #expect(vm.currentUser?.name == "Ana")
+        #expect(profileCount() == 1)
     }
 
     @Test func restoreWithoutSavedIDIgnoresExistingProfiles() async {

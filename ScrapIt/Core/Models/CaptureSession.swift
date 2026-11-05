@@ -3,19 +3,19 @@ import SwiftData
 
 @Model
 final class CaptureSession {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var rollCode: String
+    var id: UUID = UUID()
+    var name: String = ""
+    var rollCode: String = ""
     var shareURLString: String?
     var ckRecordName: String?
-    var hostUserID: String
-    var participantIDs: [String]
-    var participantNames: [String]
-    var rollSize: Int
-    var slotsUsed: Int
-    var filterRaw: String
-    var statusRaw: String
-    var startTime: Date
+    var hostUserID: String = ""
+    var participantIDs: [String] = []
+    var participantNames: [String] = []
+    var rollSize: Int = 36
+    var slotsUsed: Int = 0
+    var filterRaw: String = RollFilter.colorPrint200.rawValue
+    var statusRaw: String = SessionStatus.waiting.rawValue
+    var startTime: Date = Date.now
     var endTime: Date?
     var createdScrapbookID: UUID?
 
