@@ -2,14 +2,15 @@ import Foundation
 
 enum AppTab: String {
     case home
+    case explore
     case profile
 }
 
 enum AppRoute: Hashable {
     case cameraRollMenu
-    case createStep1NameAndShots
-    case createStep2ChooseFilter
-    case createStep3ShareRoom
+    case createRollSetup
+    case createRollFilter
+    case createRollLobby
     case joinRoll
     case captureSession
     case scrapbookGrid(UUID)

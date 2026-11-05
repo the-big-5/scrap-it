@@ -12,7 +12,7 @@
 - Camera: AVFoundation custom camera [Locked]
 - Third-party libraries: only specific ones I approve; ask before adding any [Locked]
 - Data models: see Data models section below
-- Folder conventions / naming: [Open]
+- Folder conventions / naming: see Code structure section below [Locked]
 - Live data during a session: only remaining-slot count and presence (who's in) [Locked]
 - Media: still photos and Live Photos, hidden from others until session ends [Locked]
 - Live transport: CloudKit only (CKShare, records, subscriptions); last-shot race uses CKModifyRecordsOperation with .ifServerRecordUnchanged; no third-party backend [Locked]. Revisit only if live collaborative scrapbooking needs more than CloudKit [Open]
@@ -26,18 +26,25 @@ Feature-first MVVM. Views are dumb; all logic lives in ViewModels.
 
 ```text
 ScrapIt/
-├── App/            App entry, RootView (sign-in vs Home routing), MainTabView
+├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView
 ├── Core/
+<<<<<<< Updated upstream
 │   ├── Models/         SwiftData models
 │   ├── Services/       CloudKit, camera, other shared services
 │   └── DesignSystem/   Theme, shared buttons, shared illustrations;
 │                       DS tokens (Tokens/), DS components (Components/), fonts (Fonts/)
+=======
+│   ├── Models/         One file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus
+│   ├── Services/       CloudKitSessionService, CameraController, Navigator (AppRoute/AppTab: 3 tabs, number-free routes), SessionStore
+│   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Input), ScrapTheme, OffsetPillButtonStyle
+>>>>>>> Stashed changes
 └── Features/
-    ├── Auth/
-    ├── Home/           (e.g. Shelf/)
-    ├── Profile/
-    ├── Roll/           (menu, create, join, capture)
-    └── Scrapbook/
+    ├── Auth/           WelcomeSignInView, AuthViewModel
+    ├── Home/           WorkbenchView, WorkbenchViewModel, Components/ (CuttingMatView, DisposableCameraView, DeskDecorationsView, DeskSurfaceView)
+    ├── Explore/        ExploreView (3-tab placeholder)
+    ├── Profile/        ProfileView, ProfileViewModel
+    ├── Roll/           CameraRollMenuView, CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, FilmStripPickerView, FilterCanisterCardView)
+    └── Scrapbook/      ScrapbookGridView, ScrapbookViewModel, Components/
 ```
 
 Rules:
@@ -48,7 +55,8 @@ Rules:
 - No cross-feature imports. Shared code moves to Core/ (models, services, design system).
 - Services are injected into ViewModels (initializer or protocol), not created inside Views.
 - Feature-only sub-views go in that feature's Components/ folder.
-- The current code does not follow this yet; restructuring is a separate change, not started.
+- Cross-feature navigation uses the `Navigator` protocol (`AppRoute`, `AppTab`) in `Core/Services/Navigator.swift`, implemented by `AppRouter` in `App/AppRouter.swift` and injected into feature ViewModels.
+- Shared session/scrapbook state across features lives in `SessionStore` (`Core/Services/SessionStore.swift`), injected into `ShelfViewModel`, `RollFlowViewModel`, and `ScrapbookViewModel`.
 
 ## Never touch
 - .xcodeproj settings, signing, or entitlements

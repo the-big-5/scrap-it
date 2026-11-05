@@ -11,7 +11,7 @@ struct JoinRollView: View {
 
     var body: some View {
         ZStack {
-            ScrapTheme.creamBackground
+            DSColor.Kraft.lightActive.color
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -19,7 +19,7 @@ struct JoinRollView: View {
                 ZStack {
                     Text("Join Roll")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(ScrapTheme.charcoal)
+                        .foregroundStyle(DSColor.Brand.primary.color)
 
                     HStack {
                         BackCircleButton {
@@ -34,7 +34,7 @@ struct JoinRollView: View {
 
                 Text("Scan QR")
                     .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(ScrapTheme.charcoal)
+                    .foregroundStyle(DSColor.Brand.primary.color)
                     .padding(.bottom, 10)
 
                 // Scan QR camera box per Figma node 725:6659
@@ -51,12 +51,12 @@ struct JoinRollView: View {
 
                 Text("or")
                     .font(.system(size: 17))
-                    .foregroundStyle(ScrapTheme.charcoal)
+                    .foregroundStyle(DSColor.Brand.primary.color)
                     .padding(.bottom, 10)
 
                 Text("Enter code")
                     .font(.system(size: 17))
-                    .foregroundStyle(ScrapTheme.charcoal)
+                    .foregroundStyle(DSColor.Brand.primary.color)
                     .padding(.bottom, 12)
 
                 // 6 single-character code boxes
@@ -64,18 +64,18 @@ struct JoinRollView: View {
                     ForEach(0..<6, id: \.self) { index in
                         TextField("", text: codeBinding(for: index))
                             .font(.system(size: 24, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(ScrapTheme.charcoal)
+                            .foregroundStyle(DSColor.Brand.primary.color)
                             .multilineTextAlignment(.center)
                             .textInputAutocapitalization(.characters)
                             .autocorrectionDisabled()
                             .focused($focusedBox, equals: index)
                             .frame(width: 48, height: 58)
                             .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color.white)
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(DSColor.Paper.light.color)
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .stroke(ScrapTheme.charcoal, lineWidth: 1)
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .stroke(DSColor.Brand.primary.color, lineWidth: 1)
                                     )
                             )
                     }
@@ -85,7 +85,7 @@ struct JoinRollView: View {
                 if let errorMessage = flowViewModel.joinErrorMessage {
                     Text(errorMessage)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(ScrapTheme.indicatorRed)
+                        .foregroundStyle(DSColor.State.error.color)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
                 }
@@ -110,10 +110,12 @@ struct JoinRollView: View {
 
     private func codeBinding(for index: Int) -> Binding<String> {
         Binding(
-            get: { flowViewModel.joinCodeCharacter(at: index) },
+            get: {
+                flowViewModel.joinCodeCharacter(at: index)
+            },
             set: { newValue in
-                if let next = flowViewModel.updateJoinCode(at: index, with: newValue) {
-                    focusedBox = next
+                if let nextFocus = flowViewModel.updateJoinCode(at: index, with: newValue) {
+                    focusedBox = nextFocus
                 }
             }
         )

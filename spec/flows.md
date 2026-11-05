@@ -18,12 +18,15 @@ Edge cases:
 Edge cases: app not installed [Open]
 
 ## F3: Roll (real-time shared capture session) [Locked]
-1. Host creates a roll: name, number of shots (24, 36, 48 or 72) and a filter
-2. Host shares the lobby (QR code, roll code, share link) and taps Start Roll
-3. Everyone takes photos (still and Live Photo) at the same time in-app. Nobody, including the host, sees others' photos during the roll; everyone sees only the remaining shots and who is currently in the roll
-4. One shared pool of shots; any person's photo uses one shot
-5. Roll ends when the shots run out OR the host ends it manually
-6. Photos are saved into a new shared scrapbook (others' photos become visible here)
+1. Host taps the disposable camera on Workbench, taps "Create Roll"
+2. Setup step: enters roll name, chooses shot count (24, 36 default, 48, 72) with friendship size guidance ("4-6 friends")
+3. Filter step: chooses film filter ("Cinematic 400 Pro 35 Black & White" or "200 Color Print")
+4. Lobby: host enters Share Room Lobby displaying roll title, stats (joined friends, shots), and participant avatar grid. Sharing tools (QR code, 6-character roll code, share link) are presented in a medium-detent "Invite Friend" bottom sheet via top-right button.
+5. Host taps "Start Roll" (guests see "Waiting for host..." until started)
+6. Everyone takes photos (still and Live Photo) at the same time in-app. Nobody, including the host, sees others' photos during the roll; everyone sees only the remaining shots and who is currently in the roll
+7. One shared pool of shots; any person's photo uses one shot
+8. Roll ends when the shots run out OR the host ends it manually
+9. Photos are saved into a new shared scrapbook (others' photos become visible here)
 Edge cases:
 - Network lost mid-roll: photos queue locally and sync later
 - Host disconnects: host role passes to the next participant
