@@ -28,7 +28,8 @@ ScrapIt/
 ├── Core/
 │   ├── Models/         SwiftData models
 │   ├── Services/       CloudKit, camera, other shared services
-│   └── DesignSystem/   Theme, shared buttons, shared illustrations
+│   └── DesignSystem/   Theme, shared buttons, shared illustrations;
+│                       DS tokens (Tokens/), DS components (Components/), fonts (Fonts/)
 └── Features/
     ├── Auth/
     ├── Home/           (e.g. Shelf/)

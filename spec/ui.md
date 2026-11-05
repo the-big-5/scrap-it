@@ -58,6 +58,46 @@ Figma node 708:4941 (design frame is landscape; the app itself supports all orie
 ## Screen: Profile tab [Open] (design in progress)
 ## Screen: Scrapbook (basic grid after session) [Open] (design in progress)
 
+## Design system [Locked]
+Figma page "Design System #2" (628:4011), Atoms and Molecules only. Code: `Core/DesignSystem/` (`DS` prefix). Existing `ScrapTheme`, `OffsetPillButtonStyle`, `BackCircleButton` stay until screens are migrated.
+
+### Colors (`DSColor`, names follow Figma) — node 629:4298
+- Brand: primary `#2A241F`, secondary `#EBCB6B`, tertiary `#6B2430`
+- State: info `#2F80ED`, success `#27AE60`, warning `#E2B93B`, error `#E50935`
+- Camera: leather `#9A5531`, camera `#D2D0CB`, cognac `#6E3A20`
+- Scales Paper, Kraft, Green: light, lightHover, lightActive, normal, normalHover, normalActive, dark, darkHover, darkActive, darker (values in `DSColor.swift`)
+- Component: field `#EBE2D3`, surface `#FFFDF8`, placeholder `#6E6458`, textSecondary `#5E5449`, disabledText `#8A7F73`, disabledBackground `#E9E1D3`, inputError `#A8382A`, fillTertiary `#767680` 12%, labelTertiary `#3C3C43` 30%, toggleOffLabel `#B3B3B3`, white `#FFFFFF`
+- Dark mode: dark values equal light for now [Open]
+
+### Typography (`DSTypography`, `.dsTypography(_:)`) — nodes 629:5503, 629:5466, 643:930
+- Headings, SF Pro, line height 1.1×: h1 56, h2 48, h3 40, h4 32, h5 24 (Bold); h6 20 (Medium)
+- Body, line height 1.4×, Bold and Regular: large 20, medium 18, normal 16, small 14
+- Two body families: SF Pro and Architects Daughter (handwritten). Architects Daughter has only Regular; "Bold" uses it. Font is bundled and registered at runtime
+- Fixed sizes, no Dynamic Type for now
+- Which text uses SF Pro vs Architects Daughter: [Open], decided per screen
+
+### Elevation (`DSElevation`)
+- One level: solid primary shape offset y 5 (y 2 when pressed), from `OffsetPillButtonStyle`
+- Full level set: [Open]
+
+### Buttons — node 629:5343
+- `DSButton` / `DSButtonStyle`: primary (white on ink), secondary (burgundy on fillTertiary), tertiary (leather Semibold, no background)
+- Sizes: small 32, normal 44, large 52; optional full width; minimum tap target 44
+- Disabled is a state of any variant (fillTertiary background, labelTertiary text)
+- Pressed: 0.7 opacity (not in Figma) [Open]
+- `DSIconButton` 44 circle (primary, secondary, tertiary, disabled); `DSBackButton` 28 / 34 / 50
+- Icons: Figma SVGs in `Assets.xcassets/DesignSystem/` (plus, play, check, close, eye-slash, search)
+
+### Inputs & controls — node 629:5426
+- `DSTextField`: kinds plain, password (show/hide), search (magnifier + clear), caption (multi-line); states initial, active (focused or filled), error (with message)
+- Password uses the same eye-slash icon for shown and hidden [Open]
+- `DSRadio`, `DSCheckbox`, `DSToggle`
+
+### Known issues and Figma inconsistencies [Open]
+- Toggle off track contrast 1.70:1 (below WCAG 3:1)
+- Error color: swatch caption `#EB5757` vs fill `#E50935`; input error uses `#A8382A`
+- Typography page shows Bold; Button component uses Regular (Tertiary Semibold)
+
 ## Assets
 All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, transparent):
 - HeroCamera (678:4897): Welcome and Camera Roll camera
