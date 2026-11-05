@@ -1,0 +1,53 @@
+# Xcode
+## User settings & personal state (must ignore to avoid merge conflicts)
+xcuserdata/
+*.xcuserdatad
+*.xcscmblueprint
+*.xccheckout
+
+## Build artifacts & DerivedData
+build/
+DerivedData/
+*.moved-aside
+*.xcuserstate
+
+## Core Data generated class files
+*.xccurrentversion
+
+# macOS System Files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon\r
+._*
+.Spotlight-V100
+.Trashes
+
+# Swift Package Manager (SPM)
+.build/
+.swiftpm/xcode/xcuserdata/
+Packages/
+
+# CocoaPods (if used)
+Pods/
+Podfile.lock.diff
+
+# Carthage (if used)
+Carthage/Build/
+Carthage/Checkouts/
+
+# Fastlane (if used)
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Sensitive Files & Secrets
+*.cer
+*.cert
+*.p12
+*.mobileprovision
+.env
+.env.*
+*.key
+*.pem
