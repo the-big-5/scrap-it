@@ -45,7 +45,16 @@ struct WelcomeSignInView: View {
                 Spacer()
 
                 VStack(spacing: 18) {
+                    if let message = authViewModel.welcomeMessage {
+                        Text(message)
+                            .font(.system(size: 13))
+                            .foregroundStyle(DSColor.Component.inputError)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                    }
+
                     SignInWithAppleButton(.signIn) { request in
+                        authViewModel.beginSignIn()
                         request.requestedScopes = [.fullName]
                     } onCompletion: { result in
                         authViewModel.handleSignInWithAppleCompletion(
@@ -56,6 +65,8 @@ struct WelcomeSignInView: View {
                     .signInWithAppleButtonStyle(.black)
                     .frame(height: 54)
                     .clipShape(Capsule())
+                    .disabled(authViewModel.isOffline)
+                    .opacity(authViewModel.isOffline ? 0.5 : 1)
                     .padding(.horizontal, 24)
 
                     Text(termsAttributedString)
