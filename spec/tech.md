@@ -17,6 +17,8 @@
 - Media: still photos and Live Photos, hidden from others until session ends [Locked]
 - Live transport: CloudKit only (CKShare, records, subscriptions); last-shot race uses CKModifyRecordsOperation with .ifServerRecordUnchanged; no third-party backend [Locked]. Revisit only if live collaborative scrapbooking needs more than CloudKit [Open]
 - CloudKit needs the iCloud entitlement and a paid developer team on a real device; the app must not crash without it
+- Sign in with Apple needs the `com.apple.developer.applesignin` entitlement (added in change 004) and a paid developer team. CloudKit is not needed for sign-in
+- SwiftData + CloudKit store fails to load [Open]: with the CloudKit entitlement on, SwiftData turns on CloudKit sync, but the current models are not CloudKit-compatible (non-optional attributes without defaults, `@Attribute(.unique)`). Log: "Store failed to load ... CloudKit integration requires that all attributes be optional, or have a default value set". Effect: data (including `UserProfile`) may not persist, so a signed-in user can land on Welcome after relaunch. Options: make the models CloudKit-compatible, or use `ModelConfiguration(cloudKitDatabase: .none)` for now. Needs a decision (found in change 004)
 - "iPhone Duo" device target: [Open] (not an iOS device, clarify)
 
 ## Code structure [Locked]

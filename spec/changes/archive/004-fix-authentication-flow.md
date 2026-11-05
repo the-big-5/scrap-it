@@ -1,5 +1,5 @@
 # 004: Fix authentication app flow
-Status: Approved
+Status: Done
 
 ## Why
 Sign in with Apple looks like it works, but Apple never asks the user to verify their Apple Account (Face ID / password). Three causes found in code:
@@ -46,7 +46,7 @@ flows.md (F1), ui.md (Welcome / Sign in, Profile tab), tech.md (entitlements not
 - [x] `RootView` / `MainTabView` / `ProfileView`: pass a sign-out closure; temporary "Sign Out" `DSButton` on Profile
 - [x] Unit tests (Swift Testing) for `AuthViewModel` with fake checker + network: success, cancel, error, offline sign-in, restore for each credential state, restore offline, no saved ID, sign out
 - [x] Build and run tests on Simulator
-- [ ] Manual check on a real iPhone (Apple sheet + Face ID appears on first sign-in) — for the user
+- [x] Manual check on a real iPhone (Apple sheet + Face ID appears on first sign-in): done by the user, sign-in works and lands on Home
 
 ## Out of scope
 - Auto sign-out while the app is running when the Apple ID is revoked (`credentialRevokedNotification`); removed by user at approval

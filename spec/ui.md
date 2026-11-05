@@ -8,6 +8,7 @@ Figma node 676:3703
 - Headline "Shoot together. Keep it forever."
 - Subtext: "Sign in to start a shared roll with friends and keep every scrapbook on your shelf."
 - Button "Sign in With Apple", terms/privacy text
+- Message above the button [Draft]: error "Couldn't sign in. Please try again."; offline "You're offline. Connect to the internet to sign in." (offline also disables the button)
 - Logo is still a placeholder box [Open]
 
 ## Screen: Home [Locked]
@@ -56,6 +57,7 @@ Figma node 708:4941 (design frame is landscape; the app itself supports all orie
 - States (waiting for others, roll finished, offline queued, end session by host): [Open]
 
 ## Screen: Profile tab [Open] (design in progress)
+- Temporary "Sign Out" button (`DSButton` secondary) until the design is ready
 ## Screen: Scrapbook (basic grid after session) [Open] (design in progress)
 
 ## Design system [Locked]
