@@ -1,5 +1,5 @@
 # 003: Design system (Atoms + Molecules) from Figma
-Status: Approved
+Status: Done
 
 ## Why
 The app has no shared design system yet. Colors and button styles are hand-picked in `ScrapTheme` and `OffsetPillButtonStyle`. Figma "Design System #2" now defines Atoms (colors, typography) and Molecules (buttons, inputs & controls). This change builds those as reusable SwiftUI tokens and components in `Core/DesignSystem/` so later changes can apply them to screens.

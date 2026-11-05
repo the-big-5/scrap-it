@@ -1,5 +1,5 @@
 # 002: Restructure to feature-first MVVM
-Status: Approved
+Status: Done
 
 ## Why
 The code was built as a flat `Views/`, `ViewModels/`, `Services/`, `Models/` layout, with logic mixed into Views and one large `RollFlowViewModel`. Move it to the structure and rules locked in tech.md ("Code structure") so future changes land in the right place.
