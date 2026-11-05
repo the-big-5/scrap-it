@@ -56,8 +56,8 @@ final class SessionStore {
         )
         if let sessionPhotos = try? modelContext.fetch(photoDescriptor) {
             for photo in sessionPhotos {
-                if !scrapbook.photos.contains(where: { $0.id == photo.id }) {
-                    scrapbook.photos.append(photo)
+                if !(scrapbook.photos ?? []).contains(where: { $0.id == photo.id }) {
+                    scrapbook.photos = (scrapbook.photos ?? []) + [photo]
                 }
             }
             if scrapbook.coverPhotoData == nil, let first = sessionPhotos.first {

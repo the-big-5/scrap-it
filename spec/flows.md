@@ -1,13 +1,17 @@
 # Flows
 ## F1: Sign in [Locked]
 1. User opens app
-2. Not signed in: sees Welcome screen, taps "Sign in with Apple"; Apple verifies the Apple Account (Face ID / passcode). Only on success is the profile created (or loaded). Requested data: full name only
-3. Already signed in: the saved Apple user ID is checked with Apple on launch. Authorized and online → straight to Home. Revoked, not found, check error, or offline → Welcome
+2. Not signed in: sees Welcome screen, taps "Sign in with Apple"; Apple verifies the Apple Account (Face ID / passcode). Only on success is the profile created (or loaded). Requested data: full name only. Apple sends the name only on the first authorization; when it does, the profile name is set or updated to it. Without a name, a new profile is called "Friend"
+3. Already signed in (saved Apple user ID + local profile):
+   - Online: checked with Apple on launch. Authorized → straight to Home. Revoked, not found, transferred, or check error → Welcome
+   - Offline: straight to Home with local data; the Apple check runs once the network is back, and anything but authorized → Welcome
+   - No local profile → Welcome
 4. Sign out (temporary, on Profile tab until the Profile design is ready): returns to Welcome; local data is kept
 Edge cases:
 - Cancel: stay on Welcome, no message
 - Sign-in fails (including no Apple Account on the device): stay on Welcome with an error message
-- No network: cannot sign in and cannot enter; Welcome shows an offline message and the sign-in button is disabled
+- No network: cannot sign in (Welcome shows an offline message and the sign-in button is disabled). Already signed in users can still enter (see step 3)
+- Needs internet: Create Roll, Join Roll (QR, roll code, share link), invite / share link. Works offline: Home, Profile, viewing scrapbooks and photos, editing captions, Sign Out. How online-only features look and behave while offline: [Open]
 - First launch: Welcome
 - Apple ID revoked while the app is running: caught on the next launch (no live sign-out)
 

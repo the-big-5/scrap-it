@@ -21,7 +21,7 @@ final class ScrapbookViewModel {
     }
 
     func sortedPhotos(of scrapbook: Scrapbook) -> [ScrapPhoto] {
-        scrapbook.photos.sorted(by: { $0.timestamp < $1.timestamp })
+        (scrapbook.photos ?? []).sorted(by: { $0.timestamp < $1.timestamp })
     }
 
     func dateText(for scrapbook: Scrapbook) -> String {

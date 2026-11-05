@@ -3,15 +3,15 @@ import SwiftData
 
 @Model
 final class Scrapbook {
-    @Attribute(.unique) var id: UUID
-    var title: String
+    var id: UUID = UUID()
+    var title: String = ""
     @Attribute(.externalStorage) var coverPhotoData: Data?
-    var createdDate: Date
-    var memberIDs: [String]
-    var memberNames: [String]
+    var createdDate: Date = Date.now
+    var memberIDs: [String] = []
+    var memberNames: [String] = []
     var sourceSessionID: UUID?
     @Relationship(deleteRule: .cascade, inverse: \ScrapPhoto.scrapbook)
-    var photos: [ScrapPhoto] = []
+    var photos: [ScrapPhoto]? = []
 
     init(
         id: UUID = UUID(),

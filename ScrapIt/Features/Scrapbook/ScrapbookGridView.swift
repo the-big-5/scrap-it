@@ -50,7 +50,7 @@ struct ScrapbookGridView: View {
                             scrapbookHeaderCard(scrapbook)
 
                             // Basic Grid of Captured Photos + Captions
-                            if scrapbook.photos.isEmpty {
+                            if (scrapbook.photos ?? []).isEmpty {
                                 VStack(spacing: 10) {
                                     Image(systemName: "photo.on.rectangle.angled")
                                         .font(.system(size: 36))

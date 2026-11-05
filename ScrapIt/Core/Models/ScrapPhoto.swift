@@ -3,15 +3,15 @@ import SwiftData
 
 @Model
 final class ScrapPhoto {
-    @Attribute(.unique) var id: UUID
-    @Attribute(.externalStorage) var imageData: Data
+    var id: UUID = UUID()
+    @Attribute(.externalStorage) var imageData: Data = Data()
     @Attribute(.externalStorage) var livePhotoMovieData: Data?
-    var caption: String
-    var authorID: String
-    var authorName: String
-    var timestamp: Date
-    var sourceSessionID: UUID
-    var isSyncedToCloud: Bool
+    var caption: String = ""
+    var authorID: String = ""
+    var authorName: String = ""
+    var timestamp: Date = Date.now
+    var sourceSessionID: UUID = UUID()
+    var isSyncedToCloud: Bool = false
     var scrapbook: Scrapbook?
 
     init(
