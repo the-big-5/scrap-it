@@ -1,6 +1,7 @@
 # Xcode
 ## User settings & personal state
 xcuserdata/
+*.xcuserdatad/
 *.xcuserdatad
 *.xcscmblueprint
 *.xccheckout
@@ -15,6 +16,7 @@ DerivedData/
 *.xccurrentversion
 
 # macOS System Files
+*.DS_Store
 .DS_Store
 .AppleDouble
 .LSOverride
