@@ -1,7 +1,8 @@
 # Tech
 - Platform: iOS (ScrapIt.xcodeproj) [Locked]
 - Minimum iOS: 18 [Locked]
-- Devices: iPhone and iPad, all orientations [Locked]
+- Devices: iPhone and iPad [Locked]
+- Orientation: for now every screen is portrait, except the Capture session which is landscape only (change 008, per-screen lock via `OrientationLock` in `App/`). Supporting both portrait and landscape on the other screens later: [Open]
 - UI: SwiftUI [Locked]
 - Architecture: MVVM with @Observable [Locked]
 - Persistence: SwiftData [Locked]
@@ -9,11 +10,11 @@
 - Sharing: CKShare (CloudKit sharing) for sessions and scrapbooks [Locked]
 - Auth: Sign in with Apple / iCloud only [Locked]
 - Invites: share sheet with invite link [Locked]
-- Camera: AVFoundation custom camera with multi-lens discovery, animated knurled zoom wheel, and iOS 18 Camera Control controls [Locked]
+- Camera: AVFoundation custom camera (`CameraEngine`, ported from the camera POC): multi-lens virtual back camera, filtered live preview (Core Image + Metal), one filter pipeline for preview / photo / Live Photo movie, `RotationCoordinator` rotation, iOS 18 Camera Control "Zoom" slider [Locked]
 - Third-party libraries: only specific ones I approve; ask before adding any [Locked]
 - Data models: see Data models section below
 - Folder conventions / naming: see Code structure section below [Locked]
-- Live data during a session: only remaining-slot count and presence (who's in) [Locked]
+- Live data during a session: only the shot count (slots used / roll size) and presence (who's in) [Locked]
 - Media: still photos and Live Photos, hidden from others until session ends [Locked]
 - Live transport: CloudKit only (CKShare, records, subscriptions); last-shot race uses CKModifyRecordsOperation with .ifServerRecordUnchanged; no third-party backend [Locked]. Revisit only if live collaborative scrapbooking needs more than CloudKit [Open]
 - CloudKit needs the iCloud entitlement and a paid developer team on a real device; the app must not crash without it
@@ -23,6 +24,8 @@
 - Duplicates after sync: `UserProfile` keeps the oldest per Apple user ID; duplicates of `Scrapbook`, `ScrapPhoto`, `CaptureSession` by `id` are not handled yet [Open]
 - One shared iCloud container / team for all developers: [Open] (each developer currently uses their own)
 - Before TestFlight / App Store: deploy the CloudKit schema to Production; after that, model changes can only add fields
+- `.xcodeproj` exception (change 008, approved by the user): iPhone supported orientations include Landscape Left / Right; nothing else changed
+- Live Photo movies are stored in `ScrapPhoto.livePhotoMovieData` but not uploaded to CloudKit or shown in the Scrapbook yet [Open]
 - "iPhone Duo" device target: [Open] (not an iOS device, clarify)
 
 ## Code structure [Locked]
@@ -30,10 +33,12 @@ Feature-first MVVM. Views are dumb; all logic lives in ViewModels.
 
 ```text
 ScrapIt/
-├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView
+├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView, OrientationLock (+ AppDelegate)
 ├── Core/
-│   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus, ZoomStop
-│   ├── Services/       CloudKitSessionService, CameraController, Navigator (AppRoute/AppTab: 3 tabs, number-free routes), SessionStore,
+│   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus;
+│   │                   camera logic: ZoomWheelModel, CameraButtonRules
+│   ├── Services/       CloudKitSessionService, CameraController, CameraEngine, FilmFilterPipeline, PreviewRenderer, LivePhotoMovieWriter,
+│   │                   Navigator (AppRoute/AppTab: 3 tabs, number-free routes), SessionStore,
 │   │                   AppleCredentialChecker, NetworkMonitor, HapticService, ZoomCapabilities
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle
 └── Features/
@@ -41,7 +46,7 @@ ScrapIt/
     ├── Home/           WorkbenchView, WorkbenchViewModel, Components/ (CuttingMatView, DisposableCameraView, DeskDecorationsView, DeskSurfaceView)
     ├── Explore/        ExploreView (3-tab placeholder)
     ├── Profile/        ProfileView, ProfileViewModel
-    ├── Roll/           CameraRollMenuView, CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView)
+    ├── Roll/           CameraRollMenuView, CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, DebugLastShotView)
     └── Scrapbook/      ScrapbookGridView, ScrapbookViewModel, Components/
 ```
 

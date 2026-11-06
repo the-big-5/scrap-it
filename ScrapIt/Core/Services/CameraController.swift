@@ -1,6 +1,5 @@
 import AVFoundation
 import CoreImage
-import CoreImage.CIFilterBuiltins
 import Foundation
 import Observation
 #if canImport(UIKit)
@@ -8,369 +7,273 @@ import UIKit
 #endif
 
 enum CameraFlashChoice: String, CaseIterable {
-    case auto = "AUTO"
-    case on = "ON"
     case off = "OFF"
+    case on = "ON"
+    case auto = "AUTO"
+
+    var captureMode: AVCaptureDevice.FlashMode {
+        switch self {
+        case .off: .off
+        case .on: .on
+        case .auto: .auto
+        }
+    }
 }
 
+/// A taken shot: the filtered still right away, and the filtered Live Photo movie when it is ready.
+struct CapturedShot {
+    let imageData: Data
+    /// `nil` when Live Photo was off or unsupported. Resolves to `nil` if the movie failed.
+    let livePhotoMovie: Task<Data?, Never>?
+}
+
+/// Main-actor face of `CameraEngine` for the Capture session screen:
+/// filtered preview, zoom, flip, flash, Live Photo, physical buttons and the Camera Adjustments pop-up.
 @Observable
-final class CameraController: NSObject {
+final class CameraController {
     var flashChoice: CameraFlashChoice = .auto
     var isLivePhotoEnabled: Bool = true
     var isGridVisible: Bool = false
-    var isUsingFrontCamera: Bool = false
-    var zoomFactor: CGFloat = 1.0
-    var isCameraAuthorized: Bool = false
-    var isCapturing: Bool = false
-    var shutterFlashOpacity: Double = 0.0
-
+    private(set) var isUsingFrontCamera: Bool = false
+    private(set) var zoomFactor: CGFloat = 1.0
     private(set) var zoomCapabilities: ZoomCapabilities = .none
+    private(set) var isCameraAuthorized: Bool = false
+    /// The capture session is really running (from AVFoundation notifications).
+    private(set) var isSessionRunning: Bool = false
+    private(set) var isLiveSupported: Bool = false
+    /// "LIVE" badge while the Live Photo movie records.
+    private(set) var isRecordingLive: Bool = false
+    private(set) var hasCameraControl: Bool = false
+    private(set) var isCapturing: Bool = false
+    var shutterFlashOpacity: Double = 0.0
+    /// "Turn On Camera Adjustments" alert.
+    var showsCameraAdjustmentsPrompt: Bool = false
 
-    let captureSession = AVCaptureSession()
+    @ObservationIgnored let engine = CameraEngine()
+    @ObservationIgnored private var prompt = CameraAdjustmentsPrompt()
+    @ObservationIgnored private var shotSequenceNumber: Int = 0
+    @ObservationIgnored private var isStarting = false
 
-    var isPreviewReady: Bool {
-        isCameraAuthorized && captureSession.isRunning
-    }
+    var previewRenderer: PreviewRenderer? { engine.renderer }
 
-    private let photoOutput = AVCapturePhotoOutput()
-    private var currentDevice: AVCaptureDevice?
-    private var continuation: CheckedContinuation<Data, Never>?
-    private var shotSequenceNumber: Int = 0
+    var canCapture: Bool { !isCapturing }
 
-    private var cameraPicker: AnyObject?
-
-    var cameraOptionZooms: [CGFloat] {
-        zoomCapabilities.presets.isEmpty ? [0.5, 1.0, 2.0] : zoomCapabilities.presets
-    }
-
-    override init() {
-        super.init()
-        let center = NotificationCenter.default
-        center.addObserver(
-            self,
-            selector: #selector(sessionDidStartRunning),
-            name: AVCaptureSession.didStartRunningNotification,
-            object: captureSession
-        )
-        center.addObserver(
-            self,
-            selector: #selector(sessionDidStopRunning),
-            name: AVCaptureSession.didStopRunningNotification,
-            object: captureSession
-        )
-    }
-
-    @objc private func sessionDidStartRunning(_ notification: Notification) {
-        Task { @MainActor in
-            if #available(iOS 18.0, *) {
-                self.updateCameraControls()
-            }
+    init() {
+        engine.onWillCapturePhoto = { [weak self] in
+            self?.flashScreen()
+        }
+        engine.onLiveRecordingChanged = { [weak self] recording in
+            self?.isRecordingLive = recording
+        }
+        engine.onZoomChanged = { [weak self] zoom in
+            guard let self, !self.isUsingFrontCamera else { return }
+            self.zoomFactor = zoom
+        }
+        engine.onCameraControlsActivated = { [weak self] in
+            self?.confirmCameraAdjustmentsOn()
+        }
+        engine.onRunningChanged = { [weak self] running in
+            self?.isSessionRunning = running
         }
     }
 
-    @objc private func sessionDidStopRunning(_ notification: Notification) {
-        // Handle session stop if needed
+    // MARK: - Session
+
+    /// Uses the roll's filter for preview, photo and Live Photo.
+    func setFilter(_ filter: RollFilter) {
+        engine.look = filter.look
     }
 
-    func startSession() {
-        let status = AVCaptureDevice.authorizationStatus(for: .video)
-        switch status {
+    func startSession() async {
+        guard !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            isCameraAuthorized = true
-            configureSessionIfNeeded()
+            break
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.isCameraAuthorized = granted
-                    if granted {
-                        self.configureSessionIfNeeded()
-                    }
-                }
+            guard await AVCaptureDevice.requestAccess(for: .video) else {
+                isCameraAuthorized = false
+                return
             }
         default:
             isCameraAuthorized = false
+            return
         }
+        isCameraAuthorized = true
+
+        guard await engine.start() else { return }
+        isLiveSupported = await engine.isLivePhotoAvailable()
+        hasCameraControl = await engine.supportsCameraControl()
+        isUsingFrontCamera = false
+        zoomCapabilities = await engine.resetZoom()
+        zoomFactor = 1
+        scheduleCameraAdjustmentsPrompt()
     }
 
     func stopSession() {
-        guard captureSession.isRunning else { return }
-        let session = captureSession
-        DispatchQueue.global(qos: .userInitiated).async {
-            session.stopRunning()
-        }
+        engine.stop()
     }
 
-    private static func bestDevice(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
-        if position == .front {
-            return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
-        }
-        let deviceTypes: [AVCaptureDevice.DeviceType] = [
-            .builtInTripleCamera,
-            .builtInDualWideCamera,
-            .builtInDualCamera,
-            .builtInWideAngleCamera
-        ]
-        let discovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: deviceTypes,
-            mediaType: .video,
-            position: .back
-        )
-        return discovery.devices.first ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-    }
+    // MARK: - Controls
 
-    private static func computeZoomCapabilities(for device: AVCaptureDevice) -> ZoomCapabilities {
-        guard device.position == .back else { return .none }
-        let switchOvers = device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat($0.doubleValue) }
-        let hasUltraWide = device.deviceType == .builtInTripleCamera || device.deviceType == .builtInDualWideCamera
-        let secondaryNative = device.activeFormat.secondaryNativeResolutionZoomFactors.map { CGFloat($0) }
-        return ZoomCapabilities.make(
-            hasUltraWide: hasUltraWide,
-            switchOverFactors: switchOvers,
-            secondaryNativeFactors: secondaryNative,
-            minDeviceFactor: device.minAvailableVideoZoomFactor,
-            maxDeviceFactor: device.maxAvailableVideoZoomFactor
-        )
-    }
-
-    private func configureSessionIfNeeded() {
-        guard !captureSession.isRunning else { return }
-        captureSession.beginConfiguration()
-        captureSession.sessionPreset = .photo
-
-        // Remove existing inputs
-        for input in captureSession.inputs {
-            captureSession.removeInput(input)
-        }
-
-        let position: AVCaptureDevice.Position = isUsingFrontCamera ? .front : .back
-        if let device = Self.bestDevice(for: position),
-           let input = try? AVCaptureDeviceInput(device: device),
-           captureSession.canAddInput(input) {
-            captureSession.addInput(input)
-            currentDevice = device
-            if position == .back {
-                zoomCapabilities = Self.computeZoomCapabilities(for: device)
-            } else {
-                zoomCapabilities = .none
-            }
-        }
-
-        if captureSession.outputs.isEmpty && captureSession.canAddOutput(photoOutput) {
-            captureSession.addOutput(photoOutput)
-        }
-
-        captureSession.commitConfiguration()
-
-        if #available(iOS 18.0, *) {
-            updateCameraControls()
-        }
-
-        let session = captureSession
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            session.startRunning()
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if #available(iOS 18.0, *) {
-                    self.updateCameraControls()
-                }
-            }
+    func cycleFlash() {
+        let all = CameraFlashChoice.allCases
+        if let index = all.firstIndex(of: flashChoice) {
+            flashChoice = all[(index + 1) % all.count]
         }
     }
 
     func toggleCameraPosition() {
-        isUsingFrontCamera.toggle()
-        zoomFactor = 1.0
-        if captureSession.isRunning {
-            let session = captureSession
-            session.stopRunning()
-        }
-        configureSessionIfNeeded()
-    }
-
-    func setZoomFactor(_ factor: CGFloat, ramp: Bool = true) {
-        guard !isUsingFrontCamera else {
-            zoomFactor = 1.0
-            return
-        }
-        let clamped = zoomCapabilities.isZoomable ? zoomCapabilities.clamped(factor) : factor
-        zoomFactor = clamped
-        #if os(iOS)
-        if let device = currentDevice {
-            let deviceFactor = zoomCapabilities.isZoomable
-                ? zoomCapabilities.deviceFactor(forDisplayZoom: clamped)
-                : clamped
-            let targetFactor = min(max(deviceFactor, device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
-            do {
-                try device.lockForConfiguration()
-                if ramp {
-                    device.ramp(toVideoZoomFactor: targetFactor, withRate: 4)
-                } else {
-                    if device.isRampingVideoZoom {
-                        device.cancelVideoZoomRamp()
-                    }
-                    device.videoZoomFactor = targetFactor
-                }
-                device.unlockForConfiguration()
-            } catch {}
-        }
-        if #available(iOS 18.0, *) {
-            updateCameraControlSelection()
-        }
-        #endif
-    }
-
-    func cycleZoom() {
-        let presets = zoomCapabilities.presets.isEmpty ? [0.5, 1.0, 2.0] : zoomCapabilities.presets
-        let next = presets.first { $0 > zoomFactor + 0.05 } ?? presets.first ?? 1.0
-        setZoomFactor(next, ramp: true)
-    }
-
-    func cycleFlash() {
-        let all = CameraFlashChoice.allCases
-        if let idx = all.firstIndex(of: flashChoice) {
-            flashChoice = all[(idx + 1) % all.count]
+        guard isSessionRunning, !isCapturing else { return }
+        Task {
+            guard let position = await engine.switchCamera() else { return }
+            isUsingFrontCamera = position == .front
+            isLiveSupported = await engine.isLivePhotoAvailable()
+            zoomCapabilities = await engine.resetZoom()
+            zoomFactor = 1
         }
     }
 
-    // MARK: - iOS 18 Camera Control Integration
-
-    @available(iOS 18.0, *)
-    func updateCameraControls() {
-        guard captureSession.supportsControls else { return }
-        captureSession.setControlsDelegate(self, queue: .main)
-        captureSession.beginConfiguration()
-        for control in captureSession.controls {
-            captureSession.removeControl(control)
-        }
-        cameraPicker = nil
-
-        // Dedicated System Zoom Slider for direct hardware Camera Control zoom swiping
-        if let device = currentDevice, !isUsingFrontCamera {
-            let zoomSlider = AVCaptureSystemZoomSlider(device: device) { [weak self] newFactor in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    let displayZoom = self.zoomCapabilities.isZoomable
-                        ? self.zoomCapabilities.displayZoom(forDeviceFactor: newFactor)
-                        : newFactor
-                    self.zoomFactor = displayZoom
-                }
-            }
-            if captureSession.canAddControl(zoomSlider) {
-                captureSession.addControl(zoomSlider)
-            }
-        }
-
-        // Discrete Lens Picker for stepped jumping (Front · 0.5× · 1× · 2×)
-        let options = cameraOptionZooms
-        let titles = ["Front"] + options.map { ZoomCapabilities.label(for: $0) }
-        let picker = AVCaptureIndexPicker("Camera", symbolName: "camera", localizedIndexTitles: titles)
-        picker.setActionQueue(.main) { [weak self] index in
-            guard let self else { return }
-            self.handleCameraControlSelection(index)
-        }
-        if captureSession.canAddControl(picker) {
-            captureSession.addControl(picker)
-            cameraPicker = picker
-            updateCameraControlSelection()
-        }
-        captureSession.commitConfiguration()
+    /// Wheel drag: follows the finger.
+    func setZoomFactor(_ zoom: CGFloat) {
+        guard !isUsingFrontCamera, zoomCapabilities.isZoomable else { return }
+        zoomFactor = zoomCapabilities.quantized(zoom)
+        engine.setZoom(zoomFactor)
     }
 
-    @available(iOS 18.0, *)
-    private func updateCameraControlSelection() {
-        guard let picker = cameraPicker as? AVCaptureIndexPicker else { return }
-        let index: Int
-        if isUsingFrontCamera {
-            index = 0
-        } else {
-            let active = zoomCapabilities.activePreset(for: zoomFactor) ?? 1.0
-            index = (cameraOptionZooms.firstIndex(of: active) ?? 0) + 1
-        }
-        if picker.selectedIndex != index {
-            picker.selectedIndex = index
-        }
+    /// Wheel tap to a lens value: smooth move.
+    func rampZoom(to zoom: CGFloat) {
+        guard !isUsingFrontCamera, zoomCapabilities.isZoomable else { return }
+        zoomFactor = zoomCapabilities.quantized(zoom)
+        engine.rampZoom(to: zoomFactor)
     }
 
-    private func handleCameraControlSelection(_ index: Int) {
-        if index == 0 {
-            if !isUsingFrontCamera {
-                toggleCameraPosition()
-            }
-            return
-        }
-        let options = cameraOptionZooms
-        guard options.indices.contains(index - 1) else { return }
-        let targetZoom = options[index - 1]
-        if isUsingFrontCamera {
+    // MARK: - Physical buttons
+
+    /// Camera Control click / volume down.
+    func handlePrimaryButton(capture: () -> Void) {
+        switch PrimaryButtonAction.resolve(hasCameraControl: hasCameraControl) {
+        case .capture:
+            capture()
+        case .flipCamera:
             toggleCameraPosition()
         }
-        setZoomFactor(targetZoom, ramp: true)
     }
 
-    // MARK: - Photo Capture
+    /// Volume up.
+    func handleSecondaryButton() {
+        cycleFlash()
+    }
 
-    func captureShot(filter: RollFilter, rollName: String) async -> Data {
-        shotSequenceNumber += 1
-        shutterFlashOpacity = 0.85
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(110))
-            shutterFlashOpacity = 0.0
+    // MARK: - Camera Adjustments pop-up
+
+    func confirmCameraAdjustmentsOn() {
+        showsCameraAdjustmentsPrompt = false
+        prompt.confirm()
+    }
+
+    func dismissCameraAdjustmentsPromptForever() {
+        showsCameraAdjustmentsPrompt = false
+        prompt.dismissForever()
+    }
+
+    private func scheduleCameraAdjustmentsPrompt() {
+        guard prompt.shouldShow(hasCameraControl: hasCameraControl) else { return }
+        Task {
+            // Let the camera appear first.
+            try? await Task.sleep(for: .seconds(1))
+            guard isSessionRunning, !prompt.isConfirmed else { return }
+            showsCameraAdjustmentsPrompt = true
         }
+    }
 
-        if captureSession.isRunning && !captureSession.inputs.isEmpty {
-            let rawData = await withCheckedContinuation { (cont: CheckedContinuation<Data, Never>) in
-                self.continuation = cont
-                let settings = AVCapturePhotoSettings()
-                if self.photoOutput.supportedFlashModes.contains(.auto) {
-                    switch self.flashChoice {
-                    case .auto: settings.flashMode = .auto
-                    case .on: settings.flashMode = .on
-                    case .off: settings.flashMode = .off
-                    }
-                }
-                self.photoOutput.capturePhoto(with: settings, delegate: self)
-            }
-            return Self.applyFilmFilter(to: rawData, filter: filter, shotIndex: shotSequenceNumber, rollName: rollName)
-        } else {
-            return Self.generateFilmFrameData(
+    // MARK: - Capture
+
+    func captureShot(filter: RollFilter, rollName: String) async -> CapturedShot {
+        shotSequenceNumber += 1
+        guard isSessionRunning else {
+            // Simulator / no camera: placeholder frame.
+            flashScreen()
+            let data = Self.generateFilmFrameData(
                 filter: filter,
                 shotIndex: shotSequenceNumber,
                 rollName: rollName,
-                isLivePhoto: isLivePhotoEnabled
+                isLivePhoto: false
             )
+            return CapturedShot(imageData: data, livePhotoMovie: nil)
+        }
+
+        isCapturing = true
+        defer { isCapturing = false }
+        let look = filter.look
+        let wantsLive = isLivePhotoEnabled && isLiveSupported
+
+        let captured: CapturedPhoto
+        do {
+            captured = try await engine.capturePhoto(
+                flashMode: flashChoice.captureMode,
+                look: look,
+                livePhoto: wantsLive
+            )
+        } catch {
+            let data = Self.generateFilmFrameData(
+                filter: filter,
+                shotIndex: shotSequenceNumber,
+                rollName: rollName,
+                isLivePhoto: false
+            )
+            return CapturedShot(imageData: data, livePhotoMovie: nil)
+        }
+
+        let contentIdentifier = captured.liveMovie == nil ? nil : UUID().uuidString
+        let image = captured.image
+        let imageData = await Task.detached(priority: .userInitiated) {
+            FilmPhotoEncoder.jpegData(from: image, contentIdentifier: contentIdentifier)
+        }.value ?? Data()
+
+        guard let movie = captured.liveMovie, let contentIdentifier else {
+            return CapturedShot(imageData: imageData, livePhotoMovie: nil)
+        }
+        let movieTask = Task.detached(priority: .utility) { () -> Data? in
+            await Self.filteredMovieData(from: movie, look: look, contentIdentifier: contentIdentifier)
+        }
+        return CapturedShot(imageData: imageData, livePhotoMovie: movieTask)
+    }
+
+    /// Filters the raw Live Photo movie and returns it as data. `nil` if anything fails
+    /// (the still photo is then kept as a normal photo).
+    nonisolated private static func filteredMovieData(
+        from movie: LivePhotoMovie,
+        look: FilmLook,
+        contentIdentifier: String
+    ) async -> Data? {
+        let destination = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).mov")
+        defer {
+            try? FileManager.default.removeItem(at: movie.url)
+            try? FileManager.default.removeItem(at: destination)
+        }
+        do {
+            try await LivePhotoMovieWriter.write(
+                from: movie.url,
+                to: destination,
+                look: look,
+                contentIdentifier: contentIdentifier,
+                photoDisplayTime: movie.photoDisplayTime
+            )
+            return try Data(contentsOf: destination)
+        } catch {
+            return nil
         }
     }
 
-    static func applyFilmFilter(
-        to imageData: Data,
-        filter: RollFilter,
-        shotIndex: Int,
-        rollName: String
-    ) -> Data {
-        #if canImport(UIKit)
-        guard let uiImage = UIImage(data: imageData),
-              let ciInput = CIImage(image: uiImage) else {
-            return generateFilmFrameData(filter: filter, shotIndex: shotIndex, rollName: rollName, isLivePhoto: false)
+    private func flashScreen() {
+        shutterFlashOpacity = 0.85
+        Task {
+            try? await Task.sleep(for: .milliseconds(110))
+            shutterFlashOpacity = 0.0
         }
-        let context = CIContext()
-        let outputCI: CIImage
-        switch filter {
-        case .cinematicBW400:
-            let noir = CIFilter.photoEffectNoir()
-            noir.inputImage = ciInput
-            outputCI = noir.outputImage ?? ciInput
-        case .colorPrint200:
-            let chrome = CIFilter.photoEffectChrome()
-            chrome.inputImage = ciInput
-            outputCI = chrome.outputImage ?? ciInput
-        }
-        if let cgImage = context.createCGImage(outputCI, from: outputCI.extent) {
-            let filtered = UIImage(cgImage: cgImage, scale: uiImage.scale, orientation: uiImage.imageOrientation)
-            return filtered.jpegData(compressionQuality: 0.85) ?? imageData
-        }
-        #endif
-        return imageData
     }
 
     static func generateFilmFrameData(
@@ -408,25 +311,4 @@ final class CameraController: NSObject {
         return Data()
         #endif
     }
-}
-
-extension CameraController: AVCapturePhotoCaptureDelegate {
-    nonisolated func photoOutput(
-        _ output: AVCapturePhotoOutput,
-        didFinishProcessingPhoto photo: AVCapturePhoto,
-        error: (any Error)?
-    ) {
-        let data = photo.fileDataRepresentation() ?? Data()
-        Task { @MainActor in
-            self.continuation?.resume(returning: data)
-            self.continuation = nil
-        }
-    }
-}
-
-extension CameraController: AVCaptureSessionControlsDelegate {
-    func sessionControlsDidBecomeActive(_ session: AVCaptureSession) {}
-    func sessionControlsWillEnterFullscreenAppearance(_ session: AVCaptureSession) {}
-    func sessionControlsWillExitFullscreenAppearance(_ session: AVCaptureSession) {}
-    func sessionControlsDidBecomeInactive(_ session: AVCaptureSession) {}
 }

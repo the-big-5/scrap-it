@@ -1,21 +1,31 @@
 import SwiftUI
 
+/// Knurled zoom wheel (look from change 007). Behavior from change 008, modeled on sliding Camera Control:
+/// drag **left** to zoom in, 0.1 steps over the phone's full zoom range, log scale, faster drags cover
+/// more steps, light detents at lens values, hard endstops. Tap left / right jumps to the next lens value.
 struct KnurledZoomWheelView: View {
+    var capabilities: ZoomCapabilities
     var zoomFactor: CGFloat
+    var isEnabled: Bool = true
+    /// Drag: follows the finger.
     var onZoomChanged: (CGFloat) -> Void
+    /// Tap: smooth jump to a lens value.
+    var onLensSelected: (CGFloat) -> Void
 
-    @State private var currentStop: ZoomStop = .standard
-    @State private var continuousIndex: Double = 1.0
-    @State private var isDragging: Bool = false
-    @State private var dragStartIndex: Double = 0.0
-    @State private var lastTickIndex: Double = 1.0
-    @State private var hasFiredEndstop: Bool = false
+    @State private var model = ZoomWheelModel(capabilities: .none)
+    @State private var isDragging = false
+    /// Resets by itself when the system cancels the drag, so the wheel never stays "held".
+    @GestureState private var isFingerOnWheel = false
+    @State private var lastTranslation: CGFloat = 0
+    @State private var lastTickTime: Date = .distantPast
 
     private let wheelWidth: CGFloat = 172
     private let wheelHeight: CGFloat = 44
     private let cornerRadius: CGFloat = 10
     private let ribCount = 14
     private let ribSpacing: CGFloat = 16
+    /// At most one tick per this interval, so fast drags do not buzz.
+    private let minTickInterval: TimeInterval = 0.025
 
     var body: some View {
         ZStack {
@@ -36,33 +46,14 @@ struct KnurledZoomWheelView: View {
                 )
                 .frame(width: wheelWidth, height: wheelHeight)
 
-            // Horizontally Rolling Knurled Ribs
-            ZStack {
-                ForEach(-ribCount...ribCount, id: \.self) { index in
-                    let baseX = CGFloat(index) * ribSpacing
-                    let shiftedX = baseX + dynamicRibOffset
-                    let normalizedDistance = abs(shiftedX) / (wheelWidth / 2)
-
-                    if abs(shiftedX) < (wheelWidth / 2 + 10) {
-                        Rectangle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.black.opacity(0.85),
-                                        Color(white: 0.08),
-                                        Color.black.opacity(0.85)
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: 2.4, height: 34)
-                            .opacity(max(0.18, 1.0 - pow(normalizedDistance, 2)))
-                            .scaleEffect(x: max(0.65, 1.0 - (normalizedDistance * 0.25)), y: 1.0)
-                            .offset(x: shiftedX)
-                    }
-                }
-            }
+            // Horizontally rolling knurled ribs. Drawn from the continuous wheel travel so jumps
+            // (Camera Control 0.1 steps, lens taps) animate as a real roll instead of aliasing.
+            KnurledRibs(
+                travel: model.travel,
+                ribCount: ribCount,
+                ribSpacing: ribSpacing,
+                wheelWidth: wheelWidth
+            )
             .frame(width: wheelWidth, height: wheelHeight)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 
@@ -100,128 +91,128 @@ struct KnurledZoomWheelView: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
         .shadow(color: Color.black.opacity(0.4), radius: 6, x: 0, y: 4)
+        .opacity(isEnabled && model.isZoomable ? 1 : 0.45)
+        .allowsHitTesting(isEnabled && model.isZoomable)
         .gesture(
             DragGesture(minimumDistance: 1)
+                .updating($isFingerOnWheel) { _, state, _ in state = true }
                 .onChanged { value in
                     if !isDragging {
                         isDragging = true
-                        dragStartIndex = continuousIndex
-                        lastTickIndex = continuousIndex
-                        hasFiredEndstop = false
+                        lastTranslation = 0
                     }
-                    let deltaIndex = Double(value.translation.width / 70.0)
-                    let unclamped = dragStartIndex + deltaIndex
-                    let clamped = max(0.0, min(2.0, unclamped))
-
-                    // Micro-tick for knurled rib translation
-                    if abs(clamped - lastTickIndex) >= 0.08 {
-                        HapticService.shared.playRatchetTick()
-                        lastTickIndex = clamped
-                    }
-
-                    // Firm mechanical endstop thud on boundary collision (no rubber-banding)
-                    if unclamped < 0.0 || unclamped > 2.0 {
-                        if !hasFiredEndstop {
-                            HapticService.shared.playHardStopThud()
-                            hasFiredEndstop = true
-                        }
-                    } else {
-                        hasFiredEndstop = false
-                    }
-
-                    continuousIndex = clamped
-                    let newStop = ZoomStop.closestFromSliderIndex(clamped)
-                    if newStop != currentStop {
-                        currentStop = newStop
-                        HapticService.shared.playSnapFeedback()
+                    let dx = value.translation.width - lastTranslation
+                    lastTranslation = value.translation.width
+                    let previousZoom = model.zoom
+                    let update = model.drag(by: Double(dx), velocity: Double(value.velocity.width))
+                    playHaptics(for: update)
+                    if model.zoom != previousZoom {
+                        onZoomChanged(model.zoom)
                     }
                 }
                 .onEnded { _ in
                     isDragging = false
-                    hasFiredEndstop = false
-                    withAnimation(.spring(response: 0.28, dampingFraction: 1.0)) {
-                        continuousIndex = currentStop.sliderIndex
-                    }
-                    onZoomChanged(CGFloat(currentStop.rawValue))
                 }
         )
         .onTapGesture { location in
-            handleTap(at: location)
+            // Left side zooms in, like dragging left.
+            jumpToLens(zoomingIn: location.x < wheelWidth / 2)
         }
         .onAppear {
-            syncFromZoomFactor(zoomFactor, animated: false)
+            model = ZoomWheelModel(capabilities: capabilities, zoom: zoomFactor)
+        }
+        .onChange(of: capabilities) { _, newCapabilities in
+            model.update(capabilities: newCapabilities, zoom: zoomFactor)
+        }
+        .onChange(of: isFingerOnWheel) { _, onWheel in
+            if !onWheel { isDragging = false }
         }
         .onChange(of: zoomFactor) { _, newZoom in
-            if !isDragging {
-                syncFromZoomFactor(newZoom, animated: true)
+            // Follows zoom from elsewhere (Camera Control, flip) unless the finger is on the wheel.
+            if !isFingerOnWheel, abs(newZoom - model.zoom) > 0.001 {
+                withAnimation(.spring(response: 0.28, dampingFraction: 1.0)) {
+                    model.sync(to: newZoom)
+                }
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Camera Zoom Wheel")
-        .accessibilityValue(currentStop.displayValue)
+        .accessibilityValue(ZoomCapabilities.label(for: model.zoom))
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment:
-                stepUp()
+                jumpToLens(zoomingIn: true)
             case .decrement:
-                stepDown()
+                jumpToLens(zoomingIn: false)
             @unknown default:
                 break
             }
         }
     }
 
-    private var dynamicRibOffset: CGFloat {
-        let rotationAngle = ZoomStop.interpolatedAngle(forSliderIndex: continuousIndex)
-        let translationPerDegree: CGFloat = ribSpacing / 18.0
-        return CGFloat(rotationAngle) * translationPerDegree
-    }
-
-    private func handleTap(at location: CGPoint) {
-        if location.x > (wheelWidth / 2) {
-            stepUp()
-        } else {
-            stepDown()
+    private func playHaptics(for update: ZoomWheelModel.Update) {
+        if update.hitEndstop {
+            HapticService.shared.playHardStopThud()
+        } else if update.hitLens {
+            HapticService.shared.playSnapFeedback()
+        } else if update.steps > 0, Date.now.timeIntervalSince(lastTickTime) >= minTickInterval {
+            HapticService.shared.playRatchetTick()
+            lastTickTime = .now
         }
     }
 
-    private func stepUp() {
-        let next = currentStop.nextClamped()
-        guard next != currentStop else {
+    private func jumpToLens(zoomingIn: Bool) {
+        guard let lens = model.nextLens(zoomingIn: zoomingIn) else {
             HapticService.shared.playHardStopThud()
             return
         }
-        currentStop = next
         withAnimation(.spring(response: 0.28, dampingFraction: 1.0)) {
-            continuousIndex = next.sliderIndex
+            model.sync(to: lens)
         }
         HapticService.shared.playSnapFeedback()
-        onZoomChanged(CGFloat(next.rawValue))
+        onLensSelected(lens)
+    }
+}
+
+/// The ribs of the wheel. `travel` is animatable, so SwiftUI interpolates the wheel position itself
+/// (not the wrapped rib offset): a 0.1 zoom step rolls the ribs smoothly in the right direction.
+private struct KnurledRibs: View, Animatable {
+    var travel: Double
+    let ribCount: Int
+    let ribSpacing: CGFloat
+    let wheelWidth: CGFloat
+
+    var animatableData: Double {
+        get { travel }
+        set { travel = newValue }
     }
 
-    private func stepDown() {
-        let prev = currentStop.previousClamped()
-        guard prev != currentStop else {
-            HapticService.shared.playHardStopThud()
-            return
-        }
-        currentStop = prev
-        withAnimation(.spring(response: 0.28, dampingFraction: 1.0)) {
-            continuousIndex = prev.sliderIndex
-        }
-        HapticService.shared.playSnapFeedback()
-        onZoomChanged(CGFloat(prev.rawValue))
-    }
+    var body: some View {
+        let ribOffset = CGFloat(ZoomWheelModel.ribOffset(travel: travel, spacing: Double(ribSpacing)))
+        ZStack {
+            ForEach(-ribCount...ribCount, id: \.self) { index in
+                let shiftedX = CGFloat(index) * ribSpacing + ribOffset
+                let normalizedDistance = abs(shiftedX) / (wheelWidth / 2)
 
-    private func syncFromZoomFactor(_ factor: CGFloat, animated: Bool) {
-        let matchingStop = ZoomStop.closest(to: Double(factor))
-        currentStop = matchingStop
-        if animated {
-            withAnimation(.spring(response: 0.28, dampingFraction: 1.0)) {
-                continuousIndex = matchingStop.sliderIndex
+                if abs(shiftedX) < (wheelWidth / 2 + 10) {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.black.opacity(0.85),
+                                    Color(white: 0.08),
+                                    Color.black.opacity(0.85)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: 2.4, height: 34)
+                        .opacity(max(0.18, 1.0 - pow(normalizedDistance, 2)))
+                        .scaleEffect(x: max(0.65, 1.0 - (normalizedDistance * 0.25)), y: 1.0)
+                        .offset(x: shiftedX)
+                }
             }
-        } else {
-            continuousIndex = matchingStop.sliderIndex
         }
     }
 }

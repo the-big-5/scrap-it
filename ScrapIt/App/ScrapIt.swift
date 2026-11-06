@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct ScrapIt: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     private let modelContainer = ScrapIt.makeModelContainer()
 
     var body: some Scene {

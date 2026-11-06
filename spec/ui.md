@@ -54,13 +54,23 @@ Figma node 725:6659 (placeholder, design still in progress)
 - "or Enter code": 6 single-character boxes
 - Button "Join Roll"
 
-## Screen: Capture session [Draft]
-Figma node 708:4941 (design frame is landscape; the app itself supports all orientations)
-- Camera-body UI: flash toggle (AUTO), LIVE (Live Photo) toggle, shots counter "09/36", animated knurled zoom wheel (0.5× / 1.0× / 2.0×), shutter button, viewfinder with "LIVE" badge and zoom label, red recording indicator, FLIP and GRID buttons
-- Knurled Zoom Wheel: 172×44 fixed capsule with horizontal cylindrical knurled ribs rolling animation, drag and tap interactions, inelastic mechanical hard endstops at 0.5× and 2.0× with zero bounce, and CoreHaptics tactile feedback (ratchet ticks, snap impacts, hard endstop thuds)
-- Camera Control button integration (iOS 18+): hardware zoom slider (`AVCaptureSystemZoomSlider`) and discrete lens picker (`AVCaptureIndexPicker`), bidirectionally synchronized with screen controls
-- Physical button events (`CaptureEventView` / `AVCaptureEventInteraction` on iOS 17.2+): Camera Control click or volume down triggers shutter photo capture; volume up cycles flash mode
-- No other users' photos shown; shows only own viewfinder and shots remaining
+## Screen: Capture session [Locked]
+Figma node 708:4941 (landscape design). Camera behavior from the camera POC (FilterCam), change 008.
+- Orientation: landscape only (left and right, following how the phone is held); the other screens are portrait for now (see tech.md). Photos are landscape 4:3; preview = photo (same rotation and filter)
+- Camera-body UI: flash toggle (Off / On / Auto, default Auto), LIVE (Live Photo) toggle, shots counter taken / total ("00/36" counting up to "36/36"), knurled zoom wheel, shutter button, viewfinder with "LIVE" badge (gold while recording) and zoom label, red recording indicator, FLIP and GRID buttons
+- Live preview shows the roll's filter in real time (Cinematic 400 B&W = Noir, 200 Color Print = Chrome); no filter switching on this screen
+- Knurled zoom wheel (172×44, look from 007):
+  - Back camera range: 0.5× (phones with ultra wide) or 1× up to 4× (or the device maximum if lower), in 0.1 steps
+  - Drag **left** to zoom in; ribs roll with the finger; logarithmic scale; faster drags cover more steps
+  - Light detent and snap haptic at lens values; hard endstop thud at min and max (no bounce); ratchet tick per 0.1 step
+  - Tap left / right half: jump to the next lens value in / out
+  - Follows zoom from Camera Control; front camera: fixed 1×, wheel disabled
+- Camera Control (iOS 18+): click = take a photo; light press + slide = one "Zoom" slider (same range and 0.1 steps as the wheel, lens values marked), synced both ways with the wheel; no front camera option; disabled on the front camera
+- Volume buttons (`AVCaptureEventInteraction`, only on this screen): volume up = cycle flash; volume down = take a photo on phones with Camera Control, flip camera on phones without it
+- "Turn On Camera Adjustments" pop-up on phones with Camera Control: ~1 s after the camera opens, at most once per app launch, until the control has been seen opening or the user picks "Already On" / "Don't Remind Me" ("Later" asks again next launch). Text [Draft]: "To zoom and switch cameras with a light press on Camera Control, turn on Camera Adjustments in Settings › Camera › Camera Control."
+- Live Photo (still + ~3 s movie, no audio), filtered like the photo; still photo kept if the movie fails
+- DEBUG builds only: "DEBUG: LAST SHOT" button shows the last shot taken on this device, long press plays the Live Photo (exception to "no photos during the roll", debug only)
+- No other users' photos shown; shows only own viewfinder and the shots counter
 - Presence list during session is not in the design: [Open]
 - States (waiting for others, roll finished, offline queued, end session by host): [Open]
 

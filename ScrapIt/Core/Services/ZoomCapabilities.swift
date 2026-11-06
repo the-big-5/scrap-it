@@ -1,9 +1,12 @@
 import CoreGraphics
 import Foundation
 
-struct ZoomCapabilities: Equatable {
-    static let digitalZoomMultiplier: CGFloat = 5
-    static let maxDisplayZoom: CGFloat = 10
+/// Zoom range and lens values of the active back camera, in display zoom (0.5×, 1×, 2×, …).
+/// From the widest lens (0.5× with ultra wide) up to 4× (or the device maximum if lower).
+nonisolated struct ZoomCapabilities: Equatable, Sendable {
+    static let maxDisplayZoom: CGFloat = 4
+    /// Zoom values move in steps of 0.1 (1.0, 1.1, 1.2, …).
+    static let step: CGFloat = 0.1
     private static let mergeTolerance: CGFloat = 0.1
 
     static let none = ZoomCapabilities(base: 1, minZoom: 1, maxZoom: 1, presets: [1])
@@ -19,6 +22,12 @@ struct ZoomCapabilities: Equatable {
 
     func clamped(_ zoom: CGFloat) -> CGFloat {
         min(max(zoom, minZoom), maxZoom)
+    }
+
+    /// Rounds to the nearest 0.1 inside the range (the ends stay reachable even if they are not on 0.1).
+    func quantized(_ zoom: CGFloat) -> CGFloat {
+        let rounded = ((zoom / Self.step).rounded() * Self.step * 10).rounded() / 10
+        return clamped(rounded)
     }
 
     func deviceFactor(forDisplayZoom zoom: CGFloat) -> CGFloat {
@@ -54,8 +63,7 @@ struct ZoomCapabilities: Equatable {
         }
 
         let minZoom = minDeviceFactor / base
-        let longestLens = lenses.max() ?? 1
-        let maxZoom = max(minZoom, min(longestLens * digitalZoomMultiplier, maxDisplayZoom, maxDeviceFactor / base))
+        let maxZoom = max(minZoom, min(maxDisplayZoom, maxDeviceFactor / base))
 
         var presets: [CGFloat] = []
         for lens in lenses.sorted() where lens >= minZoom - 0.01 && lens <= maxZoom + 0.01 {

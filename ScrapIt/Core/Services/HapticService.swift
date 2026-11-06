@@ -65,7 +65,7 @@ final class HapticService {
         playPattern(events: [event])
     }
 
-    /// Snap impact upon settling into a zoom stop (0.5×, 1.0×, 2.0×)
+    /// Snap impact upon reaching a lens value on the zoom wheel
     func playSnapFeedback() {
         let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70)
         let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.65)
@@ -73,7 +73,7 @@ final class HapticService {
         playPattern(events: [event])
     }
 
-    /// Heavy, firm mechanical thud on colliding with 0.5× or 2.0× hard endstops
+    /// Heavy, firm mechanical thud on hitting the min or max zoom
     func playHardStopThud() {
         let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0)
         let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.95)

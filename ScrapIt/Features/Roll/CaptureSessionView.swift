@@ -7,6 +7,10 @@ struct CaptureSessionView: View {
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
 
+    #if DEBUG
+    @State private var showsDebugLastShot = false
+    #endif
+
     private var camera: CameraController {
         flowViewModel.camera
     }
@@ -15,8 +19,8 @@ struct CaptureSessionView: View {
         flowViewModel.isHost(currentUser)
     }
 
-    private var remainingShotsText: String {
-        flowViewModel.remainingShotsText
+    private var takenShotsText: String {
+        flowViewModel.takenShotsText
     }
 
     private var totalShotsText: String {
@@ -43,28 +47,39 @@ struct CaptureSessionView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .statusBarHidden()
         .background(
+            // Only on while the session runs: enabled earlier, iOS routes Camera Control to the system Camera app.
             CaptureEventView(
-                isEnabled: camera.isPreviewReady,
+                isEnabled: camera.isSessionRunning,
                 onPrimary: {
-                    Task {
-                        await flowViewModel.shutterTapped(
-                            currentUser: currentUser,
-                            modelContext: modelContext
-                        )
-                    }
+                    flowViewModel.primaryButtonPressed(currentUser: currentUser, modelContext: modelContext)
                 },
                 onSecondary: {
-                    camera.cycleFlash()
+                    camera.handleSecondaryButton()
                 }
             )
         )
         .onAppear {
+            OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: true))
             flowViewModel.cameraDidAppear(modelContext: modelContext)
         }
         .onDisappear {
+            OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: false))
             flowViewModel.cameraDidDisappear()
         }
+        .alert("Turn On Camera Adjustments", isPresented: Bindable(camera).showsCameraAdjustmentsPrompt) {
+            Button("Already On") { camera.confirmCameraAdjustmentsOn() }
+            Button("Don't Remind Me") { camera.dismissCameraAdjustmentsPromptForever() }
+            Button("Later", role: .cancel) {}
+        } message: {
+            Text("To zoom and switch cameras with a light press on Camera Control, turn on Camera Adjustments in Settings › Camera › Camera Control.")
+        }
+        #if DEBUG
+        .sheet(isPresented: $showsDebugLastShot) {
+            DebugLastShotView(photo: flowViewModel.debugLastShot)
+        }
+        #endif
         .alert("Roll Finished", isPresented: $flowViewModel.showLastSlotRaceAlert) {
             Button("Open Scrapbook") {
                 flowViewModel.finalizeSessionAndOpenScrapbook(modelContext: modelContext)
@@ -198,10 +213,10 @@ struct CaptureSessionView: View {
                     )
                 }
 
-                // Shots Counter (09 /36 SHOTS)
+                // Shots Counter: taken / total (00 /36 → 36 /36)
                 VStack(spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(remainingShotsText)
+                        Text(takenShotsText)
                             .font(.system(size: 24, weight: .bold, design: .monospaced))
                             .foregroundStyle(ScrapTheme.cameraGold)
                         Text(totalShotsText)
@@ -226,9 +241,13 @@ struct CaptureSessionView: View {
 
                 // Knurled Zoom Wheel (ZOOM 1.0x)
                 VStack(spacing: 4) {
-                    KnurledZoomWheelView(zoomFactor: camera.zoomFactor) { newZoom in
-                        camera.setZoomFactor(newZoom, ramp: true)
-                    }
+                    KnurledZoomWheelView(
+                        capabilities: camera.zoomCapabilities,
+                        zoomFactor: camera.zoomFactor,
+                        isEnabled: !camera.isUsingFrontCamera,
+                        onZoomChanged: { camera.setZoomFactor($0) },
+                        onLensSelected: { camera.rampZoom(to: $0) }
+                    )
 
                     Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
                         .font(.system(size: 10, weight: .semibold))
@@ -331,13 +350,13 @@ struct CaptureSessionView: View {
                                 .stroke(Color(white: 0.12), lineWidth: 8)
                         )
 
-                    #if canImport(UIKit)
-                    if camera.isPreviewReady {
-                        CameraPreviewLayerView(session: camera.captureSession)
+                    // Live preview with the roll's filter (photo = preview). Kept in the view tree from the start:
+                    // RotationCoordinator reads the screen orientation from this layer.
+                    if let renderer = camera.previewRenderer {
+                        FilteredCameraPreviewView(renderer: renderer)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                             .padding(6)
                     }
-                    #endif
 
                     // Rule-of-thirds Grid Overlay when GRID button is active
                     if camera.isGridVisible {
@@ -356,11 +375,12 @@ struct CaptureSessionView: View {
                     // Viewfinder HUD overlays (LIVE badge, presence & offline indicator, zoom badge)
                     VStack {
                         HStack {
-                            if camera.isLivePhotoEnabled {
+                            if camera.isLivePhotoEnabled && camera.isLiveSupported {
                                 Text("LIVE")
                                     .font(.system(size: 11, weight: .semibold))
                                     .tracking(0.8)
-                                    .foregroundStyle(.white)
+                                    // Gold while the Live Photo movie records
+                                    .foregroundStyle(camera.isRecordingLive ? ScrapTheme.cameraGold : .white)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
                                     .background(
@@ -425,6 +445,24 @@ struct CaptureSessionView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+
+                            #if DEBUG
+                            Button {
+                                showsDebugLastShot = true
+                            } label: {
+                                Text("DEBUG: LAST SHOT")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .tracking(0.6)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(Color.purple.opacity(0.85))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            #endif
 
                             Spacer()
 
