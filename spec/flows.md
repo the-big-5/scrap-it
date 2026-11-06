@@ -27,7 +27,7 @@ Edge cases: app not installed [Open]
 3. Filter step: chooses film filter ("Cinematic 400 Pro 35 Black & White" or "200 Color Print")
 4. Lobby: host enters Share Room Lobby displaying roll title, stats (joined friends, shots), and participant avatar grid. Sharing tools (QR code, 6-character roll code, share link) are presented in a medium-detent "Invite Friend" bottom sheet via top-right button.
 5. Host taps "Start Roll" (guests see "Waiting for host..." until started)
-6. Everyone takes photos (still and Live Photo) at the same time in-app. Nobody, including the host, sees others' photos during the roll; everyone sees only the remaining shots and who is currently in the roll
+6. Everyone takes photos (still and Live Photo) at the same time in-app. Nobody, including the host, sees others' photos during the roll; everyone sees only the number of shots taken out of the roll size (e.g. 09/36, counting up from 00) and who is currently in the roll
 7. One shared pool of shots; any person's photo uses one shot
 8. Roll ends when the shots run out OR the host ends it manually
 9. Photos are saved into a new shared scrapbook (others' photos become visible here)

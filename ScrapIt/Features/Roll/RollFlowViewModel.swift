@@ -24,6 +24,11 @@ final class RollFlowViewModel {
     var lastSlotRaceMessage: String = "The roll just finished! Another friend took the final shot first, so your last photo was dropped."
     var hostHandoverBanner: String?
 
+    #if DEBUG
+    /// Last shot taken on this device, for the debug Live Photo viewer (DEBUG builds only).
+    private(set) var debugLastShot: ScrapPhoto?
+    #endif
+
     let cloudService: CloudKitSessionService
     @ObservationIgnored let sessionStore: SessionStore
     @ObservationIgnored private weak var navigator: (any Navigator)?
@@ -67,8 +72,9 @@ final class RollFlowViewModel {
         activeSession?.participantIDs.count ?? 1
     }
 
-    var remainingShotsText: String {
-        String(format: "%02d", activeSession?.remainingSlots ?? 36)
+    /// Shots taken so far, counting up from 00 to the roll size.
+    var takenShotsText: String {
+        String(format: "%02d", activeSession?.slotsUsed ?? 0)
     }
 
     var totalShotsText: String {
@@ -256,7 +262,8 @@ final class RollFlowViewModel {
     // MARK: - Camera screen
 
     func cameraDidAppear(modelContext: ModelContext) {
-        camera.startSession()
+        camera.setFilter(activeSession?.filter ?? .colorPrint200)
+        Task { await camera.startSession() }
         cloudService.updateQueuedCount(modelContext: modelContext)
     }
 
@@ -265,26 +272,40 @@ final class RollFlowViewModel {
     }
 
     func shutterTapped(currentUser: UserProfile, modelContext: ModelContext) async {
-        let imageData = await camera.captureShot(
+        guard camera.canCapture else { return }
+        let shot = await camera.captureShot(
             filter: activeSession?.filter ?? .colorPrint200,
             rollName: activeSession?.name ?? "Roll"
         )
-        await recordCapturedShot(
-            imageData: imageData,
-            livePhotoMovieData: camera.isLivePhotoEnabled ? Data("live".utf8) : nil,
+        let photo = await recordCapturedShot(
+            imageData: shot.imageData,
             currentUser: currentUser,
             modelContext: modelContext
         )
+        guard let photo, let movieTask = shot.livePhotoMovie else { return }
+        // The still is saved first; the filtered Live Photo movie follows when ready.
+        if let movieData = await movieTask.value {
+            photo.livePhotoMovieData = movieData
+            try? modelContext.save()
+        }
     }
 
+    /// Camera Control click / volume down: photo on phones with Camera Control, flip otherwise.
+    func primaryButtonPressed(currentUser: UserProfile, modelContext: ModelContext) {
+        camera.handlePrimaryButton {
+            Task { await shutterTapped(currentUser: currentUser, modelContext: modelContext) }
+        }
+    }
+
+    @discardableResult
     func recordCapturedShot(
         imageData: Data,
         livePhotoMovieData: Data? = nil,
         currentUser: UserProfile,
         modelContext: ModelContext,
         simulateLastSlotConflict: Bool = false
-    ) async {
-        guard let session = activeSession else { return }
+    ) async -> ScrapPhoto? {
+        guard let session = activeSession else { return nil }
 
         let result = await cloudService.claimSlotAtomically(
             session: session,
@@ -312,14 +333,20 @@ final class RollFlowViewModel {
                 modelContext: modelContext
             )
 
+            #if DEBUG
+            debugLastShot = photo
+            #endif
+
             if rollFinished {
                 finalizeSessionAndOpenScrapbook(modelContext: modelContext)
             }
+            return photo
 
         case .rollAlreadyFinished:
             // First write wins; this user's shot is dropped and the user is notified
             showLastSlotRaceAlert = true
             finalizeSessionAndOpenScrapbook(modelContext: modelContext)
+            return nil
         }
     }
 
