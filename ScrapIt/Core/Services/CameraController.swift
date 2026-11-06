@@ -24,6 +24,8 @@ final class CameraController: NSObject {
     var isCapturing: Bool = false
     var shutterFlashOpacity: Double = 0.0
 
+    private(set) var zoomCapabilities: ZoomCapabilities = .none
+
     let captureSession = AVCaptureSession()
 
     var isPreviewReady: Bool {
@@ -34,6 +36,41 @@ final class CameraController: NSObject {
     private var currentDevice: AVCaptureDevice?
     private var continuation: CheckedContinuation<Data, Never>?
     private var shotSequenceNumber: Int = 0
+
+    private var cameraPicker: AnyObject?
+
+    var cameraOptionZooms: [CGFloat] {
+        zoomCapabilities.presets.isEmpty ? [0.5, 1.0, 2.0] : zoomCapabilities.presets
+    }
+
+    override init() {
+        super.init()
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(sessionDidStartRunning),
+            name: AVCaptureSession.didStartRunningNotification,
+            object: captureSession
+        )
+        center.addObserver(
+            self,
+            selector: #selector(sessionDidStopRunning),
+            name: AVCaptureSession.didStopRunningNotification,
+            object: captureSession
+        )
+    }
+
+    @objc private func sessionDidStartRunning(_ notification: Notification) {
+        Task { @MainActor in
+            if #available(iOS 18.0, *) {
+                self.updateCameraControls()
+            }
+        }
+    }
+
+    @objc private func sessionDidStopRunning(_ notification: Notification) {
+        // Handle session stop if needed
+    }
 
     func startSession() {
         let status = AVCaptureDevice.authorizationStatus(for: .video)
@@ -64,6 +101,38 @@ final class CameraController: NSObject {
         }
     }
 
+    private static func bestDevice(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        if position == .front {
+            return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+        }
+        let deviceTypes: [AVCaptureDevice.DeviceType] = [
+            .builtInTripleCamera,
+            .builtInDualWideCamera,
+            .builtInDualCamera,
+            .builtInWideAngleCamera
+        ]
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: deviceTypes,
+            mediaType: .video,
+            position: .back
+        )
+        return discovery.devices.first ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+    }
+
+    private static func computeZoomCapabilities(for device: AVCaptureDevice) -> ZoomCapabilities {
+        guard device.position == .back else { return .none }
+        let switchOvers = device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat($0.doubleValue) }
+        let hasUltraWide = device.deviceType == .builtInTripleCamera || device.deviceType == .builtInDualWideCamera
+        let secondaryNative = device.activeFormat.secondaryNativeResolutionZoomFactors.map { CGFloat($0) }
+        return ZoomCapabilities.make(
+            hasUltraWide: hasUltraWide,
+            switchOverFactors: switchOvers,
+            secondaryNativeFactors: secondaryNative,
+            minDeviceFactor: device.minAvailableVideoZoomFactor,
+            maxDeviceFactor: device.maxAvailableVideoZoomFactor
+        )
+    }
+
     private func configureSessionIfNeeded() {
         guard !captureSession.isRunning else { return }
         captureSession.beginConfiguration()
@@ -75,11 +144,16 @@ final class CameraController: NSObject {
         }
 
         let position: AVCaptureDevice.Position = isUsingFrontCamera ? .front : .back
-        if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position),
+        if let device = Self.bestDevice(for: position),
            let input = try? AVCaptureDeviceInput(device: device),
            captureSession.canAddInput(input) {
             captureSession.addInput(input)
             currentDevice = device
+            if position == .back {
+                zoomCapabilities = Self.computeZoomCapabilities(for: device)
+            } else {
+                zoomCapabilities = .none
+            }
         }
 
         if captureSession.outputs.isEmpty && captureSession.canAddOutput(photoOutput) {
@@ -88,9 +162,19 @@ final class CameraController: NSObject {
 
         captureSession.commitConfiguration()
 
+        if #available(iOS 18.0, *) {
+            updateCameraControls()
+        }
+
         let session = captureSession
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             session.startRunning()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if #available(iOS 18.0, *) {
+                    self.updateCameraControls()
+                }
+            }
         }
     }
 
@@ -104,23 +188,42 @@ final class CameraController: NSObject {
         configureSessionIfNeeded()
     }
 
-    func cycleZoom() {
-        let steps: [CGFloat] = [1.0, 1.5, 2.0, 3.0]
-        if let idx = steps.firstIndex(of: zoomFactor) {
-            zoomFactor = steps[(idx + 1) % steps.count]
-        } else {
+    func setZoomFactor(_ factor: CGFloat, ramp: Bool = true) {
+        guard !isUsingFrontCamera else {
             zoomFactor = 1.0
+            return
         }
+        let clamped = zoomCapabilities.isZoomable ? zoomCapabilities.clamped(factor) : factor
+        zoomFactor = clamped
         #if os(iOS)
         if let device = currentDevice {
+            let deviceFactor = zoomCapabilities.isZoomable
+                ? zoomCapabilities.deviceFactor(forDisplayZoom: clamped)
+                : clamped
+            let targetFactor = min(max(deviceFactor, device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
             do {
                 try device.lockForConfiguration()
-                let clamped = min( max(1.0, zoomFactor), device.activeFormat.videoMaxZoomFactor )
-                device.videoZoomFactor = clamped
+                if ramp {
+                    device.ramp(toVideoZoomFactor: targetFactor, withRate: 4)
+                } else {
+                    if device.isRampingVideoZoom {
+                        device.cancelVideoZoomRamp()
+                    }
+                    device.videoZoomFactor = targetFactor
+                }
                 device.unlockForConfiguration()
             } catch {}
         }
+        if #available(iOS 18.0, *) {
+            updateCameraControlSelection()
+        }
         #endif
+    }
+
+    func cycleZoom() {
+        let presets = zoomCapabilities.presets.isEmpty ? [0.5, 1.0, 2.0] : zoomCapabilities.presets
+        let next = presets.first { $0 > zoomFactor + 0.05 } ?? presets.first ?? 1.0
+        setZoomFactor(next, ramp: true)
     }
 
     func cycleFlash() {
@@ -129,6 +232,83 @@ final class CameraController: NSObject {
             flashChoice = all[(idx + 1) % all.count]
         }
     }
+
+    // MARK: - iOS 18 Camera Control Integration
+
+    @available(iOS 18.0, *)
+    func updateCameraControls() {
+        guard captureSession.supportsControls else { return }
+        captureSession.setControlsDelegate(self, queue: .main)
+        captureSession.beginConfiguration()
+        for control in captureSession.controls {
+            captureSession.removeControl(control)
+        }
+        cameraPicker = nil
+
+        // Dedicated System Zoom Slider for direct hardware Camera Control zoom swiping
+        if let device = currentDevice, !isUsingFrontCamera {
+            let zoomSlider = AVCaptureSystemZoomSlider(device: device) { [weak self] newFactor in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let displayZoom = self.zoomCapabilities.isZoomable
+                        ? self.zoomCapabilities.displayZoom(forDeviceFactor: newFactor)
+                        : newFactor
+                    self.zoomFactor = displayZoom
+                }
+            }
+            if captureSession.canAddControl(zoomSlider) {
+                captureSession.addControl(zoomSlider)
+            }
+        }
+
+        // Discrete Lens Picker for stepped jumping (Front · 0.5× · 1× · 2×)
+        let options = cameraOptionZooms
+        let titles = ["Front"] + options.map { ZoomCapabilities.label(for: $0) }
+        let picker = AVCaptureIndexPicker("Camera", symbolName: "camera", localizedIndexTitles: titles)
+        picker.setActionQueue(.main) { [weak self] index in
+            guard let self else { return }
+            self.handleCameraControlSelection(index)
+        }
+        if captureSession.canAddControl(picker) {
+            captureSession.addControl(picker)
+            cameraPicker = picker
+            updateCameraControlSelection()
+        }
+        captureSession.commitConfiguration()
+    }
+
+    @available(iOS 18.0, *)
+    private func updateCameraControlSelection() {
+        guard let picker = cameraPicker as? AVCaptureIndexPicker else { return }
+        let index: Int
+        if isUsingFrontCamera {
+            index = 0
+        } else {
+            let active = zoomCapabilities.activePreset(for: zoomFactor) ?? 1.0
+            index = (cameraOptionZooms.firstIndex(of: active) ?? 0) + 1
+        }
+        if picker.selectedIndex != index {
+            picker.selectedIndex = index
+        }
+    }
+
+    private func handleCameraControlSelection(_ index: Int) {
+        if index == 0 {
+            if !isUsingFrontCamera {
+                toggleCameraPosition()
+            }
+            return
+        }
+        let options = cameraOptionZooms
+        guard options.indices.contains(index - 1) else { return }
+        let targetZoom = options[index - 1]
+        if isUsingFrontCamera {
+            toggleCameraPosition()
+        }
+        setZoomFactor(targetZoom, ramp: true)
+    }
+
+    // MARK: - Photo Capture
 
     func captureShot(filter: RollFilter, rollName: String) async -> Data {
         shotSequenceNumber += 1
@@ -242,4 +422,11 @@ extension CameraController: AVCapturePhotoCaptureDelegate {
             self.continuation = nil
         }
     }
+}
+
+extension CameraController: AVCaptureSessionControlsDelegate {
+    func sessionControlsDidBecomeActive(_ session: AVCaptureSession) {}
+    func sessionControlsWillEnterFullscreenAppearance(_ session: AVCaptureSession) {}
+    func sessionControlsWillExitFullscreenAppearance(_ session: AVCaptureSession) {}
+    func sessionControlsDidBecomeInactive(_ session: AVCaptureSession) {}
 }

@@ -43,6 +43,22 @@ struct CaptureSessionView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .background(
+            CaptureEventView(
+                isEnabled: camera.isPreviewReady,
+                onPrimary: {
+                    Task {
+                        await flowViewModel.shutterTapped(
+                            currentUser: currentUser,
+                            modelContext: modelContext
+                        )
+                    }
+                },
+                onSecondary: {
+                    camera.cycleFlash()
+                }
+            )
+        )
         .onAppear {
             flowViewModel.cameraDidAppear(modelContext: modelContext)
         }
@@ -209,45 +225,16 @@ struct CaptureSessionView: View {
                 }
 
                 // Knurled Zoom Wheel (ZOOM 1.0x)
-                Button {
-                    camera.cycleZoom()
-                } label: {
-                    VStack(spacing: 4) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color(white: 0.16),
-                                            Color(white: 0.36),
-                                            Color(white: 0.16)
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: 172, height: 44)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color.black, lineWidth: 1.5)
-                                )
-
-                            HStack(spacing: 12) {
-                                ForEach(0..<10, id: \.self) { _ in
-                                    Rectangle()
-                                        .fill(Color.black.opacity(0.75))
-                                        .frame(width: 2.2, height: 34)
-                                }
-                            }
-                        }
-
-                        Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(1.0)
-                            .foregroundStyle(Color.white.opacity(0.75))
+                VStack(spacing: 4) {
+                    KnurledZoomWheelView(zoomFactor: camera.zoomFactor) { newZoom in
+                        camera.setZoomFactor(newZoom, ramp: true)
                     }
+
+                    Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(1.0)
+                        .foregroundStyle(Color.white.opacity(0.75))
                 }
-                .buttonStyle(.plain)
 
                 // Metallic Circular Shutter Button
                 Button {
