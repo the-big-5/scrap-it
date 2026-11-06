@@ -56,7 +56,10 @@ Figma node 725:6659 (placeholder, design still in progress)
 
 ## Screen: Capture session [Draft]
 Figma node 708:4941 (design frame is landscape; the app itself supports all orientations)
-- Camera-body UI: flash toggle (AUTO), LIVE (Live Photo) toggle, shots counter "09/36", zoom 1.0x, shutter button, viewfinder with "LIVE" badge and zoom label, red recording indicator, FLIP and GRID buttons
+- Camera-body UI: flash toggle (AUTO), LIVE (Live Photo) toggle, shots counter "09/36", animated knurled zoom wheel (0.5× / 1.0× / 2.0×), shutter button, viewfinder with "LIVE" badge and zoom label, red recording indicator, FLIP and GRID buttons
+- Knurled Zoom Wheel: 172×44 fixed capsule with horizontal cylindrical knurled ribs rolling animation, drag and tap interactions, inelastic mechanical hard endstops at 0.5× and 2.0× with zero bounce, and CoreHaptics tactile feedback (ratchet ticks, snap impacts, hard endstop thuds)
+- Camera Control button integration (iOS 18+): hardware zoom slider (`AVCaptureSystemZoomSlider`) and discrete lens picker (`AVCaptureIndexPicker`), bidirectionally synchronized with screen controls
+- Physical button events (`CaptureEventView` / `AVCaptureEventInteraction` on iOS 17.2+): Camera Control click or volume down triggers shutter photo capture; volume up cycles flash mode
 - No other users' photos shown; shows only own viewfinder and shots remaining
 - Presence list during session is not in the design: [Open]
 - States (waiting for others, roll finished, offline queued, end session by host): [Open]

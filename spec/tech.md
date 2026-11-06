@@ -9,7 +9,7 @@
 - Sharing: CKShare (CloudKit sharing) for sessions and scrapbooks [Locked]
 - Auth: Sign in with Apple / iCloud only [Locked]
 - Invites: share sheet with invite link [Locked]
-- Camera: AVFoundation custom camera [Locked]
+- Camera: AVFoundation custom camera with multi-lens discovery, animated knurled zoom wheel, and iOS 18 Camera Control controls [Locked]
 - Third-party libraries: only specific ones I approve; ask before adding any [Locked]
 - Data models: see Data models section below
 - Folder conventions / naming: see Code structure section below [Locked]
@@ -32,16 +32,16 @@ Feature-first MVVM. Views are dumb; all logic lives in ViewModels.
 ScrapIt/
 ├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView
 ├── Core/
-│   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus
+│   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus, ZoomStop
 │   ├── Services/       CloudKitSessionService, CameraController, Navigator (AppRoute/AppTab: 3 tabs, number-free routes), SessionStore,
-│   │                   AppleCredentialChecker, NetworkMonitor
+│   │                   AppleCredentialChecker, NetworkMonitor, HapticService, ZoomCapabilities
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle
 └── Features/
     ├── Auth/           WelcomeSignInView, AuthViewModel
     ├── Home/           WorkbenchView, WorkbenchViewModel, Components/ (CuttingMatView, DisposableCameraView, DeskDecorationsView, DeskSurfaceView)
     ├── Explore/        ExploreView (3-tab placeholder)
     ├── Profile/        ProfileView, ProfileViewModel
-    ├── Roll/           CameraRollMenuView, CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, FilmStripPickerView, FilterCanisterCardView)
+    ├── Roll/           CameraRollMenuView, CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView)
     └── Scrapbook/      ScrapbookGridView, ScrapbookViewModel, Components/
 ```
 
