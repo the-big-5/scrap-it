@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreImage
 import Foundation
+import SwiftData
 import Testing
 import UIKit
 @testable import ScrapIt
@@ -8,6 +9,13 @@ import UIKit
 /// Change 008: zoom wheel, physical buttons, Camera Adjustments pop-up, orientation, filter, Live Photo.
 @MainActor
 struct CameraBehaviorTests {
+    private static func makeInMemoryContext() -> ModelContext {
+        let container = try! ModelContainer(
+            for: UserProfile.self, Scrapbook.self, ScrapPhoto.self, CaptureSession.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        )
+        return container.mainContext
+    }
     /// Triple-camera-like phone: lenses 0.5×, 1×, 4×; device max 270 (135×) capped at 4×.
     static let tripleCamera = ZoomCapabilities.make(
         hasUltraWide: true,
@@ -208,7 +216,8 @@ struct CameraBehaviorTests {
     // MARK: - Shots counter (taken / total)
 
     @Test func shotsCounterCountsUp() {
-        let store = SessionStore()
+        let context = Self.makeInMemoryContext()
+        let store = SessionStore(modelContext: context)
         let session = CaptureSession(
             name: "Trip",
             hostUserID: "apple-123",
@@ -217,7 +226,7 @@ struct CameraBehaviorTests {
             rollSize: 36
         )
         store.activeSession = session
-        let viewModel = RollFlowViewModel(sessionStore: store)
+        let viewModel = RollFlowViewModel(modelContext: context, sessionStore: store)
 
         #expect(viewModel.takenShotsText == "00")
         #expect(viewModel.totalShotsText == "/36")
@@ -230,7 +239,10 @@ struct CameraBehaviorTests {
     }
 
     @Test func shotsCounterStartsAtZeroWithoutSession() {
-        #expect(RollFlowViewModel().takenShotsText == "00")
+        let context = Self.makeInMemoryContext()
+        let store = SessionStore(modelContext: context)
+        let viewModel = RollFlowViewModel(modelContext: context, sessionStore: store)
+        #expect(viewModel.takenShotsText == "00")
     }
 
     // MARK: - Filter pipeline

@@ -60,6 +60,7 @@ struct AuthViewModelTests {
         network: FakeNetwork
     ) -> AuthViewModel {
         AuthViewModel(
+            modelContext: context,
             credentialChecker: FakeCredentialChecker(result: state),
             network: network,
             defaults: defaults
@@ -84,7 +85,7 @@ struct AuthViewModelTests {
         name.givenName = "Ana"
         name.familyName = "Putri"
 
-        vm.handleAppleIDCredential(userID: "apple-123", fullName: name, modelContext: context)
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: name)
 
         #expect(vm.currentUser?.appleUserID == "apple-123")
         #expect(vm.currentUser?.name == "Ana Putri")
@@ -101,7 +102,7 @@ struct AuthViewModelTests {
         name.givenName = "Brian"
         name.familyName = "Chang"
 
-        vm.handleAppleIDCredential(userID: "apple-123", fullName: name, modelContext: context)
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: name)
 
         #expect(vm.currentUser?.name == "Brian Chang")
         #expect(profileCount() == 1)
@@ -111,7 +112,7 @@ struct AuthViewModelTests {
         seedSignedInUser(name: "Ana")
         let vm = makeViewModel()
 
-        vm.handleAppleIDCredential(userID: "apple-123", fullName: PersonNameComponents(), modelContext: context)
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: PersonNameComponents())
 
         #expect(vm.currentUser?.name == "Ana")
     }
@@ -119,7 +120,7 @@ struct AuthViewModelTests {
     @Test func missingAppleNameOnFirstSignInUsesDefault() {
         let vm = makeViewModel()
 
-        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil, modelContext: context)
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil)
 
         #expect(vm.currentUser?.name == AuthViewModel.defaultName)
     }
@@ -128,7 +129,7 @@ struct AuthViewModelTests {
         seedSignedInUser()
         let vm = makeViewModel()
 
-        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil, modelContext: context)
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil)
 
         #expect(vm.currentUser?.name == "Ana")
         #expect(profileCount() == 1)
@@ -137,7 +138,7 @@ struct AuthViewModelTests {
     @Test func cancelStaysOnWelcomeWithoutMessage() {
         let vm = makeViewModel()
 
-        vm.handleSignInWithAppleCompletion(result: .failure(ASAuthorizationError(.canceled)), modelContext: context)
+        vm.handleSignInWithAppleCompletion(result: .failure(ASAuthorizationError(.canceled)))
 
         #expect(vm.currentUser == nil)
         #expect(vm.welcomeMessage == nil)
@@ -149,7 +150,7 @@ struct AuthViewModelTests {
     func failureStaysOnWelcomeWithError(_ code: ASAuthorizationError.Code) {
         let vm = makeViewModel()
 
-        vm.handleSignInWithAppleCompletion(result: .failure(ASAuthorizationError(code)), modelContext: context)
+        vm.handleSignInWithAppleCompletion(result: .failure(ASAuthorizationError(code)))
 
         #expect(vm.currentUser == nil)
         #expect(vm.welcomeMessage == AuthViewModel.signInErrorMessage)
@@ -168,7 +169,7 @@ struct AuthViewModelTests {
     @Test func offlineBlocksSignIn() {
         let vm = makeViewModel(online: false)
 
-        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil, modelContext: context)
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil)
 
         #expect(vm.isOffline)
         #expect(vm.currentUser == nil)
@@ -191,7 +192,7 @@ struct AuthViewModelTests {
         let vm = makeViewModel(state: .success(.authorized))
         #expect(vm.isRestoringSession)
 
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         #expect(!vm.isRestoringSession)
         #expect(vm.currentUser?.appleUserID == "apple-123")
@@ -206,7 +207,7 @@ struct AuthViewModelTests {
         seedSignedInUser()
         let vm = makeViewModel(state: .success(state))
 
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         #expect(!vm.isRestoringSession)
         #expect(vm.currentUser == nil)
@@ -218,7 +219,7 @@ struct AuthViewModelTests {
         seedSignedInUser()
         let vm = makeViewModel(state: .failure(CheckFailed()))
 
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         #expect(vm.currentUser == nil)
         #expect(!vm.isRestoringSession)
@@ -230,7 +231,7 @@ struct AuthViewModelTests {
         seedSignedInUser()
         let vm = makeViewModel(state: .success(.revoked), online: false)
 
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         #expect(!vm.isRestoringSession)
         #expect(vm.currentUser?.appleUserID == "apple-123")
@@ -241,7 +242,7 @@ struct AuthViewModelTests {
         defaults.set("apple-123", forKey: AuthViewModel.savedUserIDKey)
         let vm = makeViewModel(state: .success(.authorized), online: false)
 
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         #expect(vm.currentUser == nil)
         #expect(vm.pendingCredentialCheck == nil)
@@ -252,7 +253,7 @@ struct AuthViewModelTests {
         seedSignedInUser()
         let network = FakeNetwork(isOnline: false)
         let vm = makeViewModel(state: .success(.authorized), network: network)
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         network.goOnline()
         await vm.pendingCredentialCheck?.value
@@ -270,7 +271,7 @@ struct AuthViewModelTests {
         seedSignedInUser()
         let network = FakeNetwork(isOnline: false)
         let vm = makeViewModel(state: .success(state), network: network)
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
         #expect(vm.currentUser != nil)
 
         network.goOnline()
@@ -285,7 +286,7 @@ struct AuthViewModelTests {
         seedSignedInUser()
         let network = FakeNetwork(isOnline: false)
         let vm = makeViewModel(state: .failure(CheckFailed()), network: network)
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         network.goOnline()
         await vm.pendingCredentialCheck?.value
@@ -297,7 +298,7 @@ struct AuthViewModelTests {
         seedSignedInUser()
         let network = FakeNetwork(isOnline: false)
         let vm = makeViewModel(state: .success(.revoked), network: network)
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
         let check = vm.pendingCredentialCheck
 
         vm.signOut()
@@ -319,7 +320,7 @@ struct AuthViewModelTests {
         defaults.set("apple-123", forKey: AuthViewModel.savedUserIDKey)
         let vm = makeViewModel(state: .success(.authorized))
 
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         #expect(vm.currentUser?.persistentModelID == oldest.persistentModelID)
         #expect(vm.currentUser?.name == "Ana")
@@ -332,7 +333,7 @@ struct AuthViewModelTests {
         try? context.save()
         let vm = makeViewModel()
 
-        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil, modelContext: context)
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil)
 
         #expect(vm.currentUser?.name == "Ana")
         #expect(profileCount() == 1)
@@ -343,7 +344,7 @@ struct AuthViewModelTests {
         try? context.save()
         let vm = makeViewModel(state: .success(.authorized))
 
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         #expect(vm.currentUser == nil)
         #expect(!vm.isRestoringSession)
@@ -353,7 +354,7 @@ struct AuthViewModelTests {
         defaults.set("apple-123", forKey: AuthViewModel.savedUserIDKey)
         let vm = makeViewModel(state: .success(.authorized))
 
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
 
         #expect(vm.currentUser == nil)
     }
@@ -363,7 +364,7 @@ struct AuthViewModelTests {
     @Test func signOutClearsUserButKeepsData() async {
         seedSignedInUser()
         let vm = makeViewModel()
-        await vm.restoreExistingSession(modelContext: context)
+        await vm.restoreExistingSession()
         #expect(vm.currentUser != nil)
 
         vm.signOut()

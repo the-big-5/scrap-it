@@ -17,6 +17,7 @@ final class AuthViewModel {
     private(set) var isRestoringSession = true
     private(set) var authErrorMessage: String?
 
+    @ObservationIgnored private let modelContext: ModelContext
     @ObservationIgnored private let credentialChecker: any AppleCredentialChecking
     @ObservationIgnored private let network: any NetworkStatusProviding
     @ObservationIgnored private let defaults: UserDefaults
@@ -24,10 +25,12 @@ final class AuthViewModel {
     @ObservationIgnored private(set) var pendingCredentialCheck: Task<Void, Never>?
 
     init(
+        modelContext: ModelContext,
         credentialChecker: any AppleCredentialChecking = AppleCredentialChecker(),
         network: any NetworkStatusProviding = NetworkMonitor(),
         defaults: UserDefaults = .standard
     ) {
+        self.modelContext = modelContext
         self.credentialChecker = credentialChecker
         self.network = network
         self.defaults = defaults
@@ -45,7 +48,7 @@ final class AuthViewModel {
     /// Needs a saved Apple user ID and that user's local profile.
     /// Online: enters Home only when Apple reports `.authorized`.
     /// Offline: enters Home right away and checks with Apple once the network is back.
-    func restoreExistingSession(modelContext: ModelContext) async {
+    func restoreExistingSession() async {
         defer { isRestoringSession = false }
         cancelPendingCredentialCheck()
         currentUser = nil
@@ -53,7 +56,7 @@ final class AuthViewModel {
         guard let userID = defaults.string(forKey: Self.savedUserIDKey) else { return }
 
         guard await network.currentStatus() else {
-            guard let profile = profile(for: userID, in: modelContext) else { return }
+            guard let profile = profile(for: userID) else { return }
             currentUser = profile
             scheduleCredentialCheckWhenOnline(userID: userID)
             return
@@ -63,7 +66,7 @@ final class AuthViewModel {
             defaults.removeObject(forKey: Self.savedUserIDKey)
             return
         }
-        currentUser = profile(for: userID, in: modelContext)
+        currentUser = profile(for: userID)
         if currentUser == nil {
             defaults.removeObject(forKey: Self.savedUserIDKey)
         }
@@ -77,8 +80,7 @@ final class AuthViewModel {
     }
 
     func handleSignInWithAppleCompletion(
-        result: Result<ASAuthorization, any Error>,
-        modelContext: ModelContext
+        result: Result<ASAuthorization, any Error>
     ) {
         switch result {
         case .success(let auth):
@@ -88,8 +90,7 @@ final class AuthViewModel {
             }
             handleAppleIDCredential(
                 userID: credential.user,
-                fullName: credential.fullName,
-                modelContext: modelContext
+                fullName: credential.fullName
             )
         case .failure(let error):
             handleSignInFailure(error)
@@ -98,8 +99,7 @@ final class AuthViewModel {
 
     func handleAppleIDCredential(
         userID: String,
-        fullName: PersonNameComponents?,
-        modelContext: ModelContext
+        fullName: PersonNameComponents?
     ) {
         guard !isOffline else { return }
 
@@ -110,8 +110,7 @@ final class AuthViewModel {
             .joined(separator: " ")
         completeSignIn(
             appleUserID: userID,
-            appleName: name.isEmpty ? nil : name,
-            modelContext: modelContext
+            appleName: name.isEmpty ? nil : name
         )
     }
 
@@ -161,10 +160,9 @@ final class AuthViewModel {
     private func completeSignIn(
         appleUserID: String,
         appleName: String?,
-        modelContext: ModelContext
     ) {
         cancelPendingCredentialCheck()
-        if let existing = profile(for: appleUserID, in: modelContext) {
+        if let existing = profile(for: appleUserID) {
             if let appleName, existing.name != appleName {
                 existing.name = appleName
                 try? modelContext.save()
@@ -182,7 +180,7 @@ final class AuthViewModel {
 
     /// CloudKit sync has no unique constraint, so one Apple user can end up with several profiles
     /// (e.g. signing in on a reinstall before iCloud data arrives). Keeps the oldest, deletes the rest.
-    private func profile(for appleUserID: String, in modelContext: ModelContext) -> UserProfile? {
+    private func profile(for appleUserID: String) -> UserProfile? {
         let descriptor = FetchDescriptor<UserProfile>(
             predicate: #Predicate { $0.appleUserID == appleUserID },
             sortBy: [SortDescriptor(\.createdAt, order: .forward)]

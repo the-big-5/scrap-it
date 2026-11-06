@@ -3,7 +3,6 @@ import SwiftUI
 
 /// App shell: owns the router and shared store, builds each feature's ViewModel, and maps routes to screens.
 struct MainTabView: View {
-    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Scrapbook.createdDate, order: .reverse) private var scrapbooks: [Scrapbook]
 
     let currentUser: UserProfile
@@ -15,16 +14,16 @@ struct MainTabView: View {
     @State private var profileViewModel: ProfileViewModel
     @State private var scrapbookViewModel: ScrapbookViewModel
 
-    init(currentUser: UserProfile, onSignOut: @escaping () -> Void) {
+    init(currentUser: UserProfile, modelContext: ModelContext, onSignOut: @escaping () -> Void) {
         self.currentUser = currentUser
         self.onSignOut = onSignOut
         let router = AppRouter()
-        let sessionStore = SessionStore()
+        let sessionStore = SessionStore(modelContext: modelContext)
         _router = State(initialValue: router)
-        _rollViewModel = State(initialValue: RollFlowViewModel(navigator: router, sessionStore: sessionStore))
+        _rollViewModel = State(initialValue: RollFlowViewModel(modelContext: modelContext, navigator: router, sessionStore: sessionStore))
         _workbenchViewModel = State(initialValue: WorkbenchViewModel(navigator: router, sessionStore: sessionStore))
         _profileViewModel = State(initialValue: ProfileViewModel(currentUser: currentUser))
-        _scrapbookViewModel = State(initialValue: ScrapbookViewModel(navigator: router, sessionStore: sessionStore))
+        _scrapbookViewModel = State(initialValue: ScrapbookViewModel(modelContext: modelContext, navigator: router, sessionStore: sessionStore))
     }
 
     var body: some View {
@@ -91,8 +90,7 @@ struct MainTabView: View {
         .onOpenURL { url in
             rollViewModel.handleIncomingURL(
                 url,
-                currentUser: currentUser,
-                modelContext: modelContext
+                currentUser: currentUser
             )
         }
     }

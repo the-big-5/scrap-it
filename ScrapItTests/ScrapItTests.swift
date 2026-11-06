@@ -15,17 +15,6 @@ struct ScrapItTests {
         // Swift Testing Documentation
         // https://developer.apple.com/documentation/testing
         
-        // setup
-        // given
-        let vm = await RollFlowViewModel()
-        
-        //when
-        await vm.yangBisaDiTest()
-        
-        //then
-        #expect(vm.arr == true)
-        
-        
     }
 
 }

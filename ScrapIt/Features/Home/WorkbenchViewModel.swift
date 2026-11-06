@@ -8,7 +8,7 @@ final class WorkbenchViewModel {
 
     var isCameraActive: Bool = false
 
-    init(navigator: (any Navigator)? = nil, sessionStore: SessionStore = SessionStore()) {
+    init(navigator: (any Navigator)? = nil, sessionStore: SessionStore) {
         self.navigator = navigator
         self.sessionStore = sessionStore
     }

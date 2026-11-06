@@ -11,8 +11,6 @@ enum SlotClaimResult {
 
 @Observable
 final class CloudKitSessionService {
-    static let shared = CloudKitSessionService()
-
     var isOnline: Bool = true
     var queuedOfflineCount: Int = 0
     var lastSyncStatus: String = "CloudKit ready"
@@ -20,8 +18,10 @@ final class CloudKitSessionService {
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "scrapit.network.monitor")
     private var pollTimer: Timer?
+    private let modelContext: ModelContext
 
-    private init() {
+    init(modelContext: ModelContext) {
+        self.modelContext = modelContext
         startNetworkMonitoring()
     }
 
@@ -104,8 +104,7 @@ final class CloudKitSessionService {
     func fetchOrJoinSession(
         rollCode: String,
         userID: String,
-        userName: String,
-        modelContext: ModelContext
+        userName: String
     ) async throws -> CaptureSession {
         let normalizedCode = rollCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
 
@@ -289,24 +288,23 @@ final class CloudKitSessionService {
 
     func enqueueOrUploadPhoto(
         photo: ScrapPhoto,
-        session: CaptureSession,
-        modelContext: ModelContext
+        session: CaptureSession
     ) async {
-        updateQueuedCount(modelContext: modelContext)
+        updateQueuedCount()
         guard isOnline else {
             photo.isSyncedToCloud = false
             try? modelContext.save()
-            updateQueuedCount(modelContext: modelContext)
+            updateQueuedCount()
             return
         }
 
         let uploaded = await uploadPhotoRecord(photo: photo)
         photo.isSyncedToCloud = uploaded
         try? modelContext.save()
-        updateQueuedCount(modelContext: modelContext)
+        updateQueuedCount()
     }
 
-    func syncPendingOfflinePhotos(modelContext: ModelContext) async {
+    func syncPendingOfflinePhotos() async {
         guard isOnline else { return }
         let descriptor = FetchDescriptor<ScrapPhoto>(
             predicate: #Predicate { !$0.isSyncedToCloud }
@@ -323,10 +321,10 @@ final class CloudKitSessionService {
             }
         }
         try? modelContext.save()
-        updateQueuedCount(modelContext: modelContext)
+        updateQueuedCount()
     }
 
-    func updateQueuedCount(modelContext: ModelContext) {
+    func updateQueuedCount() {
         let descriptor = FetchDescriptor<ScrapPhoto>(
             predicate: #Predicate { !$0.isSyncedToCloud }
         )
@@ -361,14 +359,13 @@ final class CloudKitSessionService {
 
     func startLiveSessionPolling(
         session: CaptureSession,
-        modelContext: ModelContext,
         onSessionEnded: @escaping @MainActor () -> Void
     ) {
         stopLiveSessionPolling()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.syncPendingOfflinePhotos(modelContext: modelContext)
+                await self.syncPendingOfflinePhotos()
                 guard self.isOnline, let recordName = session.ckRecordName else { return }
                 let recordID = CKRecord.ID(recordName: recordName)
                 if let record = try? await CKContainer.default().publicCloudDatabase.record(for: recordID) {
