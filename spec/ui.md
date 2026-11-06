@@ -13,11 +13,12 @@ Figma node 676:3703
 
 ## Screen: Home [Locked]
 Figma node 853:1703 (Idle) & 1062:3371 (CameraClick)
-- Overhead desk workbench flat-lay: green cutting mat with measurement ticks, red toolbox, books, film canisters, ruler, paper scraps, stationery.
-- Interactive disposable camera resting at -14.77° on the cutting mat.
-- Camera tap interaction: camera rotates to 0.77° and centers with spring animation, background blurs and dims, "Create Roll" and "Join a Roll" action buttons spring up from bottom with solid 7pt offset drop shadows. Tapping blurred background dismisses.
-- Stacked tutorial books (open stub for tutorial flow).
-- Floating 3-tab navigation bar: Home (house.fill), Explore (magnifyingglass), Profile (person.fill).
+- Overhead desk workbench flat-lay: wood desk, green cutting mat with measurement numbers and ticks, red toolbox, blue book, spiral "TUTORIAL" book, film canisters, ruler, crumpled paper, stationery.
+- Built from separate assets (one per Figma layer, folder `Assets.xcassets/Workbench/`), placed at their Figma frames. Layout: one uniform scale (Figma frame width = screen width), desk centered vertically; no status bar / tab bar printed in the assets.
+- Interactive disposable camera resting at -14.77° on the cutting mat (Figma position).
+- Camera tap interaction: camera rotates to 0.77° and centers with spring animation; the whole desk blurs as one page (flattened, then blurred) and dims; "Create Roll" and "Join a Roll" text buttons spring up from bottom with solid 7pt offset drop shadows. Tapping the blurred background or the round "<" close button at top left (Figma "Toolbar - Top") dismisses. Tab bar hidden while active.
+- Tutorial book: the book image is the button (open stub for tutorial flow).
+- Floating 3-tab navigation bar: Home (house.fill), Explore (magnifyingglass), Profile (person.fill). Tap a tab, or drag along the bar: the selection pill follows the finger and snaps to the nearest tab on release, with a selection haptic.
 
 ## Screen: Camera Roll (Create / Join) [Locked]
 Integrated directly into the Workbench active popup state (Figma node 1062:3371).
@@ -121,7 +122,8 @@ Figma page "Design System #2" (628:4011), Atoms and Molecules only. Code: `Core/
 ## Assets
 All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, transparent):
 - HeroCamera (678:4897): Welcome and Camera Roll camera
-- Workbench flat-lay: WorkbenchBackgroundIdle, WorkbenchBackgroundActive, DeskDisposableCamera, DeskCuttingMat, DeskSurface, DeskMeasurements, DeskFolder, DeskBookTop, DeskBookBottom, DeskRuler, DeskFilmRoll2..4, DeskStationery1..5, DeskTape1..2
+- Workbench (folder `Workbench/`, Figma 853:1703): DeskWood (JPEG), DeskMatShadow, DeskShading, DeskCuttingMat, DeskMeasurements, DeskWoodGrain, DeskToolbox, DeskBookBottom, DeskBookTutorial, DeskRuler, DeskFilmRoll2..4, DeskPaperBall1..2, DeskStationery1..5. Exports are cut at the Figma frame edge; those parts are never on screen
+- DeskDisposableCamera (catalog root, reusable): Workbench camera
 - Flow headers: CreateRollHeaderDecoration, ShareRoomHeaderDecoration
 - FilterCanisterBW (725:6301), FilterCanisterColor (725:6480): Choose filter
 

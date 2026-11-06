@@ -57,8 +57,6 @@ struct MainTabView: View {
             .animation(.spring(response: 0.35, dampingFraction: 0.82), value: workbenchViewModel.isCameraActive)
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
-                case .cameraRollMenu:
-                    CameraRollMenuView(flowViewModel: rollViewModel)
                 case .createRollSetup:
                     CreateRollSetupView(flowViewModel: rollViewModel)
                 case .createRollFilter:

@@ -7,7 +7,6 @@ enum AppTab: String {
 }
 
 enum AppRoute: Hashable {
-    case cameraRollMenu
     case createRollSetup
     case createRollFilter
     case createRollLobby
