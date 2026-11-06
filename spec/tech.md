@@ -33,7 +33,7 @@ Feature-first MVVM. Views are dumb; all logic lives in ViewModels.
 
 ```text
 ScrapIt/
-├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView, OrientationLock (+ AppDelegate)
+├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView (+ TabBarDragMath), OrientationLock (+ AppDelegate)
 ├── Core/
 │   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus;
 │   │                   camera logic: ZoomWheelModel, CameraButtonRules
@@ -43,10 +43,10 @@ ScrapIt/
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle
 └── Features/
     ├── Auth/           WelcomeSignInView, AuthViewModel
-    ├── Home/           WorkbenchView, WorkbenchViewModel, Components/ (CuttingMatView, DisposableCameraView, DeskDecorationsView, DeskSurfaceView)
+    ├── Home/           WorkbenchView, WorkbenchViewModel, WorkbenchLayout (desk asset frames, uniform scale)
     ├── Explore/        ExploreView (3-tab placeholder)
     ├── Profile/        ProfileView, ProfileViewModel
-    ├── Roll/           CameraRollMenuView, CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, DebugLastShotView)
+    ├── Roll/           CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, DebugLastShotView)
     └── Scrapbook/      ScrapbookGridView, ScrapbookViewModel, Components/
 ```
 
