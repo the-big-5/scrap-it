@@ -1,9 +1,7 @@
 import SwiftUI
-import SwiftData
 
 struct CreateRollFilterView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
 
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
@@ -68,8 +66,7 @@ struct CreateRollFilterView: View {
                 // Primary Next Button
                 Button("Next") {
                     flowViewModel.createLobbySession(
-                        currentUser: currentUser,
-                        modelContext: modelContext
+                        currentUser: currentUser
                     )
                 }
                 .buttonStyle(OffsetPillButtonStyle())

@@ -1,9 +1,7 @@
-import SwiftData
 import SwiftUI
 
 struct JoinRollView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
     @FocusState private var focusedBox: Int?
 
     var currentUser: UserProfile
@@ -95,8 +93,7 @@ struct JoinRollView: View {
                 Button("Join") {
                     Task {
                         await flowViewModel.submitJoinCode(
-                            currentUser: currentUser,
-                            modelContext: modelContext
+                            currentUser: currentUser
                         )
                     }
                 }

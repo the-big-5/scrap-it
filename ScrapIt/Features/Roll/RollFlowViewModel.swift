@@ -29,25 +29,22 @@ final class RollFlowViewModel {
     private(set) var debugLastShot: ScrapPhoto?
     #endif
 
+    private let modelContext: ModelContext
     let cloudService: CloudKitSessionService
     @ObservationIgnored let sessionStore: SessionStore
     @ObservationIgnored private weak var navigator: (any Navigator)?
     @ObservationIgnored lazy var camera = CameraController()
 
-    // Test hook kept from existing ScrapItTests target.
-    var arr = false
-    func yangBisaDiTest() {
-        arr = true
-    }
-
     init(
+        modelContext: ModelContext,
         navigator: (any Navigator)? = nil,
-        sessionStore: SessionStore = SessionStore(),
-        cloudService: CloudKitSessionService = .shared
+        sessionStore: SessionStore,
+        cloudService: CloudKitSessionService? = nil
     ) {
+        self.modelContext = modelContext
         self.navigator = navigator
         self.sessionStore = sessionStore
-        self.cloudService = cloudService
+        self.cloudService = cloudService ?? CloudKitSessionService(modelContext: modelContext)
     }
 
     // MARK: - Derived state for Views
@@ -145,8 +142,7 @@ final class RollFlowViewModel {
     // MARK: - Create roll
 
     func createLobbySession(
-        currentUser: UserProfile,
-        modelContext: ModelContext
+        currentUser: UserProfile
     ) {
         let trimmedName = draftRollName.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedName = trimmedName.isEmpty ? "Untitled Roll" : trimmedName
@@ -172,7 +168,7 @@ final class RollFlowViewModel {
         navigator?.push(.createRollLobby)
     }
 
-    func startRollCapture(modelContext: ModelContext) {
+    func startRollCapture() {
         guard let session = activeSession else { return }
         session.status = .live
         session.startTime = .now
@@ -182,7 +178,7 @@ final class RollFlowViewModel {
             await cloudService.publishSessionToCloudKit(session: session)
         }
 
-        beginLivePolling(session: session, modelContext: modelContext)
+        beginLivePolling(session: session)
         navigator?.push(.captureSession)
     }
 
@@ -190,8 +186,7 @@ final class RollFlowViewModel {
 
     func joinRollWithCode(
         code: String,
-        currentUser: UserProfile,
-        modelContext: ModelContext
+        currentUser: UserProfile
     ) async {
         let cleaned = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard cleaned.count == 6 else {
@@ -203,14 +198,13 @@ final class RollFlowViewModel {
             let joined = try await cloudService.fetchOrJoinSession(
                 rollCode: cleaned,
                 userID: currentUser.appleUserID,
-                userName: currentUser.name,
-                modelContext: modelContext
+                userName: currentUser.name
             )
             sessionStore.activeSession = joined
             joinErrorMessage = nil
 
             if joined.status == .live {
-                beginLivePolling(session: joined, modelContext: modelContext)
+                beginLivePolling(session: joined)
                 navigator?.push(.captureSession)
             } else {
                 navigator?.push(.createRollLobby)
@@ -220,18 +214,16 @@ final class RollFlowViewModel {
         }
     }
 
-    func submitJoinCode(currentUser: UserProfile, modelContext: ModelContext) async {
+    func submitJoinCode(currentUser: UserProfile) async {
         await joinRollWithCode(
             code: enteredJoinCode,
-            currentUser: currentUser,
-            modelContext: modelContext
+            currentUser: currentUser
         )
     }
 
     func handleIncomingURL(
         _ url: URL,
-        currentUser: UserProfile,
-        modelContext: ModelContext
+        currentUser: UserProfile
     ) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return
@@ -242,36 +234,34 @@ final class RollFlowViewModel {
             Task {
                 await joinRollWithCode(
                     code: code,
-                    currentUser: currentUser,
-                    modelContext: modelContext
+                    currentUser: currentUser
                 )
             }
         }
     }
 
-    private func beginLivePolling(session: CaptureSession, modelContext: ModelContext) {
+    private func beginLivePolling(session: CaptureSession) {
         cloudService.startLiveSessionPolling(
-            session: session,
-            modelContext: modelContext
+            session: session
         ) { [weak self] in
             guard let self else { return }
-            self.finalizeSessionAndOpenScrapbook(modelContext: modelContext)
+            self.finalizeSessionAndOpenScrapbook()
         }
     }
 
     // MARK: - Camera screen
 
-    func cameraDidAppear(modelContext: ModelContext) {
+    func cameraDidAppear() {
         camera.setFilter(activeSession?.filter ?? .colorPrint200)
         Task { await camera.startSession() }
-        cloudService.updateQueuedCount(modelContext: modelContext)
+        cloudService.updateQueuedCount()
     }
 
     func cameraDidDisappear() {
         camera.stopSession()
     }
 
-    func shutterTapped(currentUser: UserProfile, modelContext: ModelContext) async {
+    func shutterTapped(currentUser: UserProfile) async {
         guard camera.canCapture else { return }
         let shot = await camera.captureShot(
             filter: activeSession?.filter ?? .colorPrint200,
@@ -279,8 +269,7 @@ final class RollFlowViewModel {
         )
         let photo = await recordCapturedShot(
             imageData: shot.imageData,
-            currentUser: currentUser,
-            modelContext: modelContext
+            currentUser: currentUser
         )
         guard let photo, let movieTask = shot.livePhotoMovie else { return }
         // The still is saved first; the filtered Live Photo movie follows when ready.
@@ -291,9 +280,9 @@ final class RollFlowViewModel {
     }
 
     /// Camera Control click / volume down: photo on phones with Camera Control, flip otherwise.
-    func primaryButtonPressed(currentUser: UserProfile, modelContext: ModelContext) {
+    func primaryButtonPressed(currentUser: UserProfile) {
         camera.handlePrimaryButton {
-            Task { await shutterTapped(currentUser: currentUser, modelContext: modelContext) }
+            Task { await shutterTapped(currentUser: currentUser) }
         }
     }
 
@@ -302,7 +291,6 @@ final class RollFlowViewModel {
         imageData: Data,
         livePhotoMovieData: Data? = nil,
         currentUser: UserProfile,
-        modelContext: ModelContext,
         simulateLastSlotConflict: Bool = false
     ) async -> ScrapPhoto? {
         guard let session = activeSession else { return nil }
@@ -329,8 +317,7 @@ final class RollFlowViewModel {
 
             await cloudService.enqueueOrUploadPhoto(
                 photo: photo,
-                session: session,
-                modelContext: modelContext
+                session: session
             )
 
             #if DEBUG
@@ -338,14 +325,14 @@ final class RollFlowViewModel {
             #endif
 
             if rollFinished {
-                finalizeSessionAndOpenScrapbook(modelContext: modelContext)
+                finalizeSessionAndOpenScrapbook()
             }
             return photo
 
         case .rollAlreadyFinished:
             // First write wins; this user's shot is dropped and the user is notified
             showLastSlotRaceAlert = true
-            finalizeSessionAndOpenScrapbook(modelContext: modelContext)
+            finalizeSessionAndOpenScrapbook()
             return nil
         }
     }
@@ -353,8 +340,7 @@ final class RollFlowViewModel {
     // MARK: - End roll / host handover
 
     func endSessionManuallyByHost(
-        currentUser: UserProfile,
-        modelContext: ModelContext
+        currentUser: UserProfile
     ) {
         guard let session = activeSession,
               session.hostUserID == currentUser.appleUserID else { return }
@@ -364,12 +350,11 @@ final class RollFlowViewModel {
         Task {
             await cloudService.publishSessionToCloudKit(session: session)
         }
-        finalizeSessionAndOpenScrapbook(modelContext: modelContext)
+        finalizeSessionAndOpenScrapbook()
     }
 
     func handleHostDisconnect(
-        disconnectedHostID: String,
-        modelContext: ModelContext
+        disconnectedHostID: String
     ) {
         guard let session = activeSession else { return }
         if let newHostID = cloudService.handoverHostIfNeeded(
@@ -381,17 +366,17 @@ final class RollFlowViewModel {
         }
     }
 
-    func simulateHostDisconnect(modelContext: ModelContext) {
+    func simulateHostDisconnect() {
         if let currentHost = activeSession?.hostUserID {
-            handleHostDisconnect(disconnectedHostID: currentHost, modelContext: modelContext)
+            handleHostDisconnect(disconnectedHostID: currentHost)
         }
     }
 
     // MARK: - Finalize roll into scrapbook
 
-    func finalizeSessionAndOpenScrapbook(modelContext: ModelContext) {
+    func finalizeSessionAndOpenScrapbook() {
         cloudService.stopLiveSessionPolling()
-        guard let scrapbook = sessionStore.finalizeActiveSession(modelContext: modelContext) else {
+        guard let scrapbook = sessionStore.finalizeActiveSession() else {
             return
         }
         let id = scrapbook.id

@@ -3,21 +3,34 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(\.modelContext) private var modelContext
-    @State private var authViewModel = AuthViewModel()
+    @State private var authViewModel: AuthViewModel?
 
     var body: some View {
         Group {
-            if authViewModel.isRestoringSession {
+            if let authViewModel {
+                if authViewModel.isRestoringSession {
+                    ScrapTheme.creamBackground
+                        .ignoresSafeArea()
+                } else if let currentUser = authViewModel.currentUser {
+                    MainTabView(
+                        currentUser: currentUser,
+                        modelContext: modelContext,
+                        onSignOut: authViewModel.signOut
+                    )
+                } else {
+                    WelcomeSignInView(authViewModel: authViewModel)
+                }
+            } else {
                 ScrapTheme.creamBackground
                     .ignoresSafeArea()
-            } else if let currentUser = authViewModel.currentUser {
-                MainTabView(currentUser: currentUser, onSignOut: authViewModel.signOut)
-            } else {
-                WelcomeSignInView(authViewModel: authViewModel)
             }
         }
         .task {
-            await authViewModel.restoreExistingSession(modelContext: modelContext)
+            if authViewModel == nil {
+                let vm = AuthViewModel(modelContext: modelContext)
+                authViewModel = vm
+                await vm.restoreExistingSession()
+            }
         }
     }
 }

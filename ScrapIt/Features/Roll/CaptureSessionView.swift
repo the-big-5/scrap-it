@@ -1,9 +1,6 @@
-import SwiftData
 import SwiftUI
 
 struct CaptureSessionView: View {
-    @Environment(\.modelContext) private var modelContext
-
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
 
@@ -53,7 +50,7 @@ struct CaptureSessionView: View {
             CaptureEventView(
                 isEnabled: camera.isSessionRunning,
                 onPrimary: {
-                    flowViewModel.primaryButtonPressed(currentUser: currentUser, modelContext: modelContext)
+                    flowViewModel.primaryButtonPressed(currentUser: currentUser)
                 },
                 onSecondary: {
                     camera.handleSecondaryButton()
@@ -62,7 +59,7 @@ struct CaptureSessionView: View {
         )
         .onAppear {
             OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: true))
-            flowViewModel.cameraDidAppear(modelContext: modelContext)
+            flowViewModel.cameraDidAppear()
         }
         .onDisappear {
             OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: false))
@@ -82,7 +79,7 @@ struct CaptureSessionView: View {
         #endif
         .alert("Roll Finished", isPresented: $flowViewModel.showLastSlotRaceAlert) {
             Button("Open Scrapbook") {
-                flowViewModel.finalizeSessionAndOpenScrapbook(modelContext: modelContext)
+                flowViewModel.finalizeSessionAndOpenScrapbook()
             }
         } message: {
             Text(flowViewModel.lastSlotRaceMessage)
@@ -179,15 +176,14 @@ struct CaptureSessionView: View {
                     if isHost {
                         Button(role: .destructive) {
                             flowViewModel.endSessionManuallyByHost(
-                                currentUser: currentUser,
-                                modelContext: modelContext
+                                currentUser: currentUser
                             )
                         } label: {
                             Label("End Roll Now (Host)", systemImage: "stop.circle.fill")
                         }
                     }
                     Button {
-                        flowViewModel.simulateHostDisconnect(modelContext: modelContext)
+                        flowViewModel.simulateHostDisconnect()
                     } label: {
                         Label("Simulate Host Disconnect Handover", systemImage: "person.badge.key.fill")
                     }
@@ -259,8 +255,7 @@ struct CaptureSessionView: View {
                 Button {
                     Task {
                         await flowViewModel.shutterTapped(
-                            currentUser: currentUser,
-                            modelContext: modelContext
+                            currentUser: currentUser
                         )
                     }
                 } label: {
@@ -428,8 +423,7 @@ struct CaptureSessionView: View {
                             if isHost {
                                 Button {
                                     flowViewModel.endSessionManuallyByHost(
-                                        currentUser: currentUser,
-                                        modelContext: modelContext
+                                        currentUser: currentUser
                                     )
                                 } label: {
                                     Text("END ROLL")

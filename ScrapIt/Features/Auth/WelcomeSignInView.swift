@@ -1,9 +1,7 @@
 import AuthenticationServices
-import SwiftData
 import SwiftUI
 
 struct WelcomeSignInView: View {
-    @Environment(\.modelContext) private var modelContext
     var authViewModel: AuthViewModel
 
     var body: some View {
@@ -58,8 +56,7 @@ struct WelcomeSignInView: View {
                         request.requestedScopes = [.fullName]
                     } onCompletion: { result in
                         authViewModel.handleSignInWithAppleCompletion(
-                            result: result,
-                            modelContext: modelContext
+                            result: result
                         )
                     }
                     .signInWithAppleButtonStyle(.black)

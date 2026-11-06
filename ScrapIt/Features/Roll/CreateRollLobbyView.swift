@@ -1,9 +1,7 @@
 import SwiftUI
-import SwiftData
 
 struct CreateRollLobbyView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
 
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
@@ -135,7 +133,7 @@ struct CreateRollLobbyView: View {
                 VStack(spacing: 8) {
                     if isHost {
                         Button("Start Roll") {
-                            flowViewModel.startRollCapture(modelContext: modelContext)
+                            flowViewModel.startRollCapture()
                         }
                         .buttonStyle(OffsetPillButtonStyle())
                     } else {

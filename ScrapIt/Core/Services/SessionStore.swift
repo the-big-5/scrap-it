@@ -9,9 +9,15 @@ final class SessionStore {
     var activeSession: CaptureSession?
     var activeScrapbook: Scrapbook?
 
+    private let modelContext: ModelContext
+
+    init(modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+
     /// Ends the active session and creates (or reuses) the shared scrapbook for it.
     @discardableResult
-    func finalizeActiveSession(modelContext: ModelContext) -> Scrapbook? {
+    func finalizeActiveSession() -> Scrapbook? {
         guard let session = activeSession else { return nil }
         session.status = .ended
         if session.endTime == nil {
@@ -23,7 +29,7 @@ final class SessionStore {
             predicate: #Predicate { $0.sourceSessionID == sessionID }
         )
         if let existing = (try? modelContext.fetch(existingDescriptor))?.first {
-            attachSessionPhotos(to: existing, sessionID: sessionID, modelContext: modelContext)
+            attachSessionPhotos(to: existing, sessionID: sessionID)
             activeScrapbook = existing
             return existing
         }
@@ -38,7 +44,7 @@ final class SessionStore {
         modelContext.insert(scrapbook)
         session.createdScrapbookID = scrapbook.id
 
-        attachSessionPhotos(to: scrapbook, sessionID: sessionID, modelContext: modelContext)
+        attachSessionPhotos(to: scrapbook, sessionID: sessionID)
         try? modelContext.save()
 
         activeScrapbook = scrapbook
@@ -47,8 +53,7 @@ final class SessionStore {
 
     private func attachSessionPhotos(
         to scrapbook: Scrapbook,
-        sessionID: UUID,
-        modelContext: ModelContext
+        sessionID: UUID
     ) {
         let photoDescriptor = FetchDescriptor<ScrapPhoto>(
             predicate: #Predicate { $0.sourceSessionID == sessionID },

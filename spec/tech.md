@@ -53,10 +53,10 @@ ScrapIt/
 Rules:
 - Group by feature, not by layer. No global Views/ or ViewModels/ folder.
 - One @Observable ViewModel per feature, placed with that feature's Views. Sub-screens of a feature share the feature's ViewModel.
-- Views are dumb: they render ViewModel state and forward user actions to ViewModel methods. No business logic, networking, persistence or CloudKit calls in Views.
+- Views are dumb: they render ViewModel state and forward user actions to ViewModel methods. No business logic, networking, persistence or CloudKit calls in Views. Views do not access `@Environment(\.modelContext)` or pass database handles to ViewModel methods.
 - ViewModels must not import SwiftUI (Foundation, Observation, SwiftData only), so they stay testable.
 - No cross-feature imports. Shared code moves to Core/ (models, services, design system).
-- Services are injected into ViewModels (initializer or protocol), not created inside Views.
+- Services and persistence (`ModelContext`) are injected into ViewModels and Services (`AuthViewModel`, `SessionStore`, `CloudKitSessionService`, `RollFlowViewModel`, `ScrapbookViewModel`) via initializers at the app root composition level (`RootView`, `MainTabView`), not created inside or passed through Views.
 - Feature-only sub-views go in that feature's Components/ folder.
 - Cross-feature navigation uses the `Navigator` protocol (`AppRoute`, `AppTab`) in `Core/Services/Navigator.swift`, implemented by `AppRouter` in `App/AppRouter.swift` and injected into feature ViewModels.
 - Shared session/scrapbook state across features lives in `SessionStore` (`Core/Services/SessionStore.swift`), injected into `ShelfViewModel`, `RollFlowViewModel`, and `ScrapbookViewModel`.

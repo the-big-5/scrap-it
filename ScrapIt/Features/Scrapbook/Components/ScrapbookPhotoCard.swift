@@ -1,11 +1,9 @@
-import SwiftData
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
 
 struct ScrapbookPhotoCard: View {
-    @Environment(\.modelContext) private var modelContext
     @Bindable var photo: ScrapPhoto
     var viewModel: ScrapbookViewModel
 
@@ -37,7 +35,7 @@ struct ScrapbookPhotoCard: View {
                 .font(.system(size: 13))
                 .foregroundStyle(ScrapTheme.charcoal)
                 .onSubmit {
-                    viewModel.commitCaption(modelContext: modelContext)
+                    viewModel.commitCaption()
                 }
 
             HStack {

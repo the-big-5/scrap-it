@@ -4,10 +4,16 @@ import SwiftData
 
 @Observable
 final class ScrapbookViewModel {
+    @ObservationIgnored private let modelContext: ModelContext
     @ObservationIgnored private weak var navigator: (any Navigator)?
     @ObservationIgnored private let sessionStore: SessionStore
 
-    init(navigator: (any Navigator)? = nil, sessionStore: SessionStore = SessionStore()) {
+    init(
+        modelContext: ModelContext,
+        navigator: (any Navigator)? = nil,
+        sessionStore: SessionStore
+    ) {
+        self.modelContext = modelContext
         self.navigator = navigator
         self.sessionStore = sessionStore
     }
@@ -39,7 +45,7 @@ final class ScrapbookViewModel {
         photo.timestamp.formatted(date: .omitted, time: .shortened)
     }
 
-    func commitCaption(modelContext: ModelContext) {
+    func commitCaption() {
         try? modelContext.save()
     }
 
