@@ -2,9 +2,18 @@ import SwiftData
 import SwiftUI
 
 struct ProfileView: View {
-    var viewModel: ProfileViewModel
-    var scrapbooksCount: Int
+    @State private var viewModel: ProfileViewModel
     var onSignOut: () -> Void
+
+    init(modelContext: ModelContext, currentUser: UserProfile, onSignOut: @escaping () -> Void) {
+        _viewModel = State(initialValue: ProfileViewModel(modelContext: modelContext, currentUser: currentUser))
+        self.onSignOut = onSignOut
+    }
+
+    init(viewModel: ProfileViewModel, onSignOut: @escaping () -> Void) {
+        _viewModel = State(initialValue: viewModel)
+        self.onSignOut = onSignOut
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -22,7 +31,7 @@ struct ProfileView: View {
                 .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(ScrapTheme.charcoal)
 
-            Text(viewModel.scrapbookCountText(scrapbooksCount))
+            Text(viewModel.scrapbookCountText)
                 .font(.system(size: 15))
                 .foregroundStyle(ScrapTheme.secondaryText)
 

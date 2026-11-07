@@ -3,8 +3,21 @@ import SwiftUI
 
 /// Home Workbench (Figma 853:1703 Idle, 1062:3371 CameraClick), built from separate desk assets.
 struct WorkbenchView: View {
-    @Bindable var viewModel: WorkbenchViewModel
-    var scrapbooks: [Scrapbook]
+    @State private var viewModel: WorkbenchViewModel
+
+    init(modelContext: ModelContext, navigator: any Navigator, sessionStore: SessionStore) {
+        _viewModel = State(
+            initialValue: WorkbenchViewModel(
+                modelContext: modelContext,
+                navigator: navigator,
+                sessionStore: sessionStore
+            )
+        )
+    }
+
+    init(viewModel: WorkbenchViewModel) {
+        _viewModel = State(initialValue: viewModel)
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {

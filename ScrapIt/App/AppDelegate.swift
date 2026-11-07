@@ -11,8 +11,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
-    /// Orientation is set per screen: the Capture session is landscape (left and right, like holding a camera),
-    /// every other screen is portrait (from the POC).
     func application(
         _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?
@@ -20,7 +18,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         OrientationLock.mask
     }
 
-    /// Routes the scene to a delegate that receives iCloud share links (roll invites).
+    /// Routes the scene to a delegate that receives iCloud share links (roll invites, change 011).
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
@@ -38,25 +36,5 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         guard CKNotification(fromRemoteNotificationDictionary: userInfo) != nil else { return .noData }
         NotificationCenter.default.post(name: .rollRoomDidChange, object: nil)
         return .newData
-    }
-}
-
-enum OrientationLock {
-    private(set) static var mask: UIInterfaceOrientationMask = .portrait
-
-    static func mask(isCaptureSessionVisible: Bool) -> UIInterfaceOrientationMask {
-        isCaptureSessionVisible ? .landscape : .portrait
-    }
-
-    /// Changes the allowed orientations and rotates the screen right away if needed.
-    static func set(_ newMask: UIInterfaceOrientationMask) {
-        guard newMask != mask else { return }
-        mask = newMask
-        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-            for window in scene.windows {
-                window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-            }
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: newMask)) { _ in }
-        }
     }
 }

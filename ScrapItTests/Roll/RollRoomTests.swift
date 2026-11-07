@@ -8,6 +8,7 @@ import UIKit
 private final class FakeNavigator: Navigator {
     var selectedTab: AppTab = .home
     var path: [AppRoute] = []
+    var isTabBarHidden = false
 }
 
 private final class FakeRoomService: RollRoomServicing {

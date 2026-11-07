@@ -22,7 +22,10 @@ final class RollFlowViewModel {
     var isShareSheetPresented: Bool = false
     private(set) var lobbyParticipants: [RoomParticipant] = []
     /// Short message shown on the Workbench after being removed or after the roll was deleted [Draft].
-    var roomExitMessage: String?
+    var roomExitMessage: String? {
+        get { sessionStore.roomExitMessage }
+        set { sessionStore.roomExitMessage = newValue }
+    }
     /// Invite link state for the host's Invite sheet.
     private(set) var isCreatingInviteLink = false
     private(set) var inviteLinkError: String?
@@ -39,7 +42,7 @@ final class RollFlowViewModel {
 
     private let modelContext: ModelContext
     let cloudService: CloudKitSessionService
-    @ObservationIgnored let sessionStore: SessionStore
+    let sessionStore: SessionStore
     @ObservationIgnored private weak var navigator: (any Navigator)?
     @ObservationIgnored lazy var camera = CameraController()
     @ObservationIgnored let roomService: any RollRoomServicing

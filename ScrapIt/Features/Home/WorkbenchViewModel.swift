@@ -1,16 +1,34 @@
 import Foundation
 import Observation
+import SwiftData
 
 @Observable
 final class WorkbenchViewModel {
+    private let modelContext: ModelContext
     @ObservationIgnored private weak var navigator: (any Navigator)?
-    @ObservationIgnored private let sessionStore: SessionStore
+    private let sessionStore: SessionStore
 
-    var isCameraActive: Bool = false
+    var isCameraActive: Bool = false {
+        didSet {
+            navigator?.isTabBarHidden = isCameraActive
+        }
+    }
 
-    init(navigator: (any Navigator)? = nil, sessionStore: SessionStore) {
+    init(
+        modelContext: ModelContext,
+        navigator: (any Navigator)? = nil,
+        sessionStore: SessionStore
+    ) {
+        self.modelContext = modelContext
         self.navigator = navigator
         self.sessionStore = sessionStore
+    }
+
+    var scrapbooks: [Scrapbook] {
+        let descriptor = FetchDescriptor<Scrapbook>(
+            sortBy: [SortDescriptor(\.createdDate, order: .reverse)]
+        )
+        return (try? modelContext.fetch(descriptor)) ?? []
     }
 
     func toggleCamera() {
@@ -40,7 +58,7 @@ final class WorkbenchViewModel {
         navigator?.push(.scrapbookGrid(scrapbook.id))
     }
 
-    func openLatestScrapbook(from scrapbooks: [Scrapbook]) {
+    func openLatestScrapbook() {
         if let latest = scrapbooks.first {
             openScrapbook(latest)
         }

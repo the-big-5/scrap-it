@@ -9,7 +9,35 @@ struct ScrapbookGridView: View {
 
     let scrapbookID: UUID
     var currentUser: UserProfile
-    var viewModel: ScrapbookViewModel
+    @State private var viewModel: ScrapbookViewModel
+
+    init(
+        scrapbookID: UUID,
+        currentUser: UserProfile,
+        modelContext: ModelContext,
+        navigator: any Navigator,
+        sessionStore: SessionStore
+    ) {
+        self.scrapbookID = scrapbookID
+        self.currentUser = currentUser
+        _viewModel = State(
+            initialValue: ScrapbookViewModel(
+                modelContext: modelContext,
+                navigator: navigator,
+                sessionStore: sessionStore
+            )
+        )
+    }
+
+    init(
+        scrapbookID: UUID,
+        currentUser: UserProfile,
+        viewModel: ScrapbookViewModel
+    ) {
+        self.scrapbookID = scrapbookID
+        self.currentUser = currentUser
+        _viewModel = State(initialValue: viewModel)
+    }
 
     private var scrapbook: Scrapbook? {
         viewModel.scrapbook(id: scrapbookID, in: scrapbooks)
