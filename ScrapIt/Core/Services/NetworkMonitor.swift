@@ -15,7 +15,7 @@ protocol NetworkStatusProviding: AnyObject {
 final class NetworkMonitor: NetworkStatusProviding {
     private(set) var isOnline = false
 
-    @ObservationIgnored private let monitor = NWPathMonitor()
+    private let monitor = NWPathMonitor()
     @ObservationIgnored private var hasStatus = false
     @ObservationIgnored private var waiters: [CheckedContinuation<Bool, Never>] = []
     @ObservationIgnored private var onlineWaiters: [CheckedContinuation<Void, Never>] = []

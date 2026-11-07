@@ -31,7 +31,7 @@ final class RollFlowViewModel {
 
     private let modelContext: ModelContext
     let cloudService: CloudKitSessionService
-    @ObservationIgnored let sessionStore: SessionStore
+    let sessionStore: SessionStore
     @ObservationIgnored private weak var navigator: (any Navigator)?
     @ObservationIgnored lazy var camera = CameraController()
 

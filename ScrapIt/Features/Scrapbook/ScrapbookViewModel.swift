@@ -4,9 +4,9 @@ import SwiftData
 
 @Observable
 final class ScrapbookViewModel {
-    @ObservationIgnored private let modelContext: ModelContext
+    private let modelContext: ModelContext
     @ObservationIgnored private weak var navigator: (any Navigator)?
-    @ObservationIgnored private let sessionStore: SessionStore
+    private let sessionStore: SessionStore
 
     init(
         modelContext: ModelContext,

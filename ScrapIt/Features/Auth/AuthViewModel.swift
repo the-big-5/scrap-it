@@ -17,10 +17,10 @@ final class AuthViewModel {
     private(set) var isRestoringSession = true
     private(set) var authErrorMessage: String?
 
-    @ObservationIgnored private let modelContext: ModelContext
-    @ObservationIgnored private let credentialChecker: any AppleCredentialChecking
-    @ObservationIgnored private let network: any NetworkStatusProviding
-    @ObservationIgnored private let defaults: UserDefaults
+    private let modelContext: ModelContext
+    private let credentialChecker: any AppleCredentialChecking
+    private let network: any NetworkStatusProviding
+    private let defaults: UserDefaults
     /// Apple credential check postponed by an offline launch; runs once the network is back.
     @ObservationIgnored private(set) var pendingCredentialCheck: Task<Void, Never>?
 

@@ -49,7 +49,7 @@ final class CameraController {
     /// "Turn On Camera Adjustments" alert.
     var showsCameraAdjustmentsPrompt: Bool = false
 
-    @ObservationIgnored let engine = CameraEngine()
+    let engine = CameraEngine()
     @ObservationIgnored private var prompt = CameraAdjustmentsPrompt()
     @ObservationIgnored private var shotSequenceNumber: Int = 0
     @ObservationIgnored private var isStarting = false
