@@ -20,9 +20,14 @@ final class CloudKitSessionService {
     private var pollTimer: Timer?
     private let modelContext: ModelContext
 
-    init(modelContext: ModelContext) {
+    init(
+        modelContext: ModelContext,
+        enableNetworkMonitoring: Bool = true
+    ) {
         self.modelContext = modelContext
-        startNetworkMonitoring()
+        if enableNetworkMonitoring {
+            startNetworkMonitoring()
+        }
     }
 
     private func startNetworkMonitoring() {
@@ -274,11 +279,20 @@ final class CloudKitSessionService {
         stopLiveSessionPolling()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
+                await self?.syncPendingOfflinePhotos()
+            }
+            Task { @MainActor [weak self] in
                 guard let self else { return }
+<<<<<<< Updated upstream
                 await self.syncPendingOfflinePhotos()
                 guard self.isOnline, session.ckRecordName != nil else { return }
                 let location = self.roomLocation(for: session)
                 if let record = try? await location.database(in: CKContainer.default()).record(for: location.sessionRecordID) {
+=======
+                guard self.isOnline, let recordName = session.ckRecordName else { return }
+                let recordID = CKRecord.ID(recordName: recordName)
+                if let record = try? await CKContainer.default().publicCloudDatabase.record(for: recordID) {
+>>>>>>> Stashed changes
                     if let remoteUsed = record["slotsUsed"] as? Int, remoteUsed > session.slotsUsed {
                         session.slotsUsed = remoteUsed
                     }
