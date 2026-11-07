@@ -1,25 +1,11 @@
 import Foundation
 
-enum AppTab: String {
-    case home
-    case explore
-    case profile
-}
-
-enum AppRoute: Hashable {
-    case createRollSetup
-    case createRollFilter
-    case createRollLobby
-    case joinRoll
-    case captureSession
-    case scrapbookGrid(UUID)
-}
-
-/// Navigation contract used by feature ViewModels. Implemented by `AppRouter` in `App/`,
+/// Navigation contract used by feature ViewModels. Implemented by `AppRouter` in `App/Navigation/`,
 /// so features never import each other or the app shell.
 protocol Navigator: AnyObject {
     var selectedTab: AppTab { get set }
     var path: [AppRoute] { get set }
+    var isTabBarHidden: Bool { get set }
 }
 
 extension Navigator {

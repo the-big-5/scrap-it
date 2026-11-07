@@ -2,7 +2,7 @@
 - Platform: iOS (ScrapIt.xcodeproj) [Locked]
 - Minimum iOS: 18 [Locked]
 - Devices: iPhone and iPad [Locked]
-- Orientation: for now every screen is portrait, except the Capture session which is landscape only (change 008, per-screen lock via `OrientationLock` in `App/`). Supporting both portrait and landscape on the other screens later: [Open]
+- Orientation: for now every screen is portrait, except the Capture session which is landscape only (change 008, per-screen lock via `OrientationLock` in `Core/Services/` and `AppDelegate` in `App/`). Supporting both portrait and landscape on the other screens later: [Open]
 - UI: SwiftUI [Locked]
 - Architecture: MVVM with @Observable [Locked]
 - Persistence: SwiftData [Locked]
@@ -33,12 +33,13 @@ Feature-first MVVM. Views are dumb; all logic lives in ViewModels.
 
 ```text
 ScrapIt/
-├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView (+ TabBarDragMath), OrientationLock (+ AppDelegate)
+├── App/            ScrapIt.swift, AppDelegate.swift, RootView.swift, MainShellView.swift, FloatingTabBarView.swift (+ TabBarDragMath),
+│                   Navigation/ (AppRouter.swift, NavigationRoutes.swift)
 ├── Core/
 │   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus;
 │   │                   camera logic: ZoomWheelModel, CameraButtonRules
 │   ├── Services/       CloudKitSessionService, CameraController, CameraEngine, FilmFilterPipeline, PreviewRenderer, LivePhotoMovieWriter,
-│   │                   Navigator (AppRoute/AppTab: 3 tabs, number-free routes), SessionStore,
+│   │                   Navigator, SessionStore, OrientationLock,
 │   │                   AppleCredentialChecker, NetworkMonitor, HapticService, ZoomCapabilities
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle
 └── Features/
@@ -56,9 +57,9 @@ Rules:
 - Views are dumb: they render ViewModel state and forward user actions to ViewModel methods. No business logic, networking, persistence or CloudKit calls in Views. Views do not access `@Environment(\.modelContext)` or pass database handles to ViewModel methods.
 - ViewModels must not import SwiftUI (Foundation, Observation, SwiftData only), so they stay testable.
 - No cross-feature imports. Shared code moves to Core/ (models, services, design system).
-- Services and persistence (`ModelContext`) are injected into ViewModels and Services (`AuthViewModel`, `SessionStore`, `CloudKitSessionService`, `RollFlowViewModel`, `ScrapbookViewModel`) via initializers at the app root composition level (`RootView`, `MainTabView`), not created inside or passed through Views.
+- Services and persistence (`ModelContext`) are injected into ViewModels and Services (`AuthViewModel`, `SessionStore`, `CloudKitSessionService`, `RollFlowViewModel`, `ScrapbookViewModel`) via initializers at the app root composition level (`RootView`, `MainShellView`), not created inside or passed through Views.
 - Feature-only sub-views go in that feature's Components/ folder.
-- Cross-feature navigation uses the `Navigator` protocol (`AppRoute`, `AppTab`) in `Core/Services/Navigator.swift`, implemented by `AppRouter` in `App/AppRouter.swift` and injected into feature ViewModels.
+- Cross-feature navigation uses the `Navigator` protocol in `Core/Services/Navigator.swift`, route definitions in `App/Navigation/NavigationRoutes.swift`, implemented by `AppRouter` in `App/Navigation/AppRouter.swift` and injected into feature ViewModels.
 - Shared session/scrapbook state across features lives in `SessionStore` (`Core/Services/SessionStore.swift`), injected into `ShelfViewModel`, `RollFlowViewModel`, and `ScrapbookViewModel`.
 
 ## Never touch

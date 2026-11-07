@@ -2,15 +2,6 @@ import UIKit
 
 /// Orientation is set per screen: the Capture session is landscape (left and right, like holding a camera),
 /// every other screen is portrait (from the POC).
-final class AppDelegate: NSObject, UIApplicationDelegate {
-    func application(
-        _ application: UIApplication,
-        supportedInterfaceOrientationsFor window: UIWindow?
-    ) -> UIInterfaceOrientationMask {
-        OrientationLock.mask
-    }
-}
-
 enum OrientationLock {
     private(set) static var mask: UIInterfaceOrientationMask = .portrait
 

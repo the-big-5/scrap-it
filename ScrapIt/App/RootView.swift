@@ -12,7 +12,7 @@ struct RootView: View {
                     ScrapTheme.creamBackground
                         .ignoresSafeArea()
                 } else if let currentUser = authViewModel.currentUser {
-                    MainTabView(
+                    MainShellView(
                         currentUser: currentUser,
                         modelContext: modelContext,
                         onSignOut: authViewModel.signOut
