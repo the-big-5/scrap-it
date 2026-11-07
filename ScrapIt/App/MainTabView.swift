@@ -93,5 +93,27 @@ struct MainTabView: View {
                 currentUser: currentUser
             )
         }
+        // Restore scrapbooks after sign-in / on launch, and fill in friends' photos (change 012).
+        .task {
+            await rollViewModel.syncScrapbookArchive()
+        }
+        // iCloud roll invite opened by tap or AirDrop (change 011). Runs in its own Task: emptying the
+        // inbox must not cancel the CloudKit calls (a `.task(id:)` on `pending` did, "Operation Cancelled").
+        .onChange(of: IncomingShareInbox.shared.pending, initial: true) { _, pending in
+            guard pending != nil, let metadata = IncomingShareInbox.shared.take() else { return }
+            Task {
+                await rollViewModel.acceptIncomingShare(metadata, currentUser: currentUser)
+            }
+        }
+        // Removed by the host / roll deleted / invite could not be opened.
+        .alert(
+            rollViewModel.roomExitMessage ?? "",
+            isPresented: Binding(
+                get: { rollViewModel.roomExitMessage != nil },
+                set: { if !$0 { rollViewModel.roomExitMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        }
     }
 }

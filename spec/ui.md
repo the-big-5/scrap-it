@@ -37,23 +37,25 @@ Figma node 675:5759
 - Pill button "Next".
 
 ## Screen: Create Roll Lobby [Locked]
-Figma nodes 1011:5883 & 768:1382
-- Header decoration (ShareRoomHeaderDecoration), roll title, stats row showing joined count (person.2) and shot count (camera).
-- Top-right toolbar button (qrcode / invite) opens the "Invite Friend" sheet.
-- Participant avatar grid: host with "(Host)" badge, user with "(You)" badge, joined friends with photo or monogram initial badges.
-- Pill button "Start Roll" (host-enabled; guests see disabled "Waiting for host...").
+Figma nodes 1011:5883 (host), 768:1291 (participant), 1011:6043 (Remove), 1129:8947 (Leave roll)
+- Header decoration (ShareRoomHeaderDecoration), roll title (40 Bold), stats row: "N joined" (person.2, bold) and "N shots" (camera)
+- Toolbar: X (close to the Workbench) on the left. Host: "add person" button opens the Invite friend sheet. Participant: "⋯" menu with "Leave roll"
+- Avatar grid, 3 per row: 100pt circles with initials (surface/ink or burgundy/paper, alternating by user [Draft]), name, "(Host)" / "(You)". Profile photos: [Open]
+- Host: long-press another avatar → "Remove"; "Delete roll" (20pt, underlined, #AE1C1C) above the "Start Roll" pill
+- Participant: "Waiting for the host to start..." (20pt, Paper dark active) instead of the buttons
+- Message on the Workbench after removal / deletion [Draft]: "The host removed you from the roll" / "This roll was deleted"
 
 ## Screen: Invite Friend Sheet [Locked]
-Figma node 768:1483
-- Medium-detent bottom sheet.
-- QR code representation, "Roll code:" with 6 monospace character boxes, "Copy link" clipboard button.
+Figma node 1068:4233
+- Medium-detent sheet: X (close), title "Invite friend", share button (top right; disabled until the link exists)
+- "Roll code:" with 6 boxes (49×58, white, black border), "Copy link" (copies the iCloud link). No QR code
+- While the link is missing: progress, or an error with "Try again" [Draft]
+- Share (Figma 768:1623, system share sheet), host only: AirDrop sends the iCloud link only; messaging apps get text only [Draft]: "Join my roll “<name>” on ScrapIt! 📸 / Roll code: <code> / <link>". Mail and other non-messaging destinations hidden. App name from one constant (`AppBrand.name`)
 
-## Screen: Join a Roll [Draft]
-Figma node 725:6659 (placeholder, design still in progress)
-- Back button, title "Join Roll"
-- "Scan QR" camera viewfinder area (placeholder box)
-- "or Enter code": 6 single-character boxes
-- Button "Join Roll"
+## Screen: Join a Roll [Locked]
+Figma node 725:6659
+- Back button, title "Join Roll", "Enter code" with 6 single-character boxes (centered), "Join" pill
+- Error messages under the boxes [Draft]: "No roll found for this code", "This roll has ended", "You're offline. Connect to the internet to join.", "Couldn't join. Make sure you're signed in to iCloud and try again."
 
 ## Screen: Capture session [Locked]
 Figma node 708:4941 (landscape design). Camera behavior from the camera POC (FilterCam), change 008.
@@ -78,6 +80,7 @@ Figma node 708:4941 (landscape design). Camera behavior from the camera POC (Fil
 ## Screen: Profile tab [Open] (design in progress)
 - Temporary "Sign Out" button (`DSButton` secondary) until the design is ready
 ## Screen: Scrapbook (basic grid after session) [Open] (design in progress)
+- Live Photo (change 012) [Draft]: "LIVE" badge on the photo, long press plays it (`LivePhotoPlayerView`)
 
 ## Design system [Locked]
 Figma page "Design System #2" (628:4011), Atoms and Molecules only. Code: `Core/DesignSystem/` (`DS` prefix). Existing `ScrapTheme`, `OffsetPillButtonStyle`, `BackCircleButton` stay until screens are migrated.

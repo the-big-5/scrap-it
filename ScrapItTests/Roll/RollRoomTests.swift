@@ -1,0 +1,404 @@
+import CloudKit
+import Foundation
+import SwiftData
+import Testing
+import UIKit
+@testable import ScrapIt
+
+private final class FakeNavigator: Navigator {
+    var selectedTab: AppTab = .home
+    var path: [AppRoute] = []
+}
+
+private final class FakeRoomService: RollRoomServicing {
+    var lastErrorDescription: String?
+    var createError: RoomError?
+    var rooms: [String: RoomSnapshot] = [:]
+    var joinError: RoomError?
+    var fetchError: RoomError?
+    var created: [RoomDraft] = []
+    var removed: [(userID: String, code: String)] = []
+    var left: [(code: String, owner: String, userID: String)] = []
+    var deleted: [String] = []
+    let shareURL = URL(string: "https://www.icloud.com/share/0abcDEF")!
+
+    func createRoom(_ draft: RoomDraft) async throws -> RoomSnapshot {
+        created.append(draft)
+        if let createError {
+            lastErrorDescription = "CKError 15 (serverRejectedRequest)"
+            throw createError
+        }
+        let snapshot = RoomSnapshot(
+            sessionID: draft.sessionID, rollCode: draft.rollCode, name: draft.name, hostUserID: draft.host.userID,
+            rollSize: draft.rollSize, slotsUsed: 0, filterRaw: draft.filterRaw, statusRaw: SessionStatus.waiting.rawValue,
+            participants: [draft.host], shareURL: shareURL, zoneOwnerName: nil, rollKey: draft.rollKey
+        )
+        rooms[draft.rollCode] = snapshot
+        return snapshot
+    }
+
+    func joinRoom(code: String, as user: RoomParticipant) async throws -> RoomSnapshot {
+        if let joinError { throw joinError }
+        guard var room = rooms[code] else { throw RoomError.notFound }
+        if room.hostUserID == user.userID {
+            // Same iCloud as the host: own room, nobody added.
+            return room
+        }
+        room.zoneOwnerName = "_hostOwner"
+        if !room.participants.contains(where: { $0.userID == user.userID }) {
+            room.participants.append(user)
+        }
+        rooms[code] = room
+        return room
+    }
+
+    func acceptShare(_ metadata: CKShare.Metadata, as user: RoomParticipant) async throws -> RoomSnapshot {
+        throw RoomError.unavailable
+    }
+
+    func fetchRoom(code: String, zoneOwnerName: String?) async throws -> RoomSnapshot {
+        if let fetchError { throw fetchError }
+        guard var room = rooms[code] else { throw RoomError.deleted }
+        room.zoneOwnerName = zoneOwnerName
+        return room
+    }
+
+    func removeParticipant(userID: String, fromRoom code: String) async throws {
+        removed.append((userID, code))
+        rooms[code]?.participants.removeAll { $0.userID == userID }
+    }
+
+    func leaveRoom(code: String, zoneOwnerName: String, userID: String) async throws {
+        left.append((code, zoneOwnerName, userID))
+    }
+
+    func deleteRoom(code: String) async throws {
+        deleted.append(code)
+        rooms[code] = nil
+    }
+
+    func listRooms() async throws -> [RoomSnapshot] { Array(rooms.values) }
+
+    func downloadShotPayload(recordName: String) async throws -> Data { throw RoomError.notFound }
+}
+
+@MainActor
+struct RollRoomTests {
+    let container: ModelContainer
+    var context: ModelContext { container.mainContext }
+    private let navigator = FakeNavigator()
+    private let rooms = FakeRoomService()
+    let host: UserProfile
+    let guest: UserProfile
+
+    init() throws {
+        container = try ModelContainer(
+            for: UserProfile.self, Scrapbook.self, ScrapPhoto.self, CaptureSession.self,
+            configurations: ModelConfiguration(UUID().uuidString, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        )
+        host = UserProfile(appleUserID: "host-1", name: "Nabiel")
+        guest = UserProfile(appleUserID: "guest-2", name: "Brian Chang")
+        context.insert(host)
+        context.insert(guest)
+    }
+
+    private func makeViewModel(online: Bool = true) -> RollFlowViewModel {
+        let cloud = CloudKitSessionService(modelContext: context)
+        cloud.isOnline = online
+        return RollFlowViewModel(
+            modelContext: context,
+            navigator: navigator,
+            sessionStore: SessionStore(modelContext: context),
+            cloudService: cloud,
+            roomService: rooms
+        )
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async {
+        for _ in 0..<200 where !condition() {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    private func hostRoom(code: String = "N4B13L", status: SessionStatus = .waiting) {
+        rooms.rooms[code] = RoomSnapshot(
+            sessionID: UUID(), rollCode: code, name: "Bali '27", hostUserID: host.appleUserID, rollSize: 24,
+            slotsUsed: 0, filterRaw: RollFilter.colorPrint200.rawValue, statusRaw: status.rawValue,
+            participants: [RoomParticipant(userID: host.appleUserID, name: host.name)],
+            shareURL: rooms.shareURL, zoneOwnerName: nil
+        )
+    }
+
+    // MARK: - Share content
+
+    private let content = RollInviteContent(
+        rollName: "Bali '27",
+        rollCode: "N4B13L",
+        link: URL(string: "https://www.icloud.com/share/0abcDEF")!
+    )
+
+    @Test func airDropSharesTheLinkOnly() {
+        #expect(content.item(for: .airDrop) as? URL == content.link)
+    }
+
+    @Test(arguments: [
+        UIActivity.ActivityType.message,
+        UIActivity.ActivityType("net.whatsapp.WhatsApp.ShareExtension"),
+        UIActivity.ActivityType("ph.telegra.Telegraph.Share"),
+    ])
+    func messagingAppsGetTextWithTheLink(_ type: UIActivity.ActivityType) throws {
+        let text = try #require(content.item(for: type) as? String)
+        #expect(text.contains("Bali '27"))
+        #expect(text.contains("N4B13L"))
+        #expect(text.contains(content.link.absoluteString))
+        #expect(text.contains(AppBrand.name))
+    }
+
+    @Test func onlyAirDropAndMessagingAreOffered() {
+        let excluded = RollInviteContent.excludedActivityTypes
+        #expect(excluded.contains(.mail))
+        #expect(excluded.contains(.print))
+        #expect(!excluded.contains(.airDrop))
+        #expect(!excluded.contains(.message))
+    }
+
+    // MARK: - Create
+
+    @Test func hostCreatesARoomWithAShareLink() async {
+        let vm = makeViewModel()
+        vm.draftRollName = "Bali '27"
+        vm.draftShotCount = 24
+
+        vm.createLobbySession(currentUser: host)
+        await waitUntil { vm.inviteContent != nil }
+
+        #expect(rooms.created.first?.name == "Bali '27")
+        #expect(navigator.path == [.createRollLobby])
+        #expect(vm.inviteContent?.link == rooms.shareURL)
+        #expect(vm.lobbyParticipants.map(\.userID) == [host.appleUserID])
+        #expect(vm.isHost(host))
+        // Change 012: the room carries a fresh 256-bit roll key for the encrypted shots.
+        #expect(rooms.created.first?.rollKey?.count == 32)
+        #expect(vm.activeSession?.rollKey == rooms.created.first?.rollKey)
+    }
+
+    @Test func failedInviteLinkShowsAnErrorAndCanRetry() async {
+        rooms.createError = .unavailable
+        let vm = makeViewModel()
+        vm.createLobbySession(currentUser: host)
+        await waitUntil { vm.inviteLinkError != nil }
+
+        #expect(vm.inviteContent == nil)
+        #expect(vm.inviteLinkError?.hasPrefix(RollFlowViewModel.inviteLinkFailedMessage) == true)
+        #expect(vm.inviteCopyText == vm.activeSession?.rollCode, "Copy falls back to the code without a link")
+
+        rooms.createError = nil
+        await vm.createInviteLinkIfNeeded(currentUser: host)
+
+        #expect(vm.inviteLinkError == nil)
+        #expect(vm.inviteContent?.link == rooms.shareURL)
+        #expect(rooms.created.count == 2)
+    }
+
+    @Test func participantNeverCreatesARoom() async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+        vm.activeSession?.shareURLString = nil
+
+        await vm.createInviteLinkIfNeeded(currentUser: guest)
+
+        #expect(rooms.created.isEmpty)
+    }
+
+    // MARK: - Join
+
+    @Test func joinByCodeOpensTheParticipantLobby() async {
+        hostRoom()
+        let vm = makeViewModel()
+        navigator.path = [.joinRoll]
+
+        await vm.joinRollWithCode(code: "n4b13l", currentUser: guest)
+
+        #expect(navigator.path == [.createRollLobby])
+        #expect(vm.joinErrorMessage == nil)
+        #expect(vm.lobbyParticipants.map(\.userID) == [host.appleUserID, guest.appleUserID])
+        #expect(!vm.isHost(guest))
+        #expect(vm.activeSession?.ckZoneOwnerName == "_hostOwner")
+        #expect(vm.inviteContent != nil, "Link is known, but the invite button is host only")
+    }
+
+    @Test func sameICloudAsHostEntersTheRoomWithoutAddingAnyone() async {
+        hostRoom()
+        let vm = makeViewModel()
+
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: host)
+
+        #expect(navigator.path == [.createRollLobby])
+        #expect(vm.lobbyParticipants.map(\.userID) == [host.appleUserID])
+        #expect(vm.isHost(host))
+        #expect(vm.activeSession?.ckZoneOwnerName == nil, "Own room: private database")
+    }
+
+    @Test func joiningTwiceDoesNotAddTheSameUserAgain() async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+        vm.closeLobby()
+
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+
+        #expect(vm.lobbyParticipants.map(\.userID) == [host.appleUserID, guest.appleUserID])
+    }
+
+    @Test func lateJoinGoesStraightToTheCamera() async {
+        hostRoom(status: .live)
+        let vm = makeViewModel()
+
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+
+        #expect(navigator.path == [.captureSession])
+    }
+
+    @Test(arguments: [
+        (RoomError.notFound, RollFlowViewModel.joinNotFoundMessage),
+        (RoomError.ended, RollFlowViewModel.joinEndedMessage),
+        (RoomError.unavailable, RollFlowViewModel.joinUnavailableMessage),
+    ])
+    func joinErrorsShowAMessage(_ error: RoomError, _ message: String) async {
+        rooms.joinError = error
+        let vm = makeViewModel()
+
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+
+        #expect(vm.joinErrorMessage == message)
+        #expect(navigator.path.isEmpty)
+    }
+
+    @Test func joinOfflineShowsTheOfflineMessage() async {
+        hostRoom()
+        let vm = makeViewModel(online: false)
+
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+
+        #expect(vm.joinErrorMessage == RollFlowViewModel.joinOfflineMessage)
+    }
+
+    // MARK: - Host / participant actions
+
+    @Test func onlyTheHostCanRemoveOthers() async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+        let hostP = RoomParticipant(userID: host.appleUserID, name: host.name)
+        let guestP = RoomParticipant(userID: guest.appleUserID, name: guest.name)
+
+        #expect(vm.canRemove(hostP, currentUser: host) == false, "Host cannot remove themselves")
+        #expect(vm.canRemove(guestP, currentUser: host))
+        #expect(vm.canRemove(hostP, currentUser: guest) == false, "Participants cannot remove")
+    }
+
+    @Test func hostRemovesAParticipant() async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+        // Same device acting as host for the test: make the host the session's host user.
+        let guestP = RoomParticipant(userID: guest.appleUserID, name: guest.name)
+
+        vm.removeParticipant(guestP, currentUser: host)
+        await waitUntil { !rooms.removed.isEmpty }
+
+        #expect(vm.lobbyParticipants.map(\.userID) == [host.appleUserID])
+        #expect(rooms.removed.first?.userID == guest.appleUserID)
+    }
+
+    @Test func participantLeavesTheRoll() async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+
+        vm.leaveRoll(currentUser: guest)
+        await waitUntil { !rooms.left.isEmpty }
+
+        #expect(rooms.left.first?.userID == guest.appleUserID)
+        #expect(rooms.left.first?.owner == "_hostOwner")
+        #expect(navigator.path.isEmpty)
+        #expect(vm.activeSession == nil)
+    }
+
+    @Test func hostDeletesTheRoll() async {
+        let vm = makeViewModel()
+        vm.createLobbySession(currentUser: host)
+        await waitUntil { vm.inviteContent != nil }
+        let code = vm.activeSession?.rollCode
+
+        vm.deleteRoll()
+        await waitUntil { !rooms.deleted.isEmpty }
+
+        #expect(rooms.deleted == [code].compactMap { $0 })
+        #expect(navigator.path.isEmpty)
+        #expect(vm.activeSession == nil)
+        #expect((try? context.fetchCount(FetchDescriptor<CaptureSession>())) == 0)
+    }
+
+    @Test func closeKeepsTheRoomAndGoesHome() async {
+        let vm = makeViewModel()
+        vm.createLobbySession(currentUser: host)
+        await waitUntil { vm.inviteContent != nil }
+
+        vm.closeLobby()
+
+        #expect(navigator.path.isEmpty)
+        #expect(rooms.deleted.isEmpty)
+        #expect((try? context.fetchCount(FetchDescriptor<CaptureSession>())) == 1)
+    }
+
+    // MARK: - Lobby refresh
+
+    @Test(arguments: [
+        (RoomError.removed, RollFlowViewModel.roomRemovedMessage),
+        (RoomError.deleted, RollFlowViewModel.roomDeletedMessage),
+    ])
+    func removedOrDeletedSendsTheParticipantHome(_ error: RoomError, _ message: String) async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+
+        rooms.fetchError = error
+        await vm.refreshLobby()
+
+        #expect(vm.roomExitMessage == message)
+        #expect(navigator.path.isEmpty)
+        #expect(vm.activeSession == nil)
+    }
+
+    @Test func participantFollowsTheHostStart() async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+
+        rooms.rooms["N4B13L"]?.statusRaw = SessionStatus.live.rawValue
+        await vm.refreshLobby()
+
+        #expect(navigator.path == [.createRollLobby, .captureSession])
+    }
+
+    @Test func newParticipantsAppearOnRefresh() async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+
+        rooms.rooms["N4B13L"]?.participants.append(RoomParticipant(userID: "f-3", name: "Fikri"))
+        await vm.refreshLobby()
+
+        #expect(vm.lobbyParticipants.map(\.name) == ["Nabiel", "Brian Chang", "Fikri"])
+        #expect(vm.lobbyJoinedCount == 3)
+    }
+
+    // MARK: - Avatars
+
+    @Test(arguments: [("Sanny", "S"), ("Brian Chang", "BC"), ("fikri ahmad rizal", "FA"), ("", "?")])
+    func initials(_ name: String, _ expected: String) {
+        #expect(RollFlowViewModel.initials(for: name) == expected)
+    }
+}

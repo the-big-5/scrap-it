@@ -7,7 +7,7 @@
 - Architecture: MVVM with @Observable [Locked]
 - Persistence: SwiftData [Locked]
 - Sync/backend: CloudKit [Locked]
-- Sharing: CKShare (CloudKit sharing) for sessions and scrapbooks [Locked]
+- Sharing: CKShare (CloudKit sharing) for roll rooms; scrapbook photos in the public database, encrypted, readable only with the roll key from the room (change 012) [Locked]
 - Auth: Sign in with Apple / iCloud only [Locked]
 - Invites: share sheet with invite link [Locked]
 - Camera: AVFoundation custom camera (`CameraEngine`, ported from the camera POC): multi-lens virtual back camera, filtered live preview (Core Image + Metal), one filter pipeline for preview / photo / Live Photo movie, `RotationCoordinator` rotation, iOS 18 Camera Control "Zoom" slider [Locked]
@@ -19,13 +19,20 @@
 - Live transport: CloudKit only (CKShare, records, subscriptions); last-shot race uses CKModifyRecordsOperation with .ifServerRecordUnchanged; no third-party backend [Locked]. Revisit only if live collaborative scrapbooking needs more than CloudKit [Open]
 - CloudKit needs the iCloud entitlement and a paid developer team on a real device; the app must not crash without it
 - Sign in with Apple needs the `com.apple.developer.applesignin` entitlement (added in change 004) and a paid developer team. CloudKit is not needed for sign-in
-- SwiftData syncs to the user's private CloudKit database (change 006; Development environment when run from Xcode). Models must stay CloudKit-compatible: every attribute optional or with a default, no `@Attribute(.unique)`, relationships optional. Without an iCloud account data stays local; if CloudKit setup fails the app falls back to a local-only store
-- CloudKit background pushes need Background Modes › Remote notifications (`.xcodeproj` setting, not set yet) [Open]
-- Duplicates after sync: `UserProfile` keeps the oldest per Apple user ID; duplicates of `Scrapbook`, `ScrapPhoto`, `CaptureSession` by `id` are not handled yet [Open]
+- SwiftData (change 012): two stores. The profile store (`UserProfile`, default store name) syncs to the user's private CloudKit database (change 006; Development environment when run from Xcode). The `Rolls` store (`CaptureSession`, `Scrapbook`, `ScrapPhoto`) is local only. Models must stay CloudKit-compatible: every attribute optional or with a default, no `@Attribute(.unique)`, relationships optional. Without an iCloud account data stays local; if CloudKit setup fails the app falls back to a local-only store
+- Roll rooms (change 011): the host's private database holds a zone `Roll-<code>` with the `RollSession` record and one `RollParticipant` record per person, shared with a zone-wide `CKShare` (read/write for anyone with the link). A public `RollCode-<code>` record maps the code to the share link. Participants use their shared database. Opening a link or code first checks the user's own private database (same iCloud as the host → open as host)
+- CloudKit container: `CKContainer.default()` is always `iCloud.<bundle ID>`, so the entitlements must list exactly that container (each developer's own for now)
+- iCloud share links need `CKSharingSupported`; CloudKit pushes need Background Modes › Remote notifications. Both are in `ScrapIt-Info.plist` (repo root), merged into the generated Info.plist via `INFOPLIST_FILE` (`.xcodeproj` exception, change 011)
+- Rooms use the host's own iCloud storage (private database): a full iCloud gives "Quota Exceeded". Rooms are small; photos no longer go to the user's iCloud (change 012)
+- Scrapbook photos (change 012): each shot is a public `RollShot` record named with a random UUID holding one AES-GCM encrypted `payload` asset (photo, Live Photo movie, author, caption, time); no readable fields, no indexes. Each roll has a random 256-bit key (`RollSession.rollKey`, local `CaptureSession.rollKey`). A `RollShotRef` per shot in the room zone is the members-only index.
+- Restore (change 012): on every launch after sign-in and when a roll ends, `ScrapbookArchiveSync` reads the user's own (private) and joined (shared) `Roll-*` zones, and for ended rolls downloads, decrypts and rebuilds missing scrapbooks / photos (Live Photos included). Leaving a roll or the host deleting it removes access to its photos: [Open]
+- Privacy of encrypted public storage (vs members-only CKShare): product sign-off [Open]
+- Before Production (CloudKit Console, manual): remove old `RollShot` fields (sessionID, authorID, authorName, caption, timestamp, imageAsset), keep `RollShot` without indexes, no "World" read in Security Roles
+- Duplicates after sync: `UserProfile` keeps the oldest per Apple user ID; roll data is local and restore skips existing ids
 - One shared iCloud container / team for all developers: [Open] (each developer currently uses their own)
 - Before TestFlight / App Store: deploy the CloudKit schema to Production; after that, model changes can only add fields
 - `.xcodeproj` exception (change 008, approved by the user): iPhone supported orientations include Landscape Left / Right; nothing else changed
-- Live Photo movies are stored in `ScrapPhoto.livePhotoMovieData` but not uploaded to CloudKit or shown in the Scrapbook yet [Open]
+- Live Photo movies are stored in `ScrapPhoto.livePhotoMovieData`, uploaded inside the encrypted shot and played in the Scrapbook grid (change 012)
 - "iPhone Duo" device target: [Open] (not an iOS device, clarify)
 
 ## Code structure [Locked]
@@ -33,20 +40,23 @@ Feature-first MVVM. Views are dumb; all logic lives in ViewModels.
 
 ```text
 ScrapIt/
-├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView (+ TabBarDragMath), OrientationLock (+ AppDelegate)
+├── App/            ScrapIt.swift, RootView, MainTabView, AppRouter, FloatingTabBarView (+ TabBarDragMath), OrientationLock (+ AppDelegate),
+│                   CloudKitShareHandling (share-accepting scene delegate, IncomingShareInbox)
 ├── Core/
 │   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus;
-│   │                   camera logic: ZoomWheelModel, CameraButtonRules
+│   │                   camera logic: ZoomWheelModel, CameraButtonRules; AppBrand (app name constant)
 │   ├── Services/       CloudKitSessionService, CameraController, CameraEngine, FilmFilterPipeline, PreviewRenderer, LivePhotoMovieWriter,
 │   │                   Navigator (AppRoute/AppTab: 3 tabs, number-free routes), SessionStore,
-│   │                   AppleCredentialChecker, NetworkMonitor, HapticService, ZoomCapabilities
-│   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle
+│   │                   AppleCredentialChecker, NetworkMonitor, HapticService, ZoomCapabilities,
+│   │                   RollRoomService (CloudKit rooms: RollRoomServicing, CloudKitRollRoomService, RollRoomLocation),
+│   │                   RollShotCrypto (AES-GCM shot payload), ScrapbookArchiveSync (restore)
+│   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle, CircleIconButton, LivePhotoPlayerView
 └── Features/
     ├── Auth/           WelcomeSignInView, AuthViewModel
     ├── Home/           WorkbenchView, WorkbenchViewModel, WorkbenchLayout (desk asset frames, uniform scale)
     ├── Explore/        ExploreView (3-tab placeholder)
     ├── Profile/        ProfileView, ProfileViewModel
-    ├── Roll/           CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, DebugLastShotView)
+    ├── Roll/           CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, RollInviteShare, RollAvatarView, RollRoomHeader, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, DebugLastShotView)
     └── Scrapbook/      ScrapbookGridView, ScrapbookViewModel, Components/
 ```
 
@@ -67,7 +77,7 @@ Rules:
 - Do not modify main spec/ files except via /merge-change
 
 ## Data models
-Stored with SwiftData, synced to the user's private CloudKit database. Sharing with friends (rolls, shots) goes through `CloudKitSessionService` (CloudKit records / CKShare), not SwiftData sync.
+Stored with SwiftData. Only Profile syncs to the user's private CloudKit database; rolls, scrapbooks and photos are local, with their cloud copy in the room (CKShare) and the encrypted public shots (change 012).
 
 ### Profile [Locked]
 - name, avatar image
@@ -89,6 +99,7 @@ Stored with SwiftData, synced to the user's private CloudKit database. Sharing w
 - filter (Cinematic 400 B&W / 200 Color Print)
 - status: waiting / live / ended
 - start time, end time, created scrapbook id
+- roll key (random, encrypts the roll's shots; change 012)
 
 ### Shelf [Locked]
 - No stored model. A derived view of the user's scrapbooks.

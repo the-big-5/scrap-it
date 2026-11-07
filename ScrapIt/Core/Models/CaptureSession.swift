@@ -8,6 +8,10 @@ final class CaptureSession {
     var rollCode: String = ""
     var shareURLString: String?
     var ckRecordName: String?
+    /// Owner of the room's CloudKit zone; `nil` on the host's device (change 011).
+    var ckZoneOwnerName: String?
+    /// Random AES key for this roll's shots in the public database; also stored in the room (change 012).
+    var rollKey: Data?
     var hostUserID: String = ""
     var participantIDs: [String] = []
     var participantNames: [String] = []

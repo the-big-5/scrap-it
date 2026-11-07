@@ -7,10 +7,20 @@ struct ScrapbookPhotoCard: View {
     @Bindable var photo: ScrapPhoto
     var viewModel: ScrapbookViewModel
 
+    /// Live Photos play on long press (change 012); stills stay a plain image.
+    @ViewBuilder
+    private var photoView: some View {
+        if let movie = photo.livePhotoMovieData {
+            LivePhotoPlayerView(imageData: photo.imageData, movieData: movie, contentMode: .scaleAspectFill)
+        } else {
+            ScrapDataImageView(data: photo.imageData)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topLeading) {
-                ScrapDataImageView(data: photo.imageData)
+                photoView
                     .frame(height: 148)
                     .frame(maxWidth: .infinity)
                     .background(ScrapTheme.filmStripDark)
