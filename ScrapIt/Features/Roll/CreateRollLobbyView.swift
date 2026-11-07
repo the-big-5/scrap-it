@@ -1,10 +1,14 @@
 import SwiftUI
 
+/// Roll lobby (change 011). Host: Figma 1011:5883 (invite, Delete roll, Start Roll, long-press Remove 1011:6043).
+/// Participant: Figma 768:1291 ("⋯" → Leave roll 1129:8947, waiting text).
 struct CreateRollLobbyView: View {
-    @Environment(\.dismiss) private var dismiss
-
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
+
+    private static let ink = DSColor.Brand.primary.color
+    /// Figma "rednormal" (#AE1C1C).
+    private static let deleteRed = Color(red: 0.682, green: 0.110, blue: 0.110)
 
     private var isHost: Bool {
         flowViewModel.isHost(currentUser)
@@ -14,240 +18,154 @@ struct CreateRollLobbyView: View {
         flowViewModel.activeSession
     }
 
-    private var participants: [(id: String, name: String)] {
-        guard let session else { return [] }
-        var result: [(id: String, name: String)] = []
-        let ids = session.participantIDs
-        let names = session.participantNames
-        for i in 0..<ids.count {
-            let id = ids[i]
-            let name = i < names.count ? names[i] : "Friend"
-            result.append((id: id, name: name))
-        }
-        return result
-    }
-
     var body: some View {
         ZStack(alignment: .top) {
             DSColor.Kraft.lightActive.color
                 .ignoresSafeArea()
 
-            // Header decoration from Figma nodes 1011:5883 / 768:1382
-            Image("ShareRoomHeaderDecoration")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 206)
-                .clipped()
-                .allowsHitTesting(false)
-                .ignoresSafeArea(edges: .top)
+            RollRoomHeader()
 
             VStack(alignment: .leading, spacing: 0) {
-                // Top navigation bar with Back button, Title, and Invite Button
-                HStack {
-                    BackCircleButton {
-                        dismiss()
-                    }
+                toolbar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
 
-                    Spacer()
-
-                    Text("Share Room")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(DSColor.Brand.primary.color)
-
-                    Spacer()
-
-                    // Top-right invite button triggering the Invite Friend Sheet
-                    Button {
-                        flowViewModel.isInviteSheetPresented = true
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(DSColor.Paper.light.color)
-                                .frame(width: 44, height: 44)
-                                .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 1)
-
-                            Image(systemName: "qrcode")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundStyle(DSColor.Brand.primary.color)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 18)
-
-                // Header Info: Roll Name + Stats Row
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(session?.name ?? "My Roll")
-                        .font(.system(size: 38, weight: .bold))
-                        .foregroundStyle(DSColor.Brand.primary.color)
-                        .lineLimit(1)
-
-                    HStack(spacing: 18) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "person.2")
-                                .font(.system(size: 17, weight: .bold))
-                            Text("\(participants.count) joined")
-                                .font(.system(size: 17, weight: .bold))
-                        }
-                        .foregroundStyle(DSColor.Component.textSecondary.color)
-
-                        HStack(spacing: 6) {
-                            Image(systemName: "camera")
-                                .font(.system(size: 17, weight: .regular))
-                            Text("\(session?.rollSize ?? 36) shots")
-                                .font(.system(size: 17, weight: .regular))
-                        }
-                        .foregroundStyle(DSColor.Component.textSecondary.color)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 28)
-
-                // Dynamic Participant Avatar Grid
-                ScrollView {
-                    LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(), spacing: 16),
-                            GridItem(.flexible(), spacing: 16),
-                            GridItem(.flexible(), spacing: 16)
-                        ],
-                        spacing: 24
-                    ) {
-                        ForEach(Array(participants.enumerated()), id: \.element.id) { index, participant in
-                            participantAvatarCell(
-                                id: participant.id,
-                                name: participant.name,
-                                index: index
-                            )
-                        }
-                    }
+                header
                     .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                }
+                    .padding(.top, 14)
 
-                Spacer()
-
-                // Primary Start Roll Button
-                VStack(spacing: 8) {
-                    if isHost {
-                        Button("Start Roll") {
-                            flowViewModel.startRollCapture()
+                // 3 avatars per row (Figma columns at x 27 / 147 / 267). Rooms are small, so no lazy grid.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        ForEach(rows, id: \.first?.id) { row in
+                            HStack(alignment: .top, spacing: 20) {
+                                ForEach(row) { participant in
+                                    avatar(participant)
+                                }
+                            }
                         }
-                        .buttonStyle(OffsetPillButtonStyle())
-                    } else {
-                        // Guest view: waiting for host to start
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .tint(DSColor.Brand.primary.color.opacity(0.6))
-                            Text("Waiting for host to start...")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(DSColor.Brand.primary.color.opacity(0.7))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(
-                            Capsule()
-                                .fill(DSColor.Paper.light.color.opacity(0.7))
-                                .overlay(
-                                    Capsule()
-                                        .stroke(DSColor.Brand.primary.color.opacity(0.3), lineWidth: 1)
-                                )
-                        )
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 27)
+                    .padding(.top, 24)
                 }
-                .padding(.horizontal, 22)
-                .padding(.bottom, 24)
+
+                bottom
+                    .padding(.horizontal, 22)
+                    .padding(.bottom, 24)
             }
         }
         .navigationBarBackButtonHidden(true)
+        .onAppear { flowViewModel.lobbyDidAppear() }
+        .onDisappear { flowViewModel.lobbyDidDisappear() }
         .sheet(isPresented: $flowViewModel.isInviteSheetPresented) {
-            InviteFriendSheetView(
-                rollCode: session?.rollCode ?? "",
-                inviteURL: session?.inviteURL,
-                qrPayload: flowViewModel.lobbyQRPayload
-            )
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
+            InviteFriendSheetView(currentUser: currentUser, flowViewModel: flowViewModel)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
         }
     }
 
-    // MARK: - Avatar Cell Builder
+    private var rows: [[RoomParticipant]] {
+        let all = flowViewModel.lobbyParticipants
+        return stride(from: 0, to: all.count, by: 3).map { Array(all[$0..<min($0 + 3, all.count)]) }
+    }
 
-    @ViewBuilder
-    private func participantAvatarCell(id: String, name: String, index: Int) -> some View {
-        let isHostParticipant = (id == session?.hostUserID)
-        let isCurrent = (id == currentUser.appleUserID)
+    // MARK: - Toolbar
 
-        VStack(spacing: 6) {
-            ZStack {
-                // Background & image / monogram
-                if isCurrent, let avatarData = currentUser.avatarData, let uiImage = UIImage(data: avatarData) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 90, height: 90)
-                        .clipShape(Circle())
-                } else {
-                    let backgroundFill = avatarColor(for: index)
-                    let textFill = avatarTextColor(for: index)
-                    let initial = String(name.prefix(1)).uppercased()
-
-                    Circle()
-                        .fill(backgroundFill)
-                        .frame(width: 90, height: 90)
-
-                    Text(initial.isEmpty ? "?" : initial)
-                        .font(.system(size: 38, weight: .regular))
-                        .foregroundStyle(textFill)
-                }
-
-                // Border ring
-                Circle()
-                    .stroke(DSColor.Brand.primary.color, lineWidth: 1.5)
-                    .frame(width: 90, height: 90)
+    private var toolbar: some View {
+        HStack {
+            CircleIconButton(systemName: "xmark", accessibilityLabel: "Close") {
+                flowViewModel.closeLobby()
             }
 
-            // Name
-            Text(name)
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(DSColor.Brand.primary.color)
+            Spacer()
+
+            if isHost {
+                CircleIconButton(systemName: "person.badge.plus", accessibilityLabel: "Invite friend") {
+                    flowViewModel.isInviteSheetPresented = true
+                }
+            } else {
+                Menu {
+                    Button("Leave roll", role: .destructive) {
+                        flowViewModel.leaveRoll(currentUser: currentUser)
+                    }
+                } label: {
+                    CircleIconLabel(systemName: "ellipsis")
+                }
+                .accessibilityLabel("More")
+            }
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(session?.name ?? "")
+                .font(.system(size: 40, weight: .bold))
+                .foregroundStyle(Self.ink)
                 .lineLimit(1)
 
-            // Subtitle indicator
-            if isHostParticipant {
-                Text("(Host)")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(DSColor.Brand.primary.color.opacity(0.7))
-            } else if isCurrent {
-                Text("(You)")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(DSColor.Brand.primary.color.opacity(0.7))
-            } else {
-                Text(" ")
-                    .font(.system(size: 13))
+            HStack(spacing: 16) {
+                Label("\(flowViewModel.lobbyJoinedCount) joined", systemImage: "person.2")
+                    .font(.system(size: 18, weight: .bold))
+                Label("\(session?.rollSize ?? 0) shots", systemImage: "camera")
+                    .font(.system(size: 18, weight: .regular))
             }
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(DSColor.Component.textSecondary.color)
         }
     }
 
-    private func avatarColor(for index: Int) -> Color {
-        let colors = [
-            DSColor.Paper.light.color,
-            DSColor.Brand.tertiary.color,
-            DSColor.Brand.secondary.color,
-            DSColor.Kraft.darker.color
-        ]
-        return colors[index % colors.count]
+    // MARK: - Avatars
+
+    @ViewBuilder
+    private func avatar(_ participant: RoomParticipant) -> some View {
+        let cell = RollAvatarView(
+            participant: participant,
+            isHost: participant.userID == session?.hostUserID,
+            isCurrentUser: participant.userID == currentUser.appleUserID
+        )
+        if flowViewModel.canRemove(participant, currentUser: currentUser) {
+            // Host long-press → Remove (no confirmation, user decision).
+            cell.contextMenu {
+                Button("Remove", role: .destructive) {
+                    flowViewModel.removeParticipant(participant, currentUser: currentUser)
+                }
+            }
+        } else {
+            cell
+        }
     }
 
-    private func avatarTextColor(for index: Int) -> Color {
-        let colors = [
-            DSColor.Brand.primary.color,
-            DSColor.Paper.light.color,
-            DSColor.Brand.primary.color,
-            DSColor.Paper.light.color
-        ]
-        return colors[index % colors.count]
+    // MARK: - Bottom
+
+    @ViewBuilder
+    private var bottom: some View {
+        if isHost {
+            VStack(spacing: 16) {
+                Button {
+                    flowViewModel.deleteRoll()
+                } label: {
+                    Text("Delete roll")
+                        .font(.system(size: 20, weight: .regular))
+                        .underline()
+                        .foregroundStyle(Self.deleteRed)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+
+                Button("Start Roll") {
+                    flowViewModel.startRollCapture()
+                }
+                .buttonStyle(OffsetPillButtonStyle())
+            }
+        } else {
+            Text("Waiting for the host to start...")
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(DSColor.Paper.darkActive.color)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+        }
     }
 }

@@ -43,7 +43,7 @@ struct AuthViewModelTests {
     init() throws {
         container = try ModelContainer(
             for: UserProfile.self, Scrapbook.self, ScrapPhoto.self, CaptureSession.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+            configurations: ModelConfiguration(UUID().uuidString, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         )
         defaults = UserDefaults(suiteName: "AuthViewModelTests.\(UUID().uuidString)")!
     }

@@ -11,12 +11,18 @@ struct MainShellView: View {
     @State private var router = AppRouter()
     @State private var sessionStore: SessionStore
     @State private var rollViewModel: RollFlowViewModel?
+    /// Restores scrapbooks after sign-in / on launch (change 012).
+    @State private var archiveSync: ScrapbookArchiveSync
 
     init(currentUser: UserProfile, modelContext: ModelContext, onSignOut: @escaping () -> Void) {
         self.currentUser = currentUser
         self.modelContext = modelContext
         self.onSignOut = onSignOut
         _sessionStore = State(initialValue: SessionStore(modelContext: modelContext))
+        _archiveSync = State(initialValue: ScrapbookArchiveSync(
+            modelContext: modelContext,
+            roomService: CloudKitRollRoomService()
+        ))
     }
 
     var body: some View {
@@ -60,6 +66,28 @@ struct MainShellView: View {
             if !newPath.contains(where: \.isRollRoute) {
                 rollViewModel = nil
             }
+        }
+        .task {
+            await archiveSync.run()
+        }
+        // iCloud roll invite opened by tap or AirDrop (change 011). Runs in its own Task: emptying the
+        // inbox must not cancel the CloudKit calls (a `.task(id:)` on `pending` did, "Operation Cancelled").
+        .onChange(of: IncomingShareInbox.shared.pending, initial: true) { _, pending in
+            guard pending != nil, let metadata = IncomingShareInbox.shared.take() else { return }
+            let vm = activeRollViewModel()
+            Task {
+                await vm.acceptIncomingShare(metadata, currentUser: currentUser)
+            }
+        }
+        // Removed by the host / roll deleted / invite could not be opened (change 011).
+        .alert(
+            sessionStore.roomExitMessage ?? "",
+            isPresented: Binding(
+                get: { sessionStore.roomExitMessage != nil },
+                set: { if !$0 { sessionStore.roomExitMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
         }
         .onOpenURL { url in
             if let code = AppRouter.parseJoinCode(from: url) {

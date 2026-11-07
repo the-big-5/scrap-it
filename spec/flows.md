@@ -6,7 +6,8 @@
    - Online: checked with Apple on launch. Authorized → straight to Home. Revoked, not found, transferred, or check error → Welcome
    - Offline: straight to Home with local data; the Apple check runs once the network is back, and anything but authorized → Welcome
    - No local profile → Welcome
-4. Sign out (temporary, on Profile tab until the Profile design is ready): returns to Welcome; local data is kept
+4. After sign-in (and on every launch), scrapbooks and photos from the user's ended rolls are restored in the background, e.g. on a new phone (change 012). No restore UI
+5. Sign out (temporary, on Profile tab until the Profile design is ready): returns to Welcome; local data is kept
 Edge cases:
 - Cancel: stay on Welcome, no message
 - Sign-in fails (including no Apple Account on the device): stay on Welcome with an error message
@@ -16,21 +17,25 @@ Edge cases:
 - Apple ID revoked while the app is running: caught on the next launch (no live sign-out)
 
 ## F2: Join a Roll [Locked]
-1. Friend opens Join Roll and scans the host's QR code, enters the 6-character roll code, or opens the share link
-2. Friend joins the roll; late joining is allowed while the roll lasts
-3. Codes and links stay valid until the roll ends
-Edge cases: app not installed [Open]
+1. Friend joins by entering the 6-character roll code (Workbench → camera → "Join a Roll"), or by opening the host's iCloud invite link (from AirDrop or a messaging app), which opens ScrapIt and joins directly. No QR code
+2. Friend lands in the lobby as a participant; late joining is allowed while the roll lasts (goes straight to the camera if the roll is live)
+3. Codes and links stay valid until the roll ends or the host deletes it
+4. Same iCloud as the host (same or another device): opening the link or entering the code goes straight into the room as the host; no error, no extra participant. Joining again never adds the same person twice
+Edge cases:
+- Code not found, roll ended, offline, iCloud problem: stay on Join Roll with a message
+- App not installed: the iCloud link shows Apple's iCloud web page pointing to the App Store
 
 ## F3: Roll (real-time shared capture session) [Locked]
 1. Host taps the disposable camera on Workbench, taps "Create Roll"
 2. Setup step: enters roll name, chooses shot count (24, 36 default, 48, 72) with friendship size guidance ("4-6 friends")
 3. Filter step: chooses film filter ("Cinematic 400 Pro 35 Black & White" or "200 Color Print")
-4. Lobby: host enters Share Room Lobby displaying roll title, stats (joined friends, shots), and participant avatar grid. Sharing tools (QR code, 6-character roll code, share link) are presented in a medium-detent "Invite Friend" bottom sheet via top-right button.
-5. Host taps "Start Roll" (guests see "Waiting for host..." until started)
-6. Everyone takes photos (still and Live Photo) at the same time in-app. Nobody, including the host, sees others' photos during the roll; everyone sees only the number of shots taken out of the roll size (e.g. 09/36, counting up from 00) and who is currently in the roll
-7. One shared pool of shots; any person's photo uses one shot
-8. Roll ends when the shots run out OR the host ends it manually
-9. Photos are saved into a new shared scrapbook (others' photos become visible here)
+4. Lobby: roll title, stats (joined, shots) and participant avatars (initials). Host: top-right button opens the "Invite friend" sheet (roll code, Copy link, share); long-press another person's avatar → Remove; "Delete roll" deletes it for everyone. Participant: "⋯" → Leave roll. X (both) closes the lobby back to the Workbench; the roll keeps existing (reopening it: [Open]). No confirmation dialogs
+5. Host taps "Start Roll"; participants see "Waiting for the host to start..." and move to the camera when the host starts
+6. Removed participants, or everyone when the host deletes the roll, return to the Workbench with a short message
+7. Everyone takes photos (still and Live Photo) at the same time in-app. Nobody, including the host, sees others' photos during the roll; everyone sees only the number of shots taken out of the roll size (e.g. 09/36, counting up from 00) and who is currently in the roll
+8. One shared pool of shots; any person's photo uses one shot
+9. Roll ends when the shots run out OR the host ends it manually
+10. Photos are saved into a new shared scrapbook (others' photos become visible here)
 Edge cases:
 - Network lost mid-roll: photos queue locally and sync later
 - Host disconnects: host role passes to the next participant
@@ -43,6 +48,7 @@ Empty/loading states: [Open]
 
 ## F5: Scrapbook creation [Draft]
 1. When a roll ends, a new scrapbook is created showing the captured photos in a basic grid (title, cover photo, created date, photos with captions)
+2. Friends' photos are added as they arrive from the cloud (when the roll ends and on later launches). Live Photos show a "LIVE" badge and play on long press
 Collaboration rules: [Open]
 
 ## F6: Social discovery [Open]

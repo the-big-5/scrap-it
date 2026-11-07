@@ -42,144 +42,25 @@ final class CloudKitSessionService {
         monitor.start(queue: monitorQueue)
     }
 
-    // MARK: - CloudKit Session Creation & CKShare
+    // MARK: - Room state (change 011: the room lives in the host's shared zone)
 
+    private func roomLocation(for session: CaptureSession) -> RollRoomLocation {
+        RollRoomLocation(rollCode: session.rollCode, zoneOwnerName: session.ckZoneOwnerName)
+    }
+
+    /// Pushes status / host / end time of the session to its room record (start, end, host handover).
     func publishSessionToCloudKit(session: CaptureSession) async {
-        guard isOnline else { return }
-        let recordID = CKRecord.ID(recordName: "RollSession-\(session.rollCode)")
-        let record = CKRecord(recordType: "RollSession", recordID: recordID)
-        record["sessionID"] = session.id.uuidString as CKRecordValue
-        record["name"] = session.name as CKRecordValue
-        record["rollCode"] = session.rollCode as CKRecordValue
-        record["hostUserID"] = session.hostUserID as CKRecordValue
-        record["participantIDs"] = session.participantIDs as CKRecordValue
-        record["participantNames"] = session.participantNames as CKRecordValue
-        record["rollSize"] = session.rollSize as CKRecordValue
-        record["slotsUsed"] = session.slotsUsed as CKRecordValue
-        record["filterRaw"] = session.filterRaw as CKRecordValue
+        guard isOnline, session.ckRecordName != nil else { return }
+        let location = roomLocation(for: session)
+        let database = location.database(in: CKContainer.default())
+        guard let record = try? await database.record(for: location.sessionRecordID) else { return }
         record["statusRaw"] = session.statusRaw as CKRecordValue
-        record["hostHeartbeat"] = Date.now as CKRecordValue
-
-        let share = CKShare(rootRecord: record)
-        share[CKShare.SystemFieldKey.title] = session.name as CKRecordValue
-        share.publicPermission = .readWrite
-
-        do {
-            let container = CKContainer.default()
-            let database = container.publicCloudDatabase
-            _ = try await database.save(record)
-            session.ckRecordName = recordID.recordName
-            if let shareURL = share.url {
-                session.shareURLString = shareURL.absoluteString
-            }
-            await registerSubscriptionIfNeeded(rollCode: session.rollCode)
-        } catch {
-            // In local Simulator without iCloud container entitlements configured, fall back cleanly
-            session.ckRecordName = recordID.recordName
+        record["hostUserID"] = session.hostUserID as CKRecordValue
+        record["startTime"] = session.startTime as CKRecordValue
+        if let endTime = session.endTime {
+            record["endTime"] = endTime as CKRecordValue
         }
-    }
-
-    func registerSubscriptionIfNeeded(rollCode: String) async {
-        let subscriptionID = "roll-sub-\(rollCode)"
-        let predicate = NSPredicate(format: "rollCode == %@", rollCode)
-        let subscription = CKQuerySubscription(
-            recordType: "RollSession",
-            predicate: predicate,
-            subscriptionID: subscriptionID,
-            options: [.firesOnRecordUpdate]
-        )
-        let info = CKSubscription.NotificationInfo()
-        info.shouldSendContentAvailable = true
-        subscription.notificationInfo = info
-
-        do {
-            _ = try await CKContainer.default().publicCloudDatabase.save(subscription)
-        } catch {
-            // Subscription registration is best-effort when running without push entitlements
-        }
-    }
-
-    // MARK: - Join Session by Code / Link (Late Joining Allowed While Roll Lasts)
-
-    func fetchOrJoinSession(
-        rollCode: String,
-        userID: String,
-        userName: String
-    ) async throws -> CaptureSession {
-        let normalizedCode = rollCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-
-        // 1. Check local SwiftData store first
-        let descriptor = FetchDescriptor<CaptureSession>()
-        if let localMatch = (try? modelContext.fetch(descriptor))?.first(where: {
-            $0.rollCode.uppercased() == normalizedCode
-        }) {
-            guard localMatch.status != .ended && localMatch.remainingSlots > 0 else {
-                throw RollSessionError.rollAlreadyEnded
-            }
-            if !localMatch.participantIDs.contains(userID) {
-                localMatch.participantIDs.append(userID)
-                localMatch.participantNames.append(userName)
-            }
-            try? modelContext.save()
-            return localMatch
-        }
-
-        // 2. Try CloudKit public database lookup by rollCode
-        if isOnline {
-            let recordID = CKRecord.ID(recordName: "RollSession-\(normalizedCode)")
-            if let record = try? await CKContainer.default().publicCloudDatabase.record(for: recordID) {
-                let statusRaw = (record["statusRaw"] as? String) ?? SessionStatus.live.rawValue
-                let rollSize = (record["rollSize"] as? Int) ?? 36
-                let slotsUsed = (record["slotsUsed"] as? Int) ?? 0
-
-                if statusRaw == SessionStatus.ended.rawValue || slotsUsed >= rollSize {
-                    throw RollSessionError.rollAlreadyEnded
-                }
-
-                var participantIDs = (record["participantIDs"] as? [String]) ?? []
-                var participantNames = (record["participantNames"] as? [String]) ?? []
-                if !participantIDs.contains(userID) {
-                    participantIDs.append(userID)
-                    participantNames.append(userName)
-                    record["participantIDs"] = participantIDs as CKRecordValue
-                    record["participantNames"] = participantNames as CKRecordValue
-                    _ = try? await CKContainer.default().publicCloudDatabase.save(record)
-                }
-
-                let joinedSession = CaptureSession(
-                    name: (record["name"] as? String) ?? "Shared Roll \(normalizedCode)",
-                    rollCode: normalizedCode,
-                    ckRecordName: recordID.recordName,
-                    hostUserID: (record["hostUserID"] as? String) ?? userID,
-                    participantIDs: participantIDs,
-                    participantNames: participantNames,
-                    rollSize: rollSize,
-                    slotsUsed: slotsUsed,
-                    filter: RollFilter(rawValue: (record["filterRaw"] as? String) ?? "") ?? .colorPrint200,
-                    status: SessionStatus(rawValue: statusRaw) ?? .live
-                )
-                modelContext.insert(joinedSession)
-                try? modelContext.save()
-                return joinedSession
-            }
-        }
-
-        // 3. Fallback for local/Simulator testing when joining a 6-character code directly
-        let simulatedHostID = "friend-host-\(normalizedCode)"
-        let session = CaptureSession(
-            name: "Roll \(normalizedCode)",
-            rollCode: normalizedCode,
-            hostUserID: simulatedHostID,
-            participantIDs: [simulatedHostID, userID],
-            participantNames: ["Alex (Host)", userName],
-            rollSize: 36,
-            slotsUsed: 0,
-            filter: .colorPrint200,
-            status: .live
-        )
-        modelContext.insert(session)
-        try? modelContext.save()
-        return session
+        _ = try? await database.save(record)
     }
 
     // MARK: - Atomic Slot Claim (First Write Wins on Last-Slot Race)
@@ -202,9 +83,10 @@ final class CloudKitSessionService {
         }
 
         // Optimistic concurrency via CloudKit CKModifyRecordsOperation (.ifServerRecordUnchanged)
-        if isOnline, let recordName = session.ckRecordName {
-            let recordID = CKRecord.ID(recordName: recordName)
-            let db = CKContainer.default().publicCloudDatabase
+        if isOnline, session.ckRecordName != nil {
+            let location = roomLocation(for: session)
+            let recordID = location.sessionRecordID
+            let db = location.database(in: CKContainer.default())
             if let serverRecord = try? await db.record(for: recordID) {
                 let serverSlotsUsed = (serverRecord["slotsUsed"] as? Int) ?? session.slotsUsed
                 let serverRollSize = (serverRecord["rollSize"] as? Int) ?? session.rollSize
@@ -331,27 +213,55 @@ final class CloudKitSessionService {
         queuedOfflineCount = (try? modelContext.fetchCount(descriptor)) ?? 0
     }
 
-    private func uploadPhotoRecord(photo: ScrapPhoto) async -> Bool {
-        let recordID = CKRecord.ID(recordName: "RollShot-\(photo.id.uuidString)")
-        let record = CKRecord(recordType: "RollShot", recordID: recordID)
-        record["sessionID"] = photo.sourceSessionID.uuidString as CKRecordValue
-        record["authorID"] = photo.authorID as CKRecordValue
-        record["authorName"] = photo.authorName as CKRecordValue
-        record["caption"] = photo.caption as CKRecordValue
-        record["timestamp"] = photo.timestamp as CKRecordValue
+    /// Public `RollShot`: random UUID name and a single encrypted asset, no readable fields (change 012).
+    nonisolated static func publicShotRecord(shotID: UUID, payloadURL: URL) -> CKRecord {
+        let record = CKRecord(recordType: "RollShot", recordID: CKRecord.ID(recordName: shotID.uuidString))
+        record["payload"] = CKAsset(fileURL: payloadURL)
+        return record
+    }
 
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(photo.id.uuidString).jpg")
+    /// Change 012: the shot goes to the public database as one encrypted blob with a random name
+    /// (`RollShot`, field `payload`), and a `RollShotRef` goes into the members-only room zone as its index.
+    private func uploadPhotoRecord(photo: ScrapPhoto) async -> Bool {
+        let sessionID = photo.sourceSessionID
+        let descriptor = FetchDescriptor<CaptureSession>(predicate: #Predicate { $0.id == sessionID })
+        guard let session = try? modelContext.fetch(descriptor).first,
+              session.ckRecordName != nil,
+              let key = session.rollKey else {
+            // Not a CloudKit room (no iCloud, Simulator): nothing to upload.
+            return true
+        }
+        let payload = RollShotPayload(
+            shotID: photo.id,
+            sessionID: sessionID,
+            authorID: photo.authorID,
+            authorName: photo.authorName,
+            caption: photo.caption,
+            timestamp: photo.timestamp,
+            photo: photo.imageData,
+            livePhotoMovie: photo.livePhotoMovieData
+        )
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
         do {
-            try photo.imageData.write(to: tempURL)
-            record["imageAsset"] = CKAsset(fileURL: tempURL)
-            _ = try await CKContainer.default().publicCloudDatabase.save(record)
-            try? FileManager.default.removeItem(at: tempURL)
+            try RollShotCrypto.seal(payload, key: key).write(to: fileURL)
+
+            let shot = Self.publicShotRecord(shotID: photo.id, payloadURL: fileURL)
+            _ = try await CKContainer.default().publicCloudDatabase
+                .modifyRecords(saving: [shot], deleting: [], savePolicy: .allKeys)
+
+            let location = roomLocation(for: session)
+            let ref = CKRecord(
+                recordType: "RollShotRef",
+                recordID: CKRecord.ID(recordName: "ShotRef-\(photo.id.uuidString)", zoneID: location.zoneID)
+            )
+            ref["shotRecordName"] = photo.id.uuidString
+            ref["authorID"] = photo.authorID
+            _ = try await location.database(in: CKContainer.default())
+                .modifyRecords(saving: [ref], deleting: [], savePolicy: .allKeys)
             return true
         } catch {
-            try? FileManager.default.removeItem(at: tempURL)
-            // When running locally without iCloud container entitlements, mark synced if online
-            return isOnline
+            return false
         }
     }
 
@@ -366,19 +276,11 @@ final class CloudKitSessionService {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 await self.syncPendingOfflinePhotos()
-                guard self.isOnline, let recordName = session.ckRecordName else { return }
-                let recordID = CKRecord.ID(recordName: recordName)
-                if let record = try? await CKContainer.default().publicCloudDatabase.record(for: recordID) {
+                guard self.isOnline, session.ckRecordName != nil else { return }
+                let location = self.roomLocation(for: session)
+                if let record = try? await location.database(in: CKContainer.default()).record(for: location.sessionRecordID) {
                     if let remoteUsed = record["slotsUsed"] as? Int, remoteUsed > session.slotsUsed {
                         session.slotsUsed = remoteUsed
-                    }
-                    if let remoteParticipants = record["participantIDs"] as? [String],
-                       !remoteParticipants.isEmpty {
-                        session.participantIDs = remoteParticipants
-                    }
-                    if let remoteNames = record["participantNames"] as? [String],
-                       !remoteNames.isEmpty {
-                        session.participantNames = remoteNames
                     }
                     if let remoteHost = record["hostUserID"] as? String {
                         session.hostUserID = remoteHost

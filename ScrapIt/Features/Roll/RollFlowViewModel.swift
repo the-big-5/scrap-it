@@ -1,3 +1,4 @@
+import CloudKit
 import Foundation
 import Observation
 import SwiftData
@@ -16,8 +17,18 @@ final class RollFlowViewModel {
     var joinCodeCharacters: [String] = Array(repeating: "", count: 6)
     var joinErrorMessage: String?
 
-    // Lobby sheet
+    // Lobby (change 011)
     var isInviteSheetPresented: Bool = false
+    var isShareSheetPresented: Bool = false
+    private(set) var lobbyParticipants: [RoomParticipant] = []
+    /// Short message shown on the Workbench after being removed or after the roll was deleted [Draft].
+    var roomExitMessage: String? {
+        get { sessionStore.roomExitMessage }
+        set { sessionStore.roomExitMessage = newValue }
+    }
+    /// Invite link state for the host's Invite sheet.
+    private(set) var isCreatingInviteLink = false
+    private(set) var inviteLinkError: String?
 
     // Alerts and banners
     var showLastSlotRaceAlert: Bool = false
@@ -34,17 +45,35 @@ final class RollFlowViewModel {
     let sessionStore: SessionStore
     @ObservationIgnored private weak var navigator: (any Navigator)?
     @ObservationIgnored lazy var camera = CameraController()
+    @ObservationIgnored let roomService: any RollRoomServicing
+    @ObservationIgnored private lazy var archiveSync = ScrapbookArchiveSync(modelContext: modelContext, roomService: roomService)
+    @ObservationIgnored private var lobbyRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var roomChangeObserver: NSObjectProtocol?
+
+    /// How often the lobby re-reads the room when no push arrives.
+    static let lobbyRefreshInterval: Duration = .seconds(4)
+
+    // Messages [Draft]
+    static let roomRemovedMessage = "The host removed you from the roll"
+    static let roomDeletedMessage = "This roll was deleted"
+    static let joinNotFoundMessage = "No roll found for this code"
+    static let joinEndedMessage = "This roll has ended"
+    static let joinOfflineMessage = "You're offline. Connect to the internet to join."
+    static let joinUnavailableMessage = "Couldn't join. Make sure you're signed in to iCloud and try again."
+    static let inviteLinkFailedMessage = "Couldn't create the invite link. Check iCloud and your connection, then try again."
 
     init(
         modelContext: ModelContext,
         navigator: (any Navigator)? = nil,
         sessionStore: SessionStore,
-        cloudService: CloudKitSessionService? = nil
+        cloudService: CloudKitSessionService? = nil,
+        roomService: (any RollRoomServicing)? = nil
     ) {
         self.modelContext = modelContext
         self.navigator = navigator
         self.sessionStore = sessionStore
         self.cloudService = cloudService ?? CloudKitSessionService(modelContext: modelContext)
+        self.roomService = roomService ?? CloudKitRollRoomService()
     }
 
     // MARK: - Derived state for Views
@@ -61,12 +90,32 @@ final class RollFlowViewModel {
         (activeSession?.rollCode ?? "N4B13L").map { String($0) }
     }
 
-    var lobbyQRPayload: String {
-        activeSession?.inviteURL.absoluteString ?? "scrapit://join?code=N4B13L"
+    var lobbyJoinedCount: Int {
+        lobbyParticipants.isEmpty ? (activeSession?.participantIDs.count ?? 1) : lobbyParticipants.count
     }
 
-    var lobbyJoinedCount: Int {
-        activeSession?.participantIDs.count ?? 1
+    /// Share content once the iCloud link exists (host only).
+    var inviteContent: RollInviteContent? {
+        guard let session = activeSession,
+              let link = session.shareURLString.flatMap(URL.init(string:)) else { return nil }
+        return RollInviteContent(rollName: session.name, rollCode: session.rollCode, link: link)
+    }
+
+    /// "Copy link": the iCloud link, or the roll code while the link is not ready.
+    var inviteCopyText: String {
+        activeSession?.shareURLString ?? activeSession?.rollCode ?? ""
+    }
+
+    /// Host can remove anyone but themselves.
+    func canRemove(_ participant: RoomParticipant, currentUser: UserProfile) -> Bool {
+        isHost(currentUser) && participant.userID != currentUser.appleUserID
+    }
+
+    /// Up to two initials from the name ("Sanny" → "S", "Brian Chang" → "BC").
+    static func initials(for name: String) -> String {
+        let letters = name.split(separator: " ").prefix(2).compactMap(\.first)
+        let result = String(letters).uppercased()
+        return result.isEmpty ? "?" : result
     }
 
     /// Shots taken so far, counting up from 00 to the roll size.
@@ -108,9 +157,14 @@ final class RollFlowViewModel {
     }
 
     func openJoinRoll() {
+        prepareJoin()
+        navigator?.push(.joinRoll)
+    }
+
+    /// Clears the code boxes when the Join Roll screen opens (also when opened from the Workbench).
+    func prepareJoin() {
         joinCodeCharacters = Array(repeating: "", count: 6)
         joinErrorMessage = nil
-        navigator?.push(.joinRoll)
     }
 
     // MARK: - Join code input
@@ -157,15 +211,45 @@ final class RollFlowViewModel {
             filter: draftFilter,
             status: .waiting
         )
+        session.rollKey = RollShotCrypto.newRollKey()
         modelContext.insert(session)
         try? modelContext.save()
         sessionStore.activeSession = session
-
-        Task {
-            await cloudService.publishSessionToCloudKit(session: session)
-        }
+        lobbyParticipants = [RoomParticipant(userID: currentUser.appleUserID, name: currentUser.name)]
 
         navigator?.push(.createRollLobby)
+
+        Task { await createInviteLinkIfNeeded(currentUser: currentUser) }
+    }
+
+    /// Creates the CloudKit room and its iCloud link. Called on create, and again from the Invite sheet
+    /// while the link is missing. Without iCloud the lobby still works locally; sharing stays unavailable.
+    func createInviteLinkIfNeeded(currentUser: UserProfile) async {
+        guard let session = activeSession, session.shareURLString == nil, isHost(currentUser), !isCreatingInviteLink else {
+            return
+        }
+        isCreatingInviteLink = true
+        inviteLinkError = nil
+        defer { isCreatingInviteLink = false }
+        let draft = RoomDraft(
+            sessionID: session.id,
+            rollCode: session.rollCode,
+            name: session.name,
+            rollSize: session.rollSize,
+            filterRaw: session.filterRaw,
+            host: RoomParticipant(userID: currentUser.appleUserID, name: currentUser.name),
+            rollKey: session.rollKey
+        )
+        do {
+            let snapshot = try await roomService.createRoom(draft)
+            apply(snapshot, to: session)
+        } catch {
+            #if DEBUG
+            inviteLinkError = Self.inviteLinkFailedMessage + "\n\(roomService.lastErrorDescription ?? String(describing: error))"
+            #else
+            inviteLinkError = Self.inviteLinkFailedMessage
+            #endif
+        }
     }
 
     func startRollCapture() {
@@ -193,24 +277,16 @@ final class RollFlowViewModel {
             joinErrorMessage = RollSessionError.invalidCode.localizedDescription
             return
         }
-
+        guard cloudService.isOnline else {
+            joinErrorMessage = Self.joinOfflineMessage
+            return
+        }
         do {
-            let joined = try await cloudService.fetchOrJoinSession(
-                rollCode: cleaned,
-                userID: currentUser.appleUserID,
-                userName: currentUser.name
-            )
-            sessionStore.activeSession = joined
+            let snapshot = try await roomService.joinRoom(code: cleaned, as: participant(currentUser))
             joinErrorMessage = nil
-
-            if joined.status == .live {
-                beginLivePolling(session: joined)
-                navigator?.push(.captureSession)
-            } else {
-                navigator?.push(.createRollLobby)
-            }
+            enterRoom(snapshot)
         } catch {
-            joinErrorMessage = error.localizedDescription
+            joinErrorMessage = diagnosed(Self.joinMessage(for: error))
         }
     }
 
@@ -219,6 +295,26 @@ final class RollFlowViewModel {
             code: enteredJoinCode,
             currentUser: currentUser
         )
+    }
+
+    /// An iCloud share link opened by tap or AirDrop.
+    func acceptIncomingShare(_ metadata: CKShare.Metadata, currentUser: UserProfile) async {
+        do {
+            let snapshot = try await roomService.acceptShare(metadata, as: participant(currentUser))
+            enterRoom(snapshot)
+        } catch {
+            roomExitMessage = diagnosed(Self.joinMessage(for: error))
+        }
+    }
+
+    /// DEBUG builds add the raw CloudKit error so device problems can be diagnosed.
+    private func diagnosed(_ message: String) -> String {
+        #if DEBUG
+        if let detail = roomService.lastErrorDescription {
+            return message + "\n" + detail
+        }
+        #endif
+        return message
     }
 
     func handleIncomingURL(
@@ -238,6 +334,200 @@ final class RollFlowViewModel {
                 )
             }
         }
+    }
+
+    static func joinMessage(for error: Error) -> String {
+        switch error as? RoomError {
+        case .notFound: joinNotFoundMessage
+        case .ended: joinEndedMessage
+        case .offline: joinOfflineMessage
+        case .deleted: roomDeletedMessage
+        case .removed: roomRemovedMessage
+        case .unavailable, nil: joinUnavailableMessage
+        }
+    }
+
+    private func participant(_ user: UserProfile) -> RoomParticipant {
+        RoomParticipant(userID: user.appleUserID, name: user.name)
+    }
+
+    /// Opens the lobby (or the camera if the roll is already live: late joining).
+    private func enterRoom(_ snapshot: RoomSnapshot) {
+        let session = localSession(for: snapshot)
+        apply(snapshot, to: session)
+        sessionStore.activeSession = session
+        if session.status == .live {
+            beginLivePolling(session: session)
+            navigator?.setStack([.captureSession])
+        } else {
+            navigator?.setStack([.createRollLobby])
+        }
+    }
+
+    private func localSession(for snapshot: RoomSnapshot) -> CaptureSession {
+        let id = snapshot.sessionID
+        let descriptor = FetchDescriptor<CaptureSession>(predicate: #Predicate { $0.id == id })
+        if let existing = try? modelContext.fetch(descriptor).first {
+            return existing
+        }
+        let session = CaptureSession(
+            id: snapshot.sessionID,
+            name: snapshot.name,
+            rollCode: snapshot.rollCode,
+            hostUserID: snapshot.hostUserID,
+            participantIDs: [],
+            participantNames: [],
+            rollSize: snapshot.rollSize
+        )
+        modelContext.insert(session)
+        return session
+    }
+
+    /// Copies the room state from CloudKit into the local session.
+    func apply(_ snapshot: RoomSnapshot, to session: CaptureSession) {
+        session.name = snapshot.name
+        session.hostUserID = snapshot.hostUserID
+        session.rollSize = snapshot.rollSize
+        session.slotsUsed = max(session.slotsUsed, snapshot.slotsUsed)
+        session.filterRaw = snapshot.filterRaw
+        session.statusRaw = snapshot.statusRaw
+        session.participantIDs = snapshot.participants.map(\.userID)
+        session.participantNames = snapshot.participants.map(\.name)
+        session.ckRecordName = RollRoomLocation.sessionRecordName
+        session.ckZoneOwnerName = snapshot.zoneOwnerName
+        if let link = snapshot.shareURL {
+            session.shareURLString = link.absoluteString
+        }
+        if let key = snapshot.rollKey {
+            session.rollKey = key
+        }
+        try? modelContext.save()
+        if session === activeSession || activeSession == nil {
+            lobbyParticipants = snapshot.participants
+        }
+    }
+
+    // MARK: - Lobby
+
+    func lobbyDidAppear() {
+        if lobbyParticipants.isEmpty, let session = activeSession {
+            lobbyParticipants = zip(session.participantIDs, session.participantNames).map {
+                RoomParticipant(userID: $0.0, name: $0.1)
+            }
+        }
+        lobbyRefreshTask?.cancel()
+        lobbyRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshLobby()
+                try? await Task.sleep(for: Self.lobbyRefreshInterval)
+            }
+        }
+        if roomChangeObserver == nil {
+            roomChangeObserver = NotificationCenter.default.addObserver(
+                forName: .rollRoomDidChange, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in await self?.refreshLobby() }
+            }
+        }
+    }
+
+    func lobbyDidDisappear() {
+        lobbyRefreshTask?.cancel()
+        lobbyRefreshTask = nil
+        if let roomChangeObserver {
+            NotificationCenter.default.removeObserver(roomChangeObserver)
+        }
+        roomChangeObserver = nil
+    }
+
+    /// Re-reads the room: participants, start by the host, removal, deletion.
+    func refreshLobby() async {
+        guard let session = activeSession, session.ckRecordName != nil else { return }
+        do {
+            let snapshot = try await roomService.fetchRoom(code: session.rollCode, zoneOwnerName: session.ckZoneOwnerName)
+            guard session === activeSession else { return }
+            apply(snapshot, to: session)
+            if session.status == .live, navigator?.path.last == .createRollLobby {
+                beginLivePolling(session: session)
+                navigator?.push(.captureSession)
+            }
+        } catch RoomError.removed {
+            exitRoom(message: Self.roomRemovedMessage)
+        } catch RoomError.deleted {
+            exitRoom(message: Self.roomDeletedMessage)
+        } catch {
+            // Offline or iCloud hiccup: keep the last known state and try again later.
+        }
+    }
+
+    /// X: back to the Workbench. The roll keeps existing (reopening it is [Open]).
+    func closeLobby() {
+        lobbyDidDisappear()
+        isInviteSheetPresented = false
+        isShareSheetPresented = false
+        sessionStore.activeSession = nil
+        lobbyParticipants = []
+        navigator?.popToRoot()
+    }
+
+    /// Host: deletes the room for everyone.
+    func deleteRoll() {
+        guard let session = activeSession else { return }
+        let code = session.rollCode
+        let isCloudRoom = session.ckRecordName != nil
+        discardLocalSession(session)
+        closeLobby()
+        if isCloudRoom {
+            Task { try? await roomService.deleteRoom(code: code) }
+        }
+    }
+
+    /// Host: removes someone from the room.
+    func removeParticipant(_ participant: RoomParticipant, currentUser: UserProfile) {
+        guard canRemove(participant, currentUser: currentUser), let session = activeSession else { return }
+        lobbyParticipants.removeAll { $0.userID == participant.userID }
+        if let index = session.participantIDs.firstIndex(of: participant.userID) {
+            session.participantIDs.remove(at: index)
+            if index < session.participantNames.count {
+                session.participantNames.remove(at: index)
+            }
+        }
+        try? modelContext.save()
+        guard session.ckRecordName != nil else { return }
+        let code = session.rollCode
+        Task {
+            do {
+                try await roomService.removeParticipant(userID: participant.userID, fromRoom: code)
+            } catch {
+                await refreshLobby()
+            }
+        }
+    }
+
+    /// Participant: leaves the room.
+    func leaveRoll(currentUser: UserProfile) {
+        guard let session = activeSession, !isHost(currentUser) else { return }
+        let code = session.rollCode
+        let owner = session.ckZoneOwnerName
+        discardLocalSession(session)
+        closeLobby()
+        if let owner {
+            Task { try? await roomService.leaveRoom(code: code, zoneOwnerName: owner, userID: currentUser.appleUserID) }
+        }
+    }
+
+    /// Removed by the host or the roll was deleted: back to the Workbench with a message.
+    func exitRoom(message: String) {
+        if let session = activeSession {
+            discardLocalSession(session)
+        }
+        closeLobby()
+        roomExitMessage = message
+    }
+
+    private func discardLocalSession(_ session: CaptureSession) {
+        modelContext.delete(session)
+        try? modelContext.save()
     }
 
     private func beginLivePolling(session: CaptureSession) {
@@ -276,6 +566,11 @@ final class RollFlowViewModel {
         if let movieData = await movieTask.value {
             photo.livePhotoMovieData = movieData
             try? modelContext.save()
+            // Upload again so the encrypted public shot carries the movie too (change 012).
+            if let session = activeSession {
+                photo.isSyncedToCloud = false
+                await cloudService.enqueueOrUploadPhoto(photo: photo, session: session)
+            }
         }
     }
 
@@ -374,7 +669,14 @@ final class RollFlowViewModel {
 
     // MARK: - Finalize roll into scrapbook
 
+    /// Restores scrapbooks on a new phone and adds friends' photos to finished rolls (change 012).
+    func syncScrapbookArchive() async {
+        await archiveSync.run()
+    }
+
     func finalizeSessionAndOpenScrapbook() {
+        // Friends' shots arrive as they finish uploading; pull what is there now (again on next launch).
+        Task { await syncScrapbookArchive() }
         cloudService.stopLiveSessionPolling()
         guard let scrapbook = sessionStore.finalizeActiveSession() else {
             return

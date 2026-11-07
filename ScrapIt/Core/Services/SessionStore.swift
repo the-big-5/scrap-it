@@ -8,6 +8,9 @@ import SwiftData
 final class SessionStore {
     var activeSession: CaptureSession?
     var activeScrapbook: Scrapbook?
+    /// Shown by the app shell after leaving a roll room (removed, deleted, invite failed; change 011).
+    /// Lives here because the Roll ViewModel is released once the roll screens close.
+    var roomExitMessage: String?
 
     private let modelContext: ModelContext
 
