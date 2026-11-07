@@ -43,6 +43,7 @@ final class RollFlowViewModel {
     private let modelContext: ModelContext
     let cloudService: CloudKitSessionService
     let sessionStore: SessionStore
+    let realtimeService: any RollSlotRealtimeProviding
     @ObservationIgnored private weak var navigator: (any Navigator)?
     @ObservationIgnored lazy var camera = CameraController()
     @ObservationIgnored let roomService: any RollRoomServicing
@@ -67,13 +68,24 @@ final class RollFlowViewModel {
         navigator: (any Navigator)? = nil,
         sessionStore: SessionStore,
         cloudService: CloudKitSessionService? = nil,
+<<<<<<< Updated upstream
         roomService: (any RollRoomServicing)? = nil
+=======
+        realtimeService: (any RollSlotRealtimeProviding)? = nil
+>>>>>>> Stashed changes
     ) {
         self.modelContext = modelContext
         self.navigator = navigator
         self.sessionStore = sessionStore
         self.cloudService = cloudService ?? CloudKitSessionService(modelContext: modelContext)
+<<<<<<< Updated upstream
         self.roomService = roomService ?? CloudKitRollRoomService()
+=======
+        self.realtimeService = realtimeService ?? (
+            SupabaseConfig.load().map { SupabaseRollSlotRealtimeService(config: $0) }
+                ?? NoopRollSlotRealtimeService()
+        )
+>>>>>>> Stashed changes
     }
 
     // MARK: - Derived state for Views
@@ -545,10 +557,38 @@ final class RollFlowViewModel {
         camera.setFilter(activeSession?.filter ?? .colorPrint200)
         Task { await camera.startSession() }
         cloudService.updateQueuedCount()
+        if let rollCode = activeSession?.rollCode {
+            let realtimeService = self.realtimeService
+            Task { [weak self] in
+                await realtimeService.connect(rollCode: rollCode) { [weak self] incomingSlots in
+                    self?.applyRemoteSlotCount(incomingSlots)
+                }
+            }
+        }
     }
 
     func cameraDidDisappear() {
         camera.stopSession()
+        let realtimeService = self.realtimeService
+        Task {
+            await realtimeService.disconnect()
+        }
+    }
+
+    func applyRemoteSlotCount(_ incomingSlots: Int) {
+        guard let session = activeSession, session.status != .ended else { return }
+        let clampedSlots = min(max(session.slotsUsed, incomingSlots), session.rollSize)
+        guard clampedSlots != session.slotsUsed || clampedSlots >= session.rollSize else { return }
+
+        session.slotsUsed = clampedSlots
+        if session.slotsUsed >= session.rollSize {
+            session.status = .ended
+            session.endTime = .now
+            try? modelContext.save()
+            finalizeSessionAndOpenScrapbook()
+        } else {
+            try? modelContext.save()
+        }
     }
 
     func shutterTapped(currentUser: UserProfile) async {
@@ -596,7 +636,7 @@ final class RollFlowViewModel {
         )
 
         switch result {
-        case .claimed(_, let rollFinished):
+        case .claimed(let newSlotsUsed, let rollFinished):
             let photo = ScrapPhoto(
                 imageData: imageData,
                 livePhotoMovieData: livePhotoMovieData,
@@ -610,10 +650,18 @@ final class RollFlowViewModel {
             modelContext.insert(photo)
             try? modelContext.save()
 
-            await cloudService.enqueueOrUploadPhoto(
-                photo: photo,
-                session: session
-            )
+            let realtimeService = self.realtimeService
+            Task {
+                await realtimeService.broadcastSlotCount(newSlotsUsed)
+            }
+
+            let cloudService = self.cloudService
+            Task {
+                await cloudService.enqueueOrUploadPhoto(
+                    photo: photo,
+                    session: session
+                )
+            }
 
             #if DEBUG
             debugLastShot = photo
@@ -678,6 +726,10 @@ final class RollFlowViewModel {
         // Friends' shots arrive as they finish uploading; pull what is there now (again on next launch).
         Task { await syncScrapbookArchive() }
         cloudService.stopLiveSessionPolling()
+        let realtimeService = self.realtimeService
+        Task {
+            await realtimeService.disconnect()
+        }
         guard let scrapbook = sessionStore.finalizeActiveSession() else {
             return
         }

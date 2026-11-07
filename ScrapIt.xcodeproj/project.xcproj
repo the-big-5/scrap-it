@@ -10,6 +10,15 @@
       "Base",
     ],
   },
+  "packages": [
+    {
+      "kind": "remote",
+      "repository": "https://github.com/supabase/supabase-swift",
+      "version": {
+        "up-to-next-major-version": "2.0.0",
+      },
+    },
+  ],
   "files": [
     { "kind": "folder", "path": "ScrapIt", "target-membership": [ "ScrapIt" ] },
     { "kind": "folder", "path": "ScrapItTests", "target-membership": [ "ScrapItTests" ] },
@@ -32,6 +41,13 @@
         "compile-sources",
         "frameworks",
         "resources",
+      ],
+      "package-product-members": [
+        {
+          "package": "supabase-swift",
+          "product-name": "Supabase",
+          "build-phase": { "build-phase": "frameworks" },
+        },
       ],
       "build-settings": {
         "CODE_SIGN_ENTITLEMENTS": "ScrapIt/ScrapIt.entitlements",
