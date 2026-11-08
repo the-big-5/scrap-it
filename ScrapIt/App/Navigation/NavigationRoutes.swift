@@ -12,13 +12,13 @@ enum AppRoute: Hashable {
     case createRollLobby
     case joinRoll
     case captureSession
-    case scrapbookGrid(UUID)
+    case scrapbook(UUID)
 
     var isRollRoute: Bool {
         switch self {
         case .createRollSetup, .createRollFilter, .createRollLobby, .joinRoll, .captureSession:
             return true
-        case .scrapbookGrid:
+        case .scrapbook:
             return false
         }
     }

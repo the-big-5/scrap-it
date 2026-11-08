@@ -175,6 +175,19 @@ struct ScrapbookArchiveTests {
         #expect(try context.fetch(FetchDescriptor<Scrapbook>()).isEmpty)
     }
 
+    @Test func scrapbookDeletedOnThisPhoneIsNotRestored() async throws {
+        let shot = try addShot(author: "host-1", at: 100)
+        service.rooms = [endedRoom(shots: [shot], key: key)]
+        let list = DeletedScrapbookList(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        list.add(sessionID)
+
+        let added = await ScrapbookArchiveSync(modelContext: context, roomService: service, deletedScrapbooks: list).run()
+
+        #expect(added == 0)
+        #expect(service.downloads.isEmpty)
+        #expect(try context.fetch(FetchDescriptor<Scrapbook>()).isEmpty)
+    }
+
     @Test func shotSealedWithAnotherKeyIsNotRestored() async throws {
         let shot = try addShot(author: "host-1", at: 100)
         service.rooms = [endedRoom(shots: [shot], key: RollShotCrypto.newRollKey())]

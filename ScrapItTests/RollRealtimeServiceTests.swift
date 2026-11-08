@@ -319,7 +319,7 @@ struct RollRealtimeServiceTests {
         #expect(store.activeScrapbook != nil)
         #expect(session.createdScrapbookID == store.activeScrapbook?.id)
         if let scrapbookID = store.activeScrapbook?.id {
-            #expect(router.path == [.scrapbookGrid(scrapbookID)])
+            #expect(router.path == [.scrapbook(scrapbookID)])
         }
         #expect(mockRealtime.disconnectCount == 1)
     }

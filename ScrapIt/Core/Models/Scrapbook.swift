@@ -12,6 +12,11 @@ final class Scrapbook {
     var sourceSessionID: UUID?
     @Relationship(deleteRule: .cascade, inverse: \ScrapPhoto.scrapbook)
     var photos: [ScrapPhoto]? = []
+    /// Editor pages and sticker supply (change 013, local only).
+    @Relationship(deleteRule: .cascade, inverse: \ScrapbookPage.scrapbook)
+    var pages: [ScrapbookPage]? = []
+    @Relationship(deleteRule: .cascade, inverse: \StickerSheet.scrapbook)
+    var stickerSheets: [StickerSheet]? = []
 
     init(
         id: UUID = UUID(),
@@ -29,5 +34,9 @@ final class Scrapbook {
         self.memberIDs = memberIDs
         self.memberNames = memberNames
         self.sourceSessionID = sourceSessionID
+    }
+
+    var sortedPages: [ScrapbookPage] {
+        (pages ?? []).sorted { $0.order < $1.order }
     }
 }

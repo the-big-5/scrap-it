@@ -728,8 +728,9 @@ final class RollFlowViewModel {
             return
         }
         let id = scrapbook.id
-        if navigator?.path.last != .scrapbookGrid(id) {
-            navigator?.setStack([.scrapbookGrid(id)])
+        // Straight into the scrapbook editor (change 013).
+        if navigator?.path.last != .scrapbook(id) {
+            navigator?.setStack([.scrapbook(id)])
         }
     }
 }

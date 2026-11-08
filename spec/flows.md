@@ -35,20 +35,25 @@ Edge cases:
 7. Everyone takes photos (still and Live Photo) at the same time in-app. Nobody, including the host, sees others' photos during the roll; everyone sees only the number of shots taken out of the roll size (e.g. 09/36, counting up from 00) and who is currently in the roll
 8. One shared pool of shots; any person's photo uses one shot
 9. Roll ends when the shots run out OR the host ends it manually
-10. Photos are saved into a new shared scrapbook (others' photos become visible here)
+10. Photos are saved into a new shared scrapbook (others' photos become visible here), and the app opens that scrapbook in the editor (change 013, temporary until the design flow)
 Edge cases:
 - Network lost mid-roll: photos queue locally and sync later
 - Host disconnects: host role passes to the next participant
 - Last-shot race: first write wins; the other photo is dropped and that user is told the roll finished
 
 ## F4: Profile shelf [Draft]
-1. User opens profile → sees row of scrapbook covers on a shelf
-2. Taps a cover → opens scrapbook
-Empty/loading states: [Open]
+1. User opens profile → sees the scrapbook covers, newest first. For now a 2-column cover grid like the camera POC (change 013); the Figma book / shelf (1109:4648) comes later
+2. Taps a cover → opens the scrapbook editor
+3. Long-press a cover → Delete → confirmation → the scrapbook, its pages and the roll's photos are deleted on this phone; restore (012) does not bring it back here. Cloud data is kept, so a new phone restores it again [Open]
+Empty state: short text that scrapbooks appear after a roll ends [Draft]. Loading state: [Open]
 
 ## F5: Scrapbook creation [Draft]
-1. When a roll ends, a new scrapbook is created showing the captured photos in a basic grid (title, cover photo, created date, photos with captions)
-2. Friends' photos are added as they arrive from the cloud (when the roll ends and on later launches). Live Photos show a "LIVE" badge and play on long press
+1. When a roll ends, a new scrapbook is created and opens in the editor (change 013) with one empty page; the user chooses which of the roll's photos (Live Photos included) go on the pages
+2. Friends' photos are added to the roll's photo picker as they arrive from the cloud (when the roll ends and on later launches)
+3. Editor (temporary, ported from the camera POC; may change with the design): multiple 3:4 pages (add, delete, move), photos moved / resized / rotated, Live Photos loop on the page, page background, stickers, scissors, pencil (PencilKit). No markup (PaperKit needs iOS 26)
+4. View mode (swipe pages, no tools): later with the design flow [Open]
+5. Only ended rolls create scrapbooks; no empty scrapbook, no renaming
+Layouts (pages, positions, cuts, drawings) stay on this device: not restored on a new phone, not shared with roll friends. Collaboration rules and syncing layouts: [Open]
 Collaboration rules: [Open]
 
 ## F6: Social discovery [Open]

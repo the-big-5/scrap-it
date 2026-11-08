@@ -17,14 +17,20 @@ struct ScrapIt: App {
         UserProfile.self,
         Scrapbook.self,
         ScrapPhoto.self,
-        CaptureSession.self
+        CaptureSession.self,
+        ScrapbookPage.self,
+        ScrapbookItem.self,
+        StickerSheet.self
     ])
 
     /// Synced to the user's private iCloud (change 006): only the profile (change 012).
     static let profileSchema = Schema([UserProfile.self])
     /// Local only (change 012): rolls, scrapbooks and photos. Their cloud copy is the encrypted public
     /// `RollShot` records, restored by `ScrapbookArchiveSync`, so they never fill the user's iCloud.
-    static let rollSchema = Schema([Scrapbook.self, ScrapPhoto.self, CaptureSession.self])
+    static let rollSchema = Schema([
+        Scrapbook.self, ScrapPhoto.self, CaptureSession.self,
+        ScrapbookPage.self, ScrapbookItem.self, StickerSheet.self
+    ])
 
     /// The profile keeps the default store name, so existing sign-ins survive the split.
     static func storeConfigurations(

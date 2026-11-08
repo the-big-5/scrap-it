@@ -77,10 +77,22 @@ Figma node 708:4941 (landscape design). Camera behavior from the camera POC (Fil
 - Presence list during session is not in the design: [Open]
 - States (waiting for others, roll finished, offline queued, end session by host): [Open]
 
-## Screen: Profile tab [Open] (design in progress)
-- Temporary "Sign Out" button (`DSButton` secondary) until the design is ready
-## Screen: Scrapbook (basic grid after session) [Open] (design in progress)
-- Live Photo (change 012) [Draft]: "LIVE" badge on the photo, long press plays it (`LivePhotoPlayerView`)
+## Screen: Profile tab [Open] (design in progress, Figma 1109:4648)
+- Temporary (change 013, camera POC look): avatar placeholder, name, "Sign Out" (`DSButton` secondary), then a 2-column grid of covers (first page drawn small with stills and drawing, title, "N pages")
+- Long-press a cover → "Delete" → confirmation "Delete this scrapbook?" / "Its photos on this phone are deleted too." [Draft]
+- Empty: "Your scrapbooks appear here after a roll ends." [Draft]
+
+## Screen: Scrapbook editor [Open] (design in progress)
+Temporary look from the camera POC (change 013). Stickers, backgrounds and scissors may change with the design.
+- Header: back button, title, Undo (cuts), "Done" while scissors / pencil are on
+- 3:4 page with shadow, page indicator "n / N" with arrows, "Live Photos paused in Low Power Mode"
+- Toolbar: Photos (+), Background, Stickers, Scissors, Pencil, Pages menu (Add Page, Move Left / Right, Delete Page with confirmation)
+- Items: white print frame; tap selects and brings to front; drag / pinch / rotate (snaps to 0° within ±3°); long-press menu: Bring to Front, Send to Back, Turn Off / On Motion (Live), Remove (stickers with confirmation)
+- Photo picker: only this roll's photos, Live marked, numbered selection, max 20 items per page
+- Stickers: POC "Travel" sheet panel at the bottom, drag a sticker onto the page, each used once, "Take a New Sheet"
+- Scissors: as the POC (drag to cut, long press to move, two fingers to pinch / rotate, scissors image, haptics)
+- Pencil: PencilKit layer over the page, system tool picker with all iOS 18 tools except the reed pen, finger drawing allowed
+- Toast "This page is full"
 
 ## Design system [Locked]
 Figma page "Design System #2" (628:4011), Atoms and Molecules only. Code: `Core/DesignSystem/` (`DS` prefix). Existing `ScrapTheme`, `OffsetPillButtonStyle`, `BackCircleButton` stay until screens are migrated.
