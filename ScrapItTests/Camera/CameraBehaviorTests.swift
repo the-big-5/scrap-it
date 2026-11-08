@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreImage
 import Foundation
+import ImageIO
 import SwiftData
 import Testing
 import UIKit
@@ -353,5 +354,62 @@ struct CameraBehaviorTests {
         input.markAsFinished()
         await writer.finishWriting()
         #expect(writer.status == .completed)
+    }
+
+    // MARK: - Photo downsampling & compression optimization (change 014)
+
+    @Test func photoEncoderDownscalesLargeImagePreservingAspectRatio() throws {
+        let largeImage = CIImage(color: CIColor(red: 0.2, green: 0.6, blue: 0.9))
+            .cropped(to: CGRect(x: 0, y: 0, width: 4032, height: 3024))
+        let identifier = UUID().uuidString
+        let data = try #require(FilmPhotoEncoder.jpegData(from: largeImage, contentIdentifier: identifier))
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let pixelWidth = properties[kCGImagePropertyPixelWidth] as? Int,
+              let pixelHeight = properties[kCGImagePropertyPixelHeight] as? Int else {
+            Issue.record("Failed to read image properties from encoded JPEG")
+            return
+        }
+
+        #expect(pixelWidth == 2048)
+        #expect(pixelHeight == 1536)
+        #expect(FilmPhotoEncoder.contentIdentifier(in: data) == identifier)
+        #expect(data.count < 1_000_000)
+    }
+
+    @Test func photoEncoderLeavesSmallImageUndownscaled() throws {
+        let smallImage = CIImage(color: CIColor(red: 0.2, green: 0.6, blue: 0.9))
+            .cropped(to: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let data = try #require(FilmPhotoEncoder.jpegData(from: smallImage))
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let pixelWidth = properties[kCGImagePropertyPixelWidth] as? Int,
+              let pixelHeight = properties[kCGImagePropertyPixelHeight] as? Int else {
+            Issue.record("Failed to read image properties from encoded JPEG")
+            return
+        }
+
+        #expect(pixelWidth == 800)
+        #expect(pixelHeight == 600)
+    }
+
+    @Test func movieWriterConstrainsDimensionsTo1440pStandard() {
+        let rawSize = CGSize(width: 1920, height: 1440)
+        let (width, height, scaleX, scaleY) = LivePhotoMovieWriter.constrainedDimensions(from: rawSize)
+        #expect(width == 1440)
+        #expect(height == 1080)
+        #expect(width % 2 == 0)
+        #expect(height % 2 == 0)
+        #expect(abs(scaleX - 0.75) < 0.01)
+        #expect(abs(scaleY - 0.75) < 0.01)
+
+        let smallSize = CGSize(width: 640, height: 480)
+        let (smallW, smallH, smallScaleX, smallScaleY) = LivePhotoMovieWriter.constrainedDimensions(from: smallSize)
+        #expect(smallW == 640)
+        #expect(smallH == 480)
+        #expect(smallScaleX == 1.0)
+        #expect(smallScaleY == 1.0)
     }
 }

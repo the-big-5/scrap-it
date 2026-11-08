@@ -11,14 +11,14 @@
 - Auth: Sign in with Apple / iCloud only [Locked]
 - Invites: share sheet with invite link [Locked]
 - Camera: AVFoundation custom camera (`CameraEngine`, ported from the camera POC): multi-lens virtual back camera, filtered live preview (Core Image + Metal), one filter pipeline for preview / photo / Live Photo movie, `RotationCoordinator` rotation, iOS 18 Camera Control "Zoom" slider [Locked]
-- Third-party libraries: only specific ones I approve; ask before adding any [Locked]
+- Third-party libraries: `supabase-swift` (approved for Realtime slot count sync, change 011); only specific ones approved [Locked]
 - Scrapbook drawing: PencilKit (iOS 13+, system framework). Tool picker built with `PKToolPicker(toolItems:)` (iOS 18) so the reed pen (iOS 26) never shows; the drawing is stored in a fixed 600 × 800 space and zoomed to the page. PaperKit markup (iOS 26) not used (change 013)
 - Deleted scrapbooks: their roll IDs are kept in `UserDefaults` (`DeletedScrapbookList`) so `ScrapbookArchiveSync` skips them on this device (change 013)
 - Data models: see Data models section below
 - Folder conventions / naming: see Code structure section below [Locked]
 - Live data during a session: only the shot count (slots used / roll size) and presence (who's in) [Locked]
 - Media: still photos and Live Photos, hidden from others until session ends [Locked]
-- Live transport: CloudKit only (CKShare, records, subscriptions); last-shot race uses CKModifyRecordsOperation with .ifServerRecordUnchanged; no third-party backend [Locked]. Revisit only if live collaborative scrapbooking needs more than CloudKit [Open]
+- Live transport: Hybrid (change 011). CloudKit manages durable room state, CKShare, and atomic slot arbitration; Supabase Realtime Broadcast (`roll:<code>` topic, `slot_taken` event) delivers <50ms slot count updates during active camera capture, backed up by 3-second CloudKit polling [Locked]
 - CloudKit needs the iCloud entitlement and a paid developer team on a real device; the app must not crash without it
 - Sign in with Apple needs the `com.apple.developer.applesignin` entitlement (added in change 004) and a paid developer team. CloudKit is not needed for sign-in
 - SwiftData (change 012): two stores. The profile store (`UserProfile`, default store name) syncs to the user's private CloudKit database (change 006; Development environment when run from Xcode). The `Rolls` store (`CaptureSession`, `Scrapbook`, `ScrapPhoto`, and since change 013 `ScrapbookPage`, `ScrapbookItem`, `StickerSheet`) is local only. Models must stay CloudKit-compatible: every attribute optional or with a default, no `@Attribute(.unique)`, relationships optional. Without an iCloud account data stays local; if CloudKit setup fails the app falls back to a local-only store
@@ -27,6 +27,7 @@
 - iCloud share links need `CKSharingSupported`; CloudKit pushes need Background Modes › Remote notifications. Both are in `ScrapIt-Info.plist` (repo root), merged into the generated Info.plist via `INFOPLIST_FILE` (`.xcodeproj` exception, change 011)
 - Rooms use the host's own iCloud storage (private database): a full iCloud gives "Quota Exceeded". Rooms are small; photos no longer go to the user's iCloud (change 012)
 - Scrapbook photos (change 012): each shot is a public `RollShot` record named with a random UUID holding one AES-GCM encrypted `payload` asset (photo, Live Photo movie, author, caption, time); no readable fields, no indexes. Each roll has a random 256-bit key (`RollSession.rollKey`, local `CaptureSession.rollKey`). A `RollShotRef` per shot in the room zone is the members-only index.
+- Photo & movie compression (change 014): Still photos are proportionally downsampled to max 2048px on the longest edge (4:3 ratio preserved, zero cropping) with 0.78 JPEG quality. Live Photo movies are proportionally capped to max 1440px on the longest edge (1080p standard) and encoded in HEVC with average bitrate ~2.5 Mbps (~1.4 MB total per shot, ~85% reduction) [Locked]
 - Restore (change 012): on every launch after sign-in and when a roll ends, `ScrapbookArchiveSync` reads the user's own (private) and joined (shared) `Roll-*` zones, and for ended rolls downloads, decrypts and rebuilds missing scrapbooks / photos (Live Photos included). Leaving a roll or the host deleting it removes access to its photos: [Open]
 - Privacy of encrypted public storage (vs members-only CKShare): product sign-off [Open]
 - Before Production (CloudKit Console, manual): remove old `RollShot` fields (sessionID, authorID, authorName, caption, timestamp, imageAsset), keep `RollShot` without indexes, no "World" read in Security Roles
@@ -52,6 +53,7 @@ ScrapIt/
 │   │                   Navigator, SessionStore, OrientationLock,
 │   │                   AppleCredentialChecker, NetworkMonitor, HapticService, ZoomCapabilities,
 │   │                   RollRoomService (CloudKit rooms: RollRoomServicing, CloudKitRollRoomService, RollRoomLocation),
+│   │                   RollRealtimeService (RollSlotRealtimeProviding, SupabaseRollSlotRealtimeService, NoopRollSlotRealtimeService), SupabaseConfig,
 │   │                   RollShotCrypto (AES-GCM shot payload), ScrapbookArchiveSync (restore),
 │   │                   CutGeometry, ScrapbookItemLayout, ScrapbookImageLoader, LiveMovieFileCache, LivePlaybackCoordinator, DeletedScrapbookList
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle, CircleIconButton, LivePhotoPlayerView,

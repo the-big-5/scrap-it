@@ -32,7 +32,7 @@ Edge cases:
 4. Lobby: roll title, stats (joined, shots) and participant avatars (initials). Host: top-right button opens the "Invite friend" sheet (roll code, Copy link, share); long-press another person's avatar → Remove; "Delete roll" deletes it for everyone. Participant: "⋯" → Leave roll. X (both) closes the lobby back to the Workbench; the roll keeps existing (reopening it: [Open]). No confirmation dialogs
 5. Host taps "Start Roll"; participants see "Waiting for the host to start..." and move to the camera when the host starts
 6. Removed participants, or everyone when the host deletes the roll, return to the Workbench with a short message
-7. Everyone takes photos (still and Live Photo) at the same time in-app. Nobody, including the host, sees others' photos during the roll; everyone sees only the number of shots taken out of the roll size (e.g. 09/36, counting up from 00) and who is currently in the roll
+7. Everyone takes photos (still and Live Photo) at the same time in-app. Slot counts sync live in <50ms via Supabase Realtime broadcast (backed up by 3-second CloudKit polling, change 011). Photos are stored locally at optimized resolution (max 2048px still, 1440px movie, ~1.4 MB total per shot, change 014). Nobody, including the host, sees others' photos during the roll
 8. One shared pool of shots; any person's photo uses one shot
 9. Roll ends when the shots run out OR the host ends it manually
 10. Photos are saved into a new shared scrapbook (others' photos become visible here), and the app opens that scrapbook in the editor (change 013, temporary until the design flow)
