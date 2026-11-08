@@ -55,7 +55,7 @@ final class WorkbenchViewModel {
 
     func openScrapbook(_ scrapbook: Scrapbook) {
         sessionStore.activeScrapbook = scrapbook
-        navigator?.push(.scrapbookGrid(scrapbook.id))
+        navigator?.push(.scrapbook(scrapbook.id))
     }
 
     func openLatestScrapbook() {

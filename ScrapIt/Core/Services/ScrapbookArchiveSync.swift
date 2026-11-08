@@ -9,12 +9,18 @@ import SwiftData
 final class ScrapbookArchiveSync {
     private let modelContext: ModelContext
     private let roomService: any RollRoomServicing
+    private let deletedScrapbooks: DeletedScrapbookList
     private let log = Logger(subsystem: "ScrapIt", category: "ScrapbookArchive")
     private var isRunning = false
 
-    init(modelContext: ModelContext, roomService: any RollRoomServicing) {
+    init(
+        modelContext: ModelContext,
+        roomService: any RollRoomServicing,
+        deletedScrapbooks: DeletedScrapbookList = .standard
+    ) {
         self.modelContext = modelContext
         self.roomService = roomService
+        self.deletedScrapbooks = deletedScrapbooks
     }
 
     /// Returns how many photos were added.
@@ -33,7 +39,8 @@ final class ScrapbookArchiveSync {
         }
 
         var added = 0
-        for room in rooms where room.statusRaw == SessionStatus.ended.rawValue {
+        // Scrapbooks the user deleted on this device are not brought back (change 013).
+        for room in rooms where room.statusRaw == SessionStatus.ended.rawValue && !deletedScrapbooks.contains(room.sessionID) {
             guard let key = room.rollKey else { continue }
             added += await restore(room, key: key)
         }

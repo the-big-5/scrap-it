@@ -44,7 +44,7 @@ struct ScrapItTests {
         router.path = [.createRollSetup, .createRollFilter]
         #expect(!router.shouldShowTabBar)
 
-        router.path = [.scrapbookGrid(UUID())]
+        router.path = [.scrapbook(UUID())]
         #expect(!router.shouldShowTabBar)
 
         router.popToRoot()
@@ -82,6 +82,6 @@ struct ScrapItTests {
 
         workbenchVM.openLatestScrapbook()
         #expect(store.activeScrapbook?.id == newer.id)
-        #expect(router.path == [.scrapbookGrid(newer.id)])
+        #expect(router.path == [.scrapbook(newer.id)])
     }
 }

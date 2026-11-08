@@ -44,6 +44,7 @@ struct MainShellView: View {
                         ProfileView(
                             modelContext: modelContext,
                             currentUser: currentUser,
+                            navigator: router,
                             onSignOut: onSignOut
                         )
                     }
@@ -126,14 +127,13 @@ struct MainShellView: View {
             JoinRollView(currentUser: currentUser, flowViewModel: activeRollViewModel())
         case .captureSession:
             CaptureSessionView(currentUser: currentUser, flowViewModel: activeRollViewModel())
-        case .scrapbookGrid(let scrapbookID):
-            ScrapbookGridView(
-                scrapbookID: scrapbookID,
-                currentUser: currentUser,
+        case .scrapbook(let scrapbookID):
+            ScrapbookEditorView(viewModel: ScrapbookViewModel(
                 modelContext: modelContext,
                 navigator: router,
-                sessionStore: sessionStore
-            )
+                sessionStore: sessionStore,
+                scrapbookID: scrapbookID
+            ))
         }
     }
 }

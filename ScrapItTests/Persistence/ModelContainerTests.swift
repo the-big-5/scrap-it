@@ -16,13 +16,16 @@ struct ModelContainerTests {
         _ = try ModelContainer(for: ScrapIt.schema, configurations: configuration)
     }
 
-    /// Change 012: only the profile syncs to iCloud; rolls, scrapbooks and photos stay on the phone.
+    /// Change 012: only the profile syncs to iCloud; rolls, scrapbooks and photos stay on the phone
+    /// (013: scrapbook pages, items and sticker sheets too).
     @Test func onlyTheProfileSyncsToICloud() throws {
         let configurations = ScrapIt.storeConfigurations(profileCloudKit: .automatic, inMemory: true)
         #expect(configurations.count == 2)
         #expect(configurations.contains { $0.schema?.entities.map(\.name) == ["UserProfile"] })
         let local = try #require(configurations.first { $0.name == "Rolls" })
-        #expect(Set(local.schema?.entities.map(\.name) ?? []) == ["Scrapbook", "ScrapPhoto", "CaptureSession"])
+        #expect(Set(local.schema?.entities.map(\.name) ?? []) == [
+            "Scrapbook", "ScrapPhoto", "CaptureSession", "ScrapbookPage", "ScrapbookItem", "StickerSheet"
+        ])
         #expect(local.cloudKitContainerIdentifier == nil)
     }
 
