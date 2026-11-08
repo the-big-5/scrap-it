@@ -112,10 +112,21 @@ nonisolated struct RollRoomLocation: Equatable, Sendable {
 /// - host: private-database zone `Roll-<code>` with the `RollSession` record and a zone-wide `CKShare`
 ///   (anyone with the link can read and write), plus a public `RollCode-<code>` record (code → link)
 /// - participant: accepts the share, then writes their own `RollParticipant` record in the shared zone
+extension CKContainer {
+    /// The CloudKit container for this app build.
+    /// Uses the developer's registered container when it differs from default `iCloud.<bundle ID>`.
+    static var app: CKContainer {
+        if let bundleID = Bundle.main.bundleIdentifier, bundleID == "com.lepin.ScrapIt" {
+            return CKContainer(identifier: "iCloud.lepin.scrapit")
+        }
+        return .default()
+    }
+}
+
 final class CloudKitRollRoomService: RollRoomServicing {
     private let explicitContainer: CKContainer?
     private var container: CKContainer {
-        explicitContainer ?? .default()
+        explicitContainer ?? .app
     }
     private var subscriptionsSaved = false
     private let log = Logger(subsystem: "ScrapIt", category: "RollRoom")

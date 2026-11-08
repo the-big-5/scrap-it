@@ -600,10 +600,14 @@ final class RollFlowViewModel {
         if let movieData = await movieTask.value {
             photo.livePhotoMovieData = movieData
             try? modelContext.save()
-            // Upload again so the encrypted public shot carries the movie too (change 012).
-            if let session = activeSession {
+            // If the roll already ended while movie was encoding, ensure this photo gets uploaded with movie (change 015).
+            if let session = activeSession, session.status == .ended {
                 photo.isSyncedToCloud = false
-                await cloudService.enqueueOrUploadPhoto(photo: photo, session: session)
+                try? modelContext.save()
+                let cloud = self.cloudService
+                Task {
+                    await cloud.uploadPendingPhotos(for: session)
+                }
             }
         }
     }
@@ -639,7 +643,7 @@ final class RollFlowViewModel {
                 authorName: currentUser.name,
                 timestamp: .now,
                 sourceSessionID: session.id,
-                isSyncedToCloud: cloudService.isOnline
+                isSyncedToCloud: false
             )
             modelContext.insert(photo)
             try? modelContext.save()
@@ -647,14 +651,6 @@ final class RollFlowViewModel {
             let realtimeService = self.realtimeService
             Task {
                 await realtimeService.broadcastSlotCount(newSlotsUsed)
-            }
-
-            let cloudService = self.cloudService
-            Task {
-                await cloudService.enqueueOrUploadPhoto(
-                    photo: photo,
-                    session: session
-                )
             }
 
             #if DEBUG
@@ -717,8 +713,15 @@ final class RollFlowViewModel {
     }
 
     func finalizeSessionAndOpenScrapbook() {
-        // Friends' shots arrive as they finish uploading; pull what is there now (again on next launch).
-        Task { await syncScrapbookArchive() }
+        if let session = activeSession {
+            let cloud = self.cloudService
+            Task {
+                await cloud.uploadPendingPhotos(for: session)
+                await self.syncScrapbookArchive()
+            }
+        } else {
+            Task { await syncScrapbookArchive() }
+        }
         cloudService.stopLiveSessionPolling()
         let realtimeService = self.realtimeService
         Task {

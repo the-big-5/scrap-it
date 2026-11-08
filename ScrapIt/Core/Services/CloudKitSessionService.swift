@@ -57,7 +57,7 @@ final class CloudKitSessionService {
     func publishSessionToCloudKit(session: CaptureSession) async {
         guard isOnline, session.ckRecordName != nil else { return }
         let location = roomLocation(for: session)
-        let database = location.database(in: CKContainer.default())
+        let database = location.database(in: CKContainer.app)
         guard let record = try? await database.record(for: location.sessionRecordID) else { return }
         record["statusRaw"] = session.statusRaw as CKRecordValue
         record["hostUserID"] = session.hostUserID as CKRecordValue
@@ -91,7 +91,7 @@ final class CloudKitSessionService {
         if isOnline, session.ckRecordName != nil {
             let location = roomLocation(for: session)
             let recordID = location.sessionRecordID
-            let db = location.database(in: CKContainer.default())
+            let db = location.database(in: CKContainer.app)
             if let serverRecord = try? await db.record(for: recordID) {
                 let serverSlotsUsed = (serverRecord["slotsUsed"] as? Int) ?? session.slotsUsed
                 let serverRollSize = (serverRecord["rollSize"] as? Int) ?? session.rollSize
@@ -173,6 +173,30 @@ final class CloudKitSessionService {
 
     // MARK: - Offline Queue & CloudKit Shot Upload
 
+    @discardableResult
+    func uploadPendingPhotos(for session: CaptureSession) async -> Int {
+        guard isOnline else { return 0 }
+        let targetSessionID = session.id
+        let descriptor = FetchDescriptor<ScrapPhoto>(
+            predicate: #Predicate { $0.sourceSessionID == targetSessionID && !$0.isSyncedToCloud }
+        )
+        guard let pending = try? modelContext.fetch(descriptor), !pending.isEmpty else {
+            return 0
+        }
+
+        var uploadedCount = 0
+        for photo in pending {
+            let ok = await uploadPhotoRecord(photo: photo)
+            if ok {
+                photo.isSyncedToCloud = true
+                uploadedCount += 1
+            }
+        }
+        try? modelContext.save()
+        updateQueuedCount()
+        return uploadedCount
+    }
+
     func enqueueOrUploadPhoto(
         photo: ScrapPhoto,
         session: CaptureSession
@@ -193,6 +217,14 @@ final class CloudKitSessionService {
 
     func syncPendingOfflinePhotos() async {
         guard isOnline else { return }
+        let sessionDesc = FetchDescriptor<CaptureSession>(
+            predicate: #Predicate { $0.statusRaw == "ended" }
+        )
+        guard let endedSessions = try? modelContext.fetch(sessionDesc), !endedSessions.isEmpty else {
+            queuedOfflineCount = 0
+            return
+        }
+        let endedIDs = Set(endedSessions.map(\.id))
         let descriptor = FetchDescriptor<ScrapPhoto>(
             predicate: #Predicate { !$0.isSyncedToCloud }
         )
@@ -201,7 +233,7 @@ final class CloudKitSessionService {
             return
         }
 
-        for photo in pending {
+        for photo in pending where endedIDs.contains(photo.sourceSessionID) {
             let ok = await uploadPhotoRecord(photo: photo)
             if ok {
                 photo.isSyncedToCloud = true
@@ -212,10 +244,22 @@ final class CloudKitSessionService {
     }
 
     func updateQueuedCount() {
+        let sessionDesc = FetchDescriptor<CaptureSession>(
+            predicate: #Predicate { $0.statusRaw == "ended" }
+        )
+        guard let endedSessions = try? modelContext.fetch(sessionDesc) else {
+            queuedOfflineCount = 0
+            return
+        }
+        let endedIDs = Set(endedSessions.map(\.id))
         let descriptor = FetchDescriptor<ScrapPhoto>(
             predicate: #Predicate { !$0.isSyncedToCloud }
         )
-        queuedOfflineCount = (try? modelContext.fetchCount(descriptor)) ?? 0
+        guard let pending = try? modelContext.fetch(descriptor) else {
+            queuedOfflineCount = 0
+            return
+        }
+        queuedOfflineCount = pending.filter { endedIDs.contains($0.sourceSessionID) }.count
     }
 
     /// Public `RollShot`: random UUID name and a single encrypted asset, no readable fields (change 012).
@@ -252,7 +296,7 @@ final class CloudKitSessionService {
             try RollShotCrypto.seal(payload, key: key).write(to: fileURL)
 
             let shot = Self.publicShotRecord(shotID: photo.id, payloadURL: fileURL)
-            _ = try await CKContainer.default().publicCloudDatabase
+            _ = try await CKContainer.app.publicCloudDatabase
                 .modifyRecords(saving: [shot], deleting: [], savePolicy: .allKeys)
 
             let location = roomLocation(for: session)
@@ -262,7 +306,7 @@ final class CloudKitSessionService {
             )
             ref["shotRecordName"] = photo.id.uuidString
             ref["authorID"] = photo.authorID
-            _ = try await location.database(in: CKContainer.default())
+            _ = try await location.database(in: CKContainer.app)
                 .modifyRecords(saving: [ref], deleting: [], savePolicy: .allKeys)
             return true
         } catch {
@@ -279,13 +323,10 @@ final class CloudKitSessionService {
         stopLiveSessionPolling()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                await self?.syncPendingOfflinePhotos()
-            }
-            Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard self.isOnline, session.ckRecordName != nil else { return }
                 let location = self.roomLocation(for: session)
-                if let record = try? await location.database(in: CKContainer.default()).record(for: location.sessionRecordID) {
+                if let record = try? await location.database(in: CKContainer.app).record(for: location.sessionRecordID) {
                     if let remoteUsed = record["slotsUsed"] as? Int, remoteUsed > session.slotsUsed {
                         session.slotsUsed = remoteUsed
                     }
