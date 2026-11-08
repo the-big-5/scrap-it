@@ -113,7 +113,10 @@ nonisolated struct RollRoomLocation: Equatable, Sendable {
 ///   (anyone with the link can read and write), plus a public `RollCode-<code>` record (code → link)
 /// - participant: accepts the share, then writes their own `RollParticipant` record in the shared zone
 final class CloudKitRollRoomService: RollRoomServicing {
-    private let container: CKContainer
+    private let explicitContainer: CKContainer?
+    private var container: CKContainer {
+        explicitContainer ?? .default()
+    }
     private var subscriptionsSaved = false
     private let log = Logger(subsystem: "ScrapIt", category: "RollRoom")
     /// Raw CloudKit error of the last failed room creation (shown in DEBUG builds for diagnosis).
@@ -121,8 +124,8 @@ final class CloudKitRollRoomService: RollRoomServicing {
     /// Why the "own room" check failed last time (DEBUG diagnosis of the same-iCloud case).
     private var ownRoomFailure: String?
 
-    init(container: CKContainer = .default()) {
-        self.container = container
+    init(container: CKContainer? = nil) {
+        self.explicitContainer = container
     }
 
     // MARK: - Host

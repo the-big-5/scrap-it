@@ -1,8 +1,5 @@
 import SwiftData
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
 
 struct ScrapbookGridView: View {
     @Query private var scrapbooks: [Scrapbook]

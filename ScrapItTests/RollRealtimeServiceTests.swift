@@ -1,7 +1,21 @@
+import CloudKit
 import Foundation
 import SwiftData
 import Testing
 @testable import ScrapIt
+
+private final class MockRollRoomService: RollRoomServicing {
+    var lastErrorDescription: String?
+    func createRoom(_ draft: RoomDraft) async throws -> RoomSnapshot { throw RoomError.unavailable }
+    func joinRoom(code: String, as user: RoomParticipant) async throws -> RoomSnapshot { throw RoomError.unavailable }
+    func acceptShare(_ metadata: CKShare.Metadata, as user: RoomParticipant) async throws -> RoomSnapshot { throw RoomError.unavailable }
+    func fetchRoom(code: String, zoneOwnerName: String?) async throws -> RoomSnapshot { throw RoomError.unavailable }
+    func removeParticipant(userID: String, fromRoom code: String) async throws {}
+    func leaveRoom(code: String, zoneOwnerName: String, userID: String) async throws {}
+    func deleteRoom(code: String) async throws {}
+    func listRooms() async throws -> [RoomSnapshot] { [] }
+    func downloadShotPayload(recordName: String) async throws -> Data { throw RoomError.notFound }
+}
 
 @MainActor
 final class MockRollSlotRealtimeService: RollSlotRealtimeProviding {
@@ -37,7 +51,7 @@ struct RollRealtimeServiceTests {
     private func makeInMemoryContainer() throws -> ModelContainer {
         try ModelContainer(
             for: UserProfile.self, Scrapbook.self, ScrapPhoto.self, CaptureSession.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+            configurations: ModelConfiguration(UUID().uuidString, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         )
     }
 
@@ -115,7 +129,7 @@ struct RollRealtimeServiceTests {
 
     // MARK: - RollFlowViewModel Camera-Only Slot Sync
 
-    @Test func viewModelDefaultsToNoopWhenSecretsUnconfigured() throws {
+    @Test func viewModelDefaultsToAppropriateRealtimeService() throws {
         let container = try makeInMemoryContainer()
         let context = container.mainContext
         let store = SessionStore(modelContext: context)
@@ -124,9 +138,14 @@ struct RollRealtimeServiceTests {
         let viewModel = RollFlowViewModel(
             modelContext: context,
             sessionStore: store,
-            cloudService: cloud
+            cloudService: cloud,
+            roomService: MockRollRoomService()
         )
-        #expect(viewModel.realtimeService is NoopRollSlotRealtimeService)
+        if SupabaseConfig.load() != nil {
+            #expect(viewModel.realtimeService is SupabaseRollSlotRealtimeService)
+        } else {
+            #expect(viewModel.realtimeService is NoopRollSlotRealtimeService)
+        }
     }
 
     @Test func cameraLifecycleConnectsAndDisconnectsRealtime() async throws {
@@ -153,6 +172,7 @@ struct RollRealtimeServiceTests {
             modelContext: context,
             sessionStore: store,
             cloudService: cloud,
+            roomService: MockRollRoomService(),
             realtimeService: mockRealtime
         )
 
@@ -192,6 +212,7 @@ struct RollRealtimeServiceTests {
             modelContext: context,
             sessionStore: store,
             cloudService: cloud,
+            roomService: MockRollRoomService(),
             realtimeService: mockRealtime
         )
 
@@ -233,6 +254,7 @@ struct RollRealtimeServiceTests {
             navigator: router,
             sessionStore: store,
             cloudService: cloud,
+            roomService: MockRollRoomService(),
             realtimeService: mockRealtime
         )
 
@@ -280,6 +302,7 @@ struct RollRealtimeServiceTests {
             navigator: router,
             sessionStore: store,
             cloudService: cloud,
+            roomService: MockRollRoomService(),
             realtimeService: mockRealtime
         )
 
@@ -315,6 +338,7 @@ struct RollRealtimeServiceTests {
             navigator: router,
             sessionStore: store,
             cloudService: cloud,
+            roomService: MockRollRoomService(),
             realtimeService: mockRealtime
         )
 

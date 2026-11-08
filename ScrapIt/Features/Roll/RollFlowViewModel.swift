@@ -68,24 +68,18 @@ final class RollFlowViewModel {
         navigator: (any Navigator)? = nil,
         sessionStore: SessionStore,
         cloudService: CloudKitSessionService? = nil,
-<<<<<<< Updated upstream
-        roomService: (any RollRoomServicing)? = nil
-=======
+        roomService: (any RollRoomServicing)? = nil,
         realtimeService: (any RollSlotRealtimeProviding)? = nil
->>>>>>> Stashed changes
     ) {
         self.modelContext = modelContext
         self.navigator = navigator
         self.sessionStore = sessionStore
         self.cloudService = cloudService ?? CloudKitSessionService(modelContext: modelContext)
-<<<<<<< Updated upstream
         self.roomService = roomService ?? CloudKitRollRoomService()
-=======
         self.realtimeService = realtimeService ?? (
             SupabaseConfig.load().map { SupabaseRollSlotRealtimeService(config: $0) }
                 ?? NoopRollSlotRealtimeService()
         )
->>>>>>> Stashed changes
     }
 
     // MARK: - Derived state for Views
