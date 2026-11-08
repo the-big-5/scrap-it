@@ -1,5 +1,5 @@
 # 011: Supabase Realtime Photo Slot Count Sync
-Status: Approved
+Status: Done
 
 ## Why
 During an active capture session, collaborative slot updates currently rely on a 3.0-second CloudKit polling timer (`CloudKitSessionService.startLiveSessionPolling`) that awaits `syncPendingOfflinePhotos()` before fetching `RollSession`, while `RollFlowViewModel.recordCapturedShot` awaits JPEG `CKAsset` uploads directly on the shutter path. This causes multi-second lag where User A can still see `00/24` while User B is already at `12/24`.

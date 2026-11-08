@@ -55,18 +55,36 @@ nonisolated final class FilmFilterPipeline {
 nonisolated enum FilmPhotoEncoder {
     /// Apple MakerNote key that pairs a Live Photo still with its movie.
     static let contentIdentifierKey = "17"
+    /// Max longest edge for stored/uploaded photos (change 014: keeps 4:3 sharpness without pixel bloat).
+    static let maxDimension: CGFloat = 2048
+    /// Sweet spot between visual fidelity and file size (change 014: ~60% size reduction over 0.90).
+    static let defaultCompressionQuality: Double = 0.78
+
+    /// Scales down large images proportionally so the longest edge does not exceed `maxDimension`.
+    /// Preserves exact aspect ratio with zero cropping.
+    static func downsampledImageIfNeeded(_ image: CIImage, maxDimension: CGFloat = maxDimension) -> CIImage {
+        let extent = image.extent
+        let maxSide = max(extent.width, extent.height)
+        guard maxSide > maxDimension, maxSide > 0 else {
+            return image
+        }
+        let scale = maxDimension / maxSide
+        return image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    }
 
     /// Renders a filtered image to JPEG. `contentIdentifier` is set for Live Photos.
     static func jpegData(
         from image: CIImage,
         contentIdentifier: String? = nil,
+        compressionQuality: Double = defaultCompressionQuality,
         context: CIContext = RenderContext.ciContext
     ) -> Data? {
+        let targetImage = downsampledImageIfNeeded(image)
         let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
-        guard let cgImage = context.createCGImage(image, from: image.extent, format: .RGBA8, colorSpace: colorSpace) else {
+        guard let cgImage = context.createCGImage(targetImage, from: targetImage.extent, format: .RGBA8, colorSpace: colorSpace) else {
             return nil
         }
-        var properties: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.9]
+        var properties: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: compressionQuality]
         if let contentIdentifier {
             properties[kCGImagePropertyMakerAppleDictionary] = [contentIdentifierKey: contentIdentifier]
         }

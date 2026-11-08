@@ -10,6 +10,33 @@ nonisolated enum LivePhotoMovieError: Error {
 /// still-image-time) so iOS treats photo and movie as one Live Photo. No audio. Ported from the POC.
 nonisolated enum LivePhotoMovieWriter {
     private static let stillImageTimeKey = "com.apple.quicktime.still-image-time"
+    /// Max longest edge for stored/uploaded Live Photo movies (change 014: 1080p standard).
+    static let maxVideoDimension: CGFloat = 1440
+    /// Average bitrate target: ~2.5 Mbps (change 014: ~80% size reduction over unconstrained video).
+    static let targetAverageBitRate: Int = 2_500_000
+
+    static func constrainedDimensions(from naturalSize: CGSize, maxDimension: CGFloat = maxVideoDimension) -> (width: Int, height: Int, scaleX: CGFloat, scaleY: CGFloat) {
+        let rawWidth = naturalSize.width
+        let rawHeight = naturalSize.height
+        let maxSide = max(rawWidth, rawHeight)
+        guard maxSide > maxDimension, maxSide > 0 else {
+            var w = Int(rawWidth.rounded())
+            var h = Int(rawHeight.rounded())
+            if w % 2 != 0 { w -= 1 }
+            if h % 2 != 0 { h -= 1 }
+            let scaleX = rawWidth > 0 ? CGFloat(w) / rawWidth : 1.0
+            let scaleY = rawHeight > 0 ? CGFloat(h) / rawHeight : 1.0
+            return (w, h, scaleX, scaleY)
+        }
+        let scale = maxDimension / maxSide
+        var w = Int((rawWidth * scale).rounded())
+        var h = Int((rawHeight * scale).rounded())
+        if w % 2 != 0 { w -= 1 }
+        if h % 2 != 0 { h -= 1 }
+        let scaleX = CGFloat(w) / rawWidth
+        let scaleY = CGFloat(h) / rawHeight
+        return (w, h, scaleX, scaleY)
+    }
 
     static func write(from sourceURL: URL, to destinationURL: URL, look: FilmLook,
                       contentIdentifier: String, photoDisplayTime: CMTime) async throws {
@@ -18,8 +45,7 @@ nonisolated enum LivePhotoMovieWriter {
             throw LivePhotoMovieError.noVideoTrack
         }
         let (naturalSize, transform) = try await track.load(.naturalSize, .preferredTransform)
-        let width = Int(naturalSize.width.rounded())
-        let height = Int(naturalSize.height.rounded())
+        let (width, height, scaleX, scaleY) = constrainedDimensions(from: naturalSize)
 
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
@@ -36,6 +62,9 @@ nonisolated enum LivePhotoMovieWriter {
             AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: targetAverageBitRate,
+            ],
         ])
         // Keeps the camera orientation and mirroring through the track transform.
         videoInput.transform = transform
@@ -67,7 +96,8 @@ nonisolated enum LivePhotoMovieWriter {
 
         let copier = FrameCopier(reader: reader, output: output, writer: writer, videoInput: videoInput,
                                  adaptor: adaptor, firstSample: firstSample, look: look,
-                                 bounds: CGRect(x: 0, y: 0, width: width, height: height))
+                                 bounds: CGRect(x: 0, y: 0, width: width, height: height),
+                                 scaleX: scaleX, scaleY: scaleY)
         try await copier.run()
 
         await writer.finishWriting()
@@ -86,6 +116,8 @@ nonisolated enum LivePhotoMovieWriter {
         private let adaptor: AVAssetWriterInputPixelBufferAdaptor
         private let look: FilmLook
         private let bounds: CGRect
+        private let scaleX: CGFloat
+        private let scaleY: CGFloat
         private let pipeline = FilmFilterPipeline()
         private let context = RenderContext.ciContext
         private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
@@ -95,7 +127,8 @@ nonisolated enum LivePhotoMovieWriter {
 
         init(reader: AVAssetReader, output: AVAssetReaderTrackOutput, writer: AVAssetWriter,
              videoInput: AVAssetWriterInput, adaptor: AVAssetWriterInputPixelBufferAdaptor,
-             firstSample: CMSampleBuffer, look: FilmLook, bounds: CGRect) {
+             firstSample: CMSampleBuffer, look: FilmLook, bounds: CGRect,
+             scaleX: CGFloat, scaleY: CGFloat) {
             self.reader = reader
             self.output = output
             self.writer = writer
@@ -104,6 +137,8 @@ nonisolated enum LivePhotoMovieWriter {
             self.pending = firstSample
             self.look = look
             self.bounds = bounds
+            self.scaleX = scaleX
+            self.scaleY = scaleY
         }
 
         func run() async throws {
@@ -131,7 +166,10 @@ nonisolated enum LivePhotoMovieWriter {
                     return
                 }
                 let filtered = pipeline.apply(look, to: CIImage(cvPixelBuffer: source))
-                context.render(filtered, to: destination, bounds: bounds, colorSpace: colorSpace)
+                let target = (scaleX == 1.0 && scaleY == 1.0)
+                    ? filtered
+                    : filtered.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+                context.render(target, to: destination, bounds: bounds, colorSpace: colorSpace)
                 if !adaptor.append(destination, withPresentationTime: CMSampleBufferGetPresentationTimeStamp(sample)) {
                     finish(writer.error ?? LivePhotoMovieError.writeFailed)
                     return
