@@ -1,14 +1,12 @@
 import SwiftUI
 
-/// Roll lobby (change 011). Host: Figma 1011:5883 (invite, Delete roll, Start Roll, long-press Remove 1011:6043).
-/// Participant: Figma 768:1291 ("⋯" → Leave roll 1129:8947, waiting text).
+/// Roll lobby. Host (change 019, Figma 1282:21858): "⋯" menu (Edit Room, Share Room, Delete Room), "+" invite tile,
+/// Start Roll, long-press Remove (011). Participant (Figma 1187:9657 / 1187:9798): "⋯" → Share Room, Leave Room.
 struct CreateRollLobbyView: View {
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
 
     private static let ink = DSColor.Brand.primary.color
-    /// Figma "rednormal" (#AE1C1C).
-    private static let deleteRed = Color(red: 0.682, green: 0.110, blue: 0.110)
 
     private var isHost: Bool {
         flowViewModel.isHost(currentUser)
@@ -39,8 +37,13 @@ struct CreateRollLobbyView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         ForEach(rows, id: \.first?.id) { row in
                             HStack(alignment: .top, spacing: 20) {
-                                ForEach(row) { participant in
-                                    avatar(participant)
+                                ForEach(row) { tile in
+                                    switch tile {
+                                    case .participant(let participant):
+                                        avatar(participant)
+                                    case .invite:
+                                        inviteTile
+                                    }
                                 }
                             }
                         }
@@ -63,37 +66,75 @@ struct CreateRollLobbyView: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
+        // Share Room: the system share sheet straight away.
+        .sheet(isPresented: $flowViewModel.isShareSheetPresented) {
+            if let content = flowViewModel.inviteContent {
+                RollInviteShareSheet(content: content)
+                    .presentationDetents([.medium, .large])
+            }
+        }
+        // An alert, not a confirmation dialog: on recent iOS a dialog can show as a popover without Cancel.
+        .alert("Delete this room?", isPresented: $flowViewModel.isDeleteRoomConfirmationPresented) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Room", role: .destructive) { flowViewModel.deleteRoll() }
+        } message: {
+            Text("Everyone in the room will be removed.")
+        }
+        .alert(
+            flowViewModel.shareErrorMessage ?? "",
+            isPresented: Binding(
+                get: { flowViewModel.shareErrorMessage != nil && !flowViewModel.isInviteSheetPresented },
+                set: { if !$0 { flowViewModel.shareErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        }
     }
 
-    private var rows: [[RoomParticipant]] {
-        let all = flowViewModel.lobbyParticipants
+    private var rows: [[LobbyTile]] {
+        let all = flowViewModel.lobbyTiles(currentUser: currentUser)
         return stride(from: 0, to: all.count, by: 3).map { Array(all[$0..<min($0 + 3, all.count)]) }
     }
 
     // MARK: - Toolbar
 
     private var toolbar: some View {
-        HStack {
+        // Top-aligned: the menu label below is 3 pt taller (it includes its shadow).
+        HStack(alignment: .top) {
             CircleIconButton(systemName: "xmark", accessibilityLabel: "Close") {
                 flowViewModel.closeLobby()
             }
 
             Spacer()
 
-            if isHost {
-                CircleIconButton(systemName: "person.badge.plus", accessibilityLabel: "Invite friend") {
-                    flowViewModel.isInviteSheetPresented = true
-                }
-            } else {
-                Menu {
-                    Button("Leave roll", role: .destructive) {
+            Menu {
+                if isHost {
+                    // Edit Room has no action yet [Open].
+                    Button("Edit Room", systemImage: "square.and.pencil") { flowViewModel.editRoom() }
+                    shareRoomButton
+                    Button("Delete Room", systemImage: "trash", role: .destructive) {
+                        flowViewModel.requestDeleteRoom()
+                    }
+                } else {
+                    shareRoomButton
+                    Button("Leave Room", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                         flowViewModel.leaveRoll(currentUser: currentUser)
                     }
-                } label: {
-                    CircleIconLabel(systemName: "ellipsis")
                 }
-                .accessibilityLabel("More")
+            } label: {
+                // The 3 pt offset shadow sits outside the 44 pt circle; iOS clips a menu label to its frame
+                // while the menu closes, so the shadow vanished for a moment. The padding keeps it inside.
+                CircleIconLabel(systemName: "ellipsis")
+                    .padding(.bottom, 3)
             }
+            .menuOrder(.fixed)
+            .accessibilityLabel("More")
+        }
+    }
+
+    private var shareRoomButton: some View {
+        Button("Share Room", systemImage: "square.and.arrow.up") {
+            Task { await flowViewModel.shareRoom(currentUser: currentUser) }
         }
     }
 
@@ -138,28 +179,29 @@ struct CreateRollLobbyView: View {
         }
     }
 
+    /// Host's "+" tile (Figma 1300:26199): opens Invite Friends.
+    private var inviteTile: some View {
+        Button(action: flowViewModel.presentInviteFriends) {
+            // SF Symbol instead of a "+" character: a text glyph sits off-center in its line height.
+            Image(systemName: "plus")
+                .font(.system(size: 44, weight: .light))
+                .foregroundStyle(DSColor.Paper.darker.color)
+                .frame(width: 100, height: 100)
+                .background(Circle().fill(DSColor.Paper.normalHover.color))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Invite friends")
+    }
+
     // MARK: - Bottom
 
     @ViewBuilder
     private var bottom: some View {
         if isHost {
-            VStack(spacing: 16) {
-                Button {
-                    flowViewModel.deleteRoll()
-                } label: {
-                    Text("Delete roll")
-                        .font(.system(size: 20, weight: .regular))
-                        .underline()
-                        .foregroundStyle(Self.deleteRed)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
-
-                Button("Start Roll") {
-                    flowViewModel.startRollCapture()
-                }
-                .buttonStyle(OffsetPillButtonStyle())
+            Button("Start Roll") {
+                flowViewModel.startRollCapture()
             }
+            .buttonStyle(OffsetPillButtonStyle())
         } else {
             Text("Waiting for the host to start...")
                 .font(.system(size: 20, weight: .regular))

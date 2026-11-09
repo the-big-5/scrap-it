@@ -2,9 +2,29 @@ import CoreGraphics
 import CloudKit
 import Foundation
 import Observation
+import OSLog
 import SwiftData
 
 /// Single ViewModel for the Roll feature: create, join, capture and end a roll.
+/// A cell in the lobby grid: a person, or the host's "+" invite tile (change 019).
+enum LobbyTile: Identifiable, Equatable {
+    case participant(RoomParticipant)
+    case invite
+
+    var id: String {
+        switch self {
+        case .participant(let participant): participant.userID
+        case .invite: "invite-tile"
+        }
+    }
+}
+
+/// Pages of the host's Invite Friends sheet (change 019).
+enum InvitePage: Equatable {
+    case options
+    case code
+}
+
 @Observable
 final class RollFlowViewModel {
     static let availableShotCounts = [24, 36, 48, 72]
@@ -17,12 +37,19 @@ final class RollFlowViewModel {
     private(set) var filterSamples: [RollFilter: [CGImage]] = [:]
 
     // Join Roll input fields
-    var joinCodeCharacters: [String] = Array(repeating: "", count: 6)
+    /// The typed join code (change 019): letters / numbers, uppercased, at most 6. The boxes only display it.
+    private(set) var joinCode: String = ""
     var joinErrorMessage: String?
 
     // Lobby (change 011)
     var isInviteSheetPresented: Bool = false
     var isShareSheetPresented: Bool = false
+    /// Change 019: Invite Friends sheet page, AirDrop-only share inside it, Delete Room confirmation.
+    var invitePage: InvitePage = .options
+    var isAirDropSheetPresented: Bool = false
+    var isDeleteRoomConfirmationPresented: Bool = false
+    /// Share Room could not get the invite link.
+    var shareErrorMessage: String?
     private(set) var lobbyParticipants: [RoomParticipant] = []
     /// Short message shown on the Workbench after being removed or after the roll was deleted [Draft].
     var roomExitMessage: String? {
@@ -69,6 +96,9 @@ final class RollFlowViewModel {
     static let joinEndedMessage = "This roll has ended"
     static let joinOfflineMessage = "You're offline. Connect to the internet to join."
     static let joinUnavailableMessage = "Couldn't join. Make sure you're signed in to iCloud and try again."
+    static let joinCodeLength = 6
+    static let joinIncompleteCodeMessage = "Enter all 6 characters of the code"
+    private static let log = Logger(subsystem: "ScrapIt", category: "RollRoom")
     static let inviteLinkFailedMessage = "Couldn't create the invite link. Check iCloud and your connection, then try again."
 
     init(
@@ -96,9 +126,10 @@ final class RollFlowViewModel {
         sessionStore.activeSession
     }
 
-    var enteredJoinCode: String {
-        joinCodeCharacters.joined().uppercased()
-    }
+    var enteredJoinCode: String { joinCode }
+
+    /// Room code page of the Invite Friends sheet.
+    var roomCode: String { activeSession?.rollCode ?? "" }
 
     var lobbyRollCodeCharacters: [String] {
         (activeSession?.rollCode ?? "N4B13L").map { String($0) }
@@ -115,9 +146,9 @@ final class RollFlowViewModel {
         return RollInviteContent(rollName: session.name, rollCode: session.rollCode, link: link)
     }
 
-    /// "Copy link": the iCloud link, or the roll code while the link is not ready.
-    var inviteCopyText: String {
-        activeSession?.shareURLString ?? activeSession?.rollCode ?? ""
+    /// Lobby grid: everyone, then the "+" tile for the host only (change 019).
+    func lobbyTiles(currentUser: UserProfile) -> [LobbyTile] {
+        lobbyParticipants.map(LobbyTile.participant) + (isHost(currentUser) ? [.invite] : [])
     }
 
     /// Host can remove anyone but themselves.
@@ -192,36 +223,22 @@ final class RollFlowViewModel {
         navigator?.push(.joinRoll)
     }
 
-    /// Clears the code boxes when the Join Roll screen opens (also when opened from the Workbench).
+    /// Clears the code when the Join Roll screen opens (also when opened from the Workbench).
     func prepareJoin() {
-        joinCodeCharacters = Array(repeating: "", count: 6)
+        joinCode = ""
         joinErrorMessage = nil
     }
 
-    // MARK: - Join code input
-
-    /// Applies typed or pasted text to a code box. Returns the box index that should get focus next.
-    func updateJoinCode(at index: Int, with newValue: String) -> Int? {
-        let upper = newValue.uppercased().filter { $0.isLetter || $0.isNumber }
-        if upper.count > 1 {
-            let chars = Array(upper.prefix(6))
-            for (offset, ch) in chars.enumerated() where offset < 6 {
-                joinCodeCharacters[offset] = String(ch)
-            }
-            return min(5, chars.count - 1)
-        } else {
-            let single = String(upper.suffix(1))
-            joinCodeCharacters[index] = single
-            if !single.isEmpty && index < 5 {
-                return index + 1
-            }
-            return nil
-        }
+    /// Change 019: one text field holds the whole code, so backspace, editing and paste work naturally.
+    func updateJoinCode(_ text: String) {
+        let cleaned = String(text.uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }.prefix(Self.joinCodeLength))
+        if cleaned != joinCode { joinErrorMessage = nil }
+        joinCode = cleaned
     }
 
     func joinCodeCharacter(at index: Int) -> String {
-        guard index < joinCodeCharacters.count else { return "" }
-        return joinCodeCharacters[index]
+        let characters = Array(joinCode)
+        return index < characters.count ? String(characters[index]) : ""
     }
 
     // MARK: - Create roll
@@ -275,11 +292,8 @@ final class RollFlowViewModel {
             let snapshot = try await roomService.createRoom(draft)
             apply(snapshot, to: session)
         } catch {
-            #if DEBUG
-            inviteLinkError = Self.inviteLinkFailedMessage + "\n\(roomService.lastErrorDescription ?? String(describing: error))"
-            #else
+            logRoomFailure("create invite link", error)
             inviteLinkError = Self.inviteLinkFailedMessage
-            #endif
         }
     }
 
@@ -304,8 +318,8 @@ final class RollFlowViewModel {
         currentUser: UserProfile
     ) async {
         let cleaned = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard cleaned.count == 6 else {
-            joinErrorMessage = RollSessionError.invalidCode.localizedDescription
+        guard cleaned.count == Self.joinCodeLength else {
+            joinErrorMessage = Self.joinIncompleteCodeMessage
             return
         }
         guard cloudService.isOnline else {
@@ -317,7 +331,8 @@ final class RollFlowViewModel {
             joinErrorMessage = nil
             enterRoom(snapshot)
         } catch {
-            joinErrorMessage = diagnosed(Self.joinMessage(for: error))
+            logRoomFailure("join", error)
+            joinErrorMessage = Self.joinMessage(for: error)
         }
     }
 
@@ -334,18 +349,15 @@ final class RollFlowViewModel {
             let snapshot = try await roomService.acceptShare(metadata, as: participant(currentUser))
             enterRoom(snapshot)
         } catch {
-            roomExitMessage = diagnosed(Self.joinMessage(for: error))
+            logRoomFailure("accept share", error)
+            roomExitMessage = Self.joinMessage(for: error)
         }
     }
 
-    /// DEBUG builds add the raw CloudKit error so device problems can be diagnosed.
-    private func diagnosed(_ message: String) -> String {
-        #if DEBUG
-        if let detail = roomService.lastErrorDescription {
-            return message + "\n" + detail
-        }
-        #endif
-        return message
+    /// Technical CloudKit detail goes to the Xcode console for developers, never on screen (change 019).
+    private func logRoomFailure(_ action: String, _ error: Error) {
+        let detail = roomService.lastErrorDescription ?? String(describing: error)
+        Self.log.error("\(action, privacy: .public) failed: \(detail, privacy: .public)")
     }
 
     func handleIncomingURL(
@@ -506,6 +518,48 @@ final class RollFlowViewModel {
         isInviteSheetPresented = false
         isShareSheetPresented = false
         navigator?.popToRoot()
+    }
+
+    // MARK: - Lobby menu and invites (change 019)
+
+    /// "+" tile (host): opens Invite Friends on its first page.
+    func presentInviteFriends() {
+        invitePage = .options
+        isInviteSheetPresented = true
+    }
+
+    func showRoomCode() { invitePage = .code }
+    func showInviteOptions() { invitePage = .options }
+
+    /// Edit Room: shown in the menu, no action yet [Open].
+    func editRoom() {}
+
+    /// Share Room (host and participant): the system share sheet with the invite link.
+    func shareRoom(currentUser: UserProfile) async {
+        guard await ensureInviteLink(currentUser: currentUser) else { return }
+        isShareSheetPresented = true
+    }
+
+    /// Invite via AirDrop: the share sheet offering only AirDrop (no public API opens AirDrop directly).
+    func inviteViaAirDrop(currentUser: UserProfile) async {
+        guard await ensureInviteLink(currentUser: currentUser) else { return }
+        isAirDropSheetPresented = true
+    }
+
+    private func ensureInviteLink(currentUser: UserProfile) async -> Bool {
+        if inviteContent == nil {
+            await createInviteLinkIfNeeded(currentUser: currentUser)
+        }
+        guard inviteContent != nil else {
+            shareErrorMessage = Self.inviteLinkFailedMessage
+            return false
+        }
+        return true
+    }
+
+    /// Delete Room asks first (HIG); the dialog's Delete calls `deleteRoll()`.
+    func requestDeleteRoom() {
+        isDeleteRoomConfirmationPresented = true
     }
 
     /// Host: deletes the room for everyone.

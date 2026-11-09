@@ -352,14 +352,11 @@ final class CloudKitSessionService {
 
 enum RollSessionError: LocalizedError {
     case rollAlreadyEnded
-    case invalidCode
 
     var errorDescription: String? {
         switch self {
         case .rollAlreadyEnded:
             return "This roll has already ended. Invite links and codes stay valid only until the roll ends."
-        case .invalidCode:
-            return "Please enter a valid 6-character roll code."
         }
     }
 }

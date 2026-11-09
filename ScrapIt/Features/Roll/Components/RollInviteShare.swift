@@ -35,6 +35,31 @@ struct RollInviteContent: Equatable {
         UIActivity.ActivityType("com.apple.freeform.sharingextension"),
         UIActivity.ActivityType("com.apple.DocumentManagerUICore.SaveToFiles"),
     ]
+
+    /// "Invite via AirDrop" (change 019): every built-in destination except AirDrop, plus the messaging apps
+    /// we know. iOS can't open AirDrop directly or hide unknown third-party share extensions, so another app
+    /// may still appear in the app row; AirDrop's nearby devices are at the top of the sheet.
+    static let airDropOnlyExcludedActivityTypes: [UIActivity.ActivityType] = excludedActivityTypes + [
+        .message,
+        .postToFacebook,
+        .postToTwitter,
+        .postToWeibo,
+        .postToTencentWeibo,
+        .postToFlickr,
+        .postToVimeo,
+        .sharePlay,
+        .collaborationInviteWithLink,
+        .collaborationCopyLink,
+        UIActivity.ActivityType("net.whatsapp.WhatsApp.ShareExtension"),
+        UIActivity.ActivityType("ph.telegra.Telegraph.Share"),
+        UIActivity.ActivityType("jp.naver.line.Share"),
+        UIActivity.ActivityType("com.burbn.instagram.shareextension"),
+        UIActivity.ActivityType("com.facebook.Messenger.ShareExtension"),
+        UIActivity.ActivityType("com.hammerandchisel.discord.Share"),
+        UIActivity.ActivityType("com.tinyspeck.chatlyio.share"),
+        UIActivity.ActivityType("com.google.Gmail.ShareExtension"),
+        UIActivity.ActivityType("com.apple.mobileslideshow.StreamShareService"),
+    ]
 }
 
 /// Picks the shared item after the user chooses a destination.
@@ -69,13 +94,17 @@ final class RollInviteItemSource: NSObject, UIActivityItemSource {
 /// System share sheet (Figma 768:1623) with the invite item source.
 struct RollInviteShareSheet: UIViewControllerRepresentable {
     let content: RollInviteContent
+    /// "Invite via AirDrop": everything but AirDrop hidden (change 019).
+    var airDropOnly = false
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(
             activityItems: [RollInviteItemSource(content: content)],
             applicationActivities: nil
         )
-        controller.excludedActivityTypes = RollInviteContent.excludedActivityTypes
+        controller.excludedActivityTypes = airDropOnly
+            ? RollInviteContent.airDropOnlyExcludedActivityTypes
+            : RollInviteContent.excludedActivityTypes
         return controller
     }
 

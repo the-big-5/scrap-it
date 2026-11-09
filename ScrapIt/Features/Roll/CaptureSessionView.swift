@@ -233,7 +233,7 @@ struct CaptureSessionView: View {
 
             // Info Button (Trailing: left: 789px, top: 22px, size: 44px, Figma 1302:48002)
             Button {
-                flowViewModel.isInviteSheetPresented = true
+                flowViewModel.presentInviteFriends()
             } label: {
                 ZStack {
                     Image("CameraInfoRing")

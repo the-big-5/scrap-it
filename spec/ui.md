@@ -38,25 +38,33 @@ Figma node 1187:8489 (replaces 675:5759, change 017)
 - Pill button "Next".
 
 ## Screen: Create Roll Lobby [Locked]
-Figma nodes 1011:5883 (host), 768:1291 (participant), 1011:6043 (Remove), 1129:8947 (Leave roll)
+Figma nodes 1282:21858 (host, change 019), 1187:9657 / 1187:9798 (participant + menu, change 019), 1011:6043 (Remove)
 - Header decoration (ShareRoomHeaderDecoration), roll title (40 Bold), stats row: "N joined" (person.2, bold) and "N shots" (camera)
-- Toolbar: X (close to the Workbench) on the left. Host: "add person" button opens the Invite friend sheet. Participant: "⋯" menu with "Leave roll"
+- Toolbar: X (close to the Workbench) on the left, "⋯" menu on the right (same round button; the label keeps its 3 pt offset shadow inside its frame so it does not flicker when the menu closes)
+  - Host: Edit Room (`square.and.pencil`, shown, no action yet [Open]), Share Room (`square.and.arrow.up`), Delete Room (`trash`, red) → alert "Delete this room?" / "Everyone in the room will be removed." with Cancel and Delete Room [Draft text]
+  - Participant: two rows only, Share Room on top, then Leave Room (`rectangle.portrait.and.arrow.right`, the HIG leave symbol instead of Figma's trash; red)
 - Avatar grid, 3 per row: 100pt circles with initials (surface/ink or burgundy/paper, alternating by user [Draft]), name, "(Host)" / "(You)". Profile photos: [Open]
-- Host: long-press another avatar → "Remove"; "Delete roll" (20pt, underlined, #AE1C1C) above the "Start Roll" pill
+- Host: "+" tile after the avatars (100 pt circle `Paper.normalHover`, SF Symbol `plus` 44 pt light in `Paper.darker`, Figma 1300:26199). Figma's "+" is a 75 pt text character (visible ≈ 38–40 pt); the 44 pt symbol gives the same visible size, centered and the same on every iPhone (user decision)
+- Host: long-press another avatar → "Remove"; only the "Start Roll" pill at the bottom (the "Delete roll" text button moved into the menu)
 - Participant: "Waiting for the host to start..." (20pt, Paper dark active) instead of the buttons
 - Message on the Workbench after removal / deletion [Draft]: "The host removed you from the roll" / "This roll was deleted"
 
-## Screen: Invite Friend Sheet [Locked]
-Figma node 1068:4233
-- Medium-detent sheet: X (close), title "Invite friend", share button (top right; disabled until the link exists)
-- "Roll code:" with 6 boxes (49×58, white, black border), "Copy link" (copies the iCloud link). No QR code
-- While the link is missing: progress, or an error with "Try again" [Draft]
-- Share (Figma 768:1623, system share sheet), host only: AirDrop sends the iCloud link only; messaging apps get text only [Draft]: "Join my roll “<name>” on ScrapIt! 📸 / Roll code: <code> / <link>". Mail and other non-messaging destinations hidden. App name from one constant (`AppBrand.name`)
+## Screen: Invite Friends Sheet [Locked]
+Figma nodes 1300:26163 (options), 1300:26710 (room code); change 019. Host "+" tile and the camera screen's info button open it on the options page
+- Medium-detent sheet, title "Invite Friends"
+- Options page: X (close), `InviteHandshake` illustration (two phones on an orange burst), pills "Invite via AirDrop" and "Invite via Room Code"
+- Invite via AirDrop: system share sheet with every built-in destination but AirDrop and the known messaging / social apps hidden (no public API opens AirDrop directly; unknown third-party extensions can't be hidden)
+- Room code page: ← back to options, "Share this code with your friends to join the roll.", `InviteStars` illustration, the code in large spaced letters; long-press copies it ("Copied" + haptic) [Draft]
+- No invite link yet / link failed: alert "Couldn't create the invite link. Check iCloud and your connection, then try again."
+
+## Share Room (system share sheet) [Locked]
+Figma 768:1623, from the lobby's "⋯" → Share Room (host and participant): AirDrop sends the iCloud link only; messaging apps get text only [Draft]: "Join my roll “<name>” on ScrapIt! 📸 / Roll code: <code> / <link>". Mail and other non-messaging destinations hidden. App name from one constant (`AppBrand.name`)
 
 ## Screen: Join a Roll [Locked]
-Figma node 725:6659
-- Back button, title "Join Roll", "Enter code" with 6 single-character boxes (centered), "Join" pill
-- Error messages under the boxes [Draft]: "No roll found for this code", "This roll has ended", "You're offline. Connect to the internet to join.", "Couldn't join. Make sure you're signed in to iCloud and try again."
+Figma node 1187:9697 (change 019)
+- Back button, title "Join Roll", `InviteHandshake` illustration, "Turn on AirDrop to accept the invite", divider, "Enter code" with 6 boxes (49×58) left-aligned with the label, "Join" pill. No header decoration
+- One hidden text field holds the code; the boxes display it, the next box is outlined while typing; tapping a box opens the keyboard
+- Messages under the boxes, short only [Draft]: "Enter all 6 characters of the code", "No roll found for this code", "This roll has ended", "You're offline. Connect to the internet to join.", "Couldn't join. Make sure you're signed in to iCloud and try again." Cleared when the code changes
 
 ## Screen: Capture session [Locked]
 Figma nodes 1302:47935 (back camera) and 1300:33796 (front camera) (landscape design, change 041). Camera behavior from the camera POC (FilterCam), change 008.
@@ -66,7 +74,7 @@ Figma nodes 1302:47935 (back camera) and 1300:33796 (front camera) (landscape de
   - Viewfinder screen: live preview with real-time film filter, participant presence count badge (`person.2.fill` + count, plus queued count if offline) positioned at top-left of the preview HUD; grid overlay and button removed; host "END ROLL" button and debug actions preserved
   - Bottom controls shelf: Flash toggle (Off / On / Auto), LIVE toggle, and FLIP camera button equally spaced across the bottom shelf under the viewfinder
   - Lower right deck: circular analog shots-left dial (rotating mechanical drum displaying remaining count) beside the recessed metallic shutter button with mechanical pressed animation and analog shutter haptic (change 040)
-- Live preview shows the roll's filter in real time (Cinematic 400 B&W = Noir, 200 Color Print = Chrome); no filter switching on this screen
+- Live preview shows the roll's filter in real time (Cinematic 400 B&W = Noir, 200 Color Print = Digicam, change 016); no filter switching on this screen
 - Knurled zoom wheel (172×44, look from 007):
   - Back camera range: 0.5× (phones with ultra wide) or 1× up to 4× (or the device maximum if lower), in 0.1 steps
   - Drag **left** to zoom in; ribs roll with the finger; logarithmic scale; faster drags cover more steps
