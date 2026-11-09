@@ -211,6 +211,11 @@ struct CaptureSessionView: View {
 
                 // Shots Counter: taken / total (00 /36 → 36 /36)
                 VStack(spacing: 4) {
+                    Text("SHOTS")
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(1.0)
+                        .foregroundStyle(Color.white.opacity(0.75))
+
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
                         Text(takenShotsText)
                             .font(.system(size: 24, weight: .bold, design: .monospaced))
@@ -228,15 +233,15 @@ struct CaptureSessionView: View {
                                     .stroke(Color.white.opacity(0.18), lineWidth: 1)
                             )
                     )
-
-                    Text("SHOTS")
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.0)
-                        .foregroundStyle(Color.white.opacity(0.75))
                 }
 
                 // Knurled Zoom Wheel (ZOOM 1.0x)
                 VStack(spacing: 4) {
+                    Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(1.0)
+                        .foregroundStyle(Color.white.opacity(0.75))
+
                     KnurledZoomWheelView(
                         capabilities: camera.zoomCapabilities,
                         zoomFactor: camera.zoomFactor,
@@ -244,11 +249,6 @@ struct CaptureSessionView: View {
                         onZoomChanged: { camera.setZoomFactor($0) },
                         onLensSelected: { camera.rampZoom(to: $0) }
                     )
-
-                    Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.0)
-                        .foregroundStyle(Color.white.opacity(0.75))
                 }
 
                 // Metallic Circular Shutter Button
