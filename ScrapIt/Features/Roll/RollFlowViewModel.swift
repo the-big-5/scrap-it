@@ -137,6 +137,16 @@ final class RollFlowViewModel {
         String(format: "%02d", activeSession?.slotsUsed ?? 0)
     }
 
+    /// Remaining shots left on the active roll (change 041), counting down to 0.
+    var shotsRemaining: Int {
+        guard let session = activeSession else { return 0 }
+        return max(0, session.rollSize - session.slotsUsed)
+    }
+
+    var shotsRemainingText: String {
+        "\(shotsRemaining)"
+    }
+
     var totalShotsText: String {
         "/\(activeSession?.rollSize ?? 36)"
     }
@@ -488,6 +498,13 @@ final class RollFlowViewModel {
         isShareSheetPresented = false
         sessionStore.activeSession = nil
         lobbyParticipants = []
+        navigator?.popToRoot()
+    }
+
+    /// Back button on CaptureSessionView (change 041): returns to Homepage.
+    func returnToHomepage() {
+        isInviteSheetPresented = false
+        isShareSheetPresented = false
         navigator?.popToRoot()
     }
 

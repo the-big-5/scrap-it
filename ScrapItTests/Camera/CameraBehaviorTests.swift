@@ -277,6 +277,50 @@ struct CameraBehaviorTests {
         #expect(viewModel.takenShotsText == "00")
     }
 
+    @Test func shotsRemainingCountsDown() {
+        let context = Self.makeInMemoryContext()
+        let store = SessionStore(modelContext: context)
+        let session = CaptureSession(
+            name: "Trip",
+            hostUserID: "apple-123",
+            participantIDs: ["apple-123"],
+            participantNames: ["Ana"],
+            rollSize: 36
+        )
+        store.activeSession = session
+        let viewModel = RollFlowViewModel(modelContext: context, sessionStore: store)
+
+        #expect(viewModel.shotsRemaining == 36)
+        #expect(viewModel.shotsRemainingText == "36")
+
+        session.slotsUsed = 12
+        #expect(viewModel.shotsRemaining == 24)
+        #expect(viewModel.shotsRemainingText == "24")
+
+        session.slotsUsed = 36
+        #expect(viewModel.shotsRemaining == 0)
+        #expect(viewModel.shotsRemainingText == "0")
+
+        session.slotsUsed = 40
+        #expect(viewModel.shotsRemaining == 0)
+    }
+
+    @Test func shotsRemainingStartsAtZeroWithoutSession() {
+        let context = Self.makeInMemoryContext()
+        let store = SessionStore(modelContext: context)
+        let viewModel = RollFlowViewModel(modelContext: context, sessionStore: store)
+
+        #expect(viewModel.shotsRemaining == 0)
+        #expect(viewModel.shotsRemainingText == "0")
+        let body = UIImage(named: "CameraBodyShape")
+        #expect(body != nil)
+        #expect(body?.size.width == 874)
+        #expect(body?.size.height == 402)
+        #expect(UIImage(named: "CameraShutterWell") != nil)
+        #expect(UIImage(named: "CameraDialOuter") != nil)
+        #expect(UIImage(named: "CameraDialInner") != nil)
+    }
+
     // MARK: - Filter pipeline
 
     private static func pixel(of image: CIImage) -> (r: Int, g: Int, b: Int) {

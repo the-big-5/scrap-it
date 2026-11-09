@@ -18,14 +18,6 @@ struct CaptureSessionView: View {
         flowViewModel.isHost(currentUser)
     }
 
-    private var takenShotsText: String {
-        flowViewModel.takenShotsText
-    }
-
-    private var totalShotsText: String {
-        flowViewModel.totalShotsText
-    }
-
     private var currentInterfaceOrientation: UIInterfaceOrientation {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         if let activeScene = scenes.first(where: { $0.activationState == .foregroundActive }) {
@@ -44,23 +36,28 @@ struct CaptureSessionView: View {
                 physicalSide: simulatedLandscapeSide
             )
 
-            ZStack {
-                Color.black.ignoresSafeArea()
+            // Figma design native canvas: 874 x 402 pt (matches iPhone Pro landscape dimensions)
+            let canvasWidth: CGFloat = 874
+            let canvasHeight: CGFloat = 402
 
-                if isPortrait {
-                    // Render the landscape camera body rotated 90° or -90° so it fills portrait phones naturally
-                    // while supporting both landscape orientations seamlessly when orientation lock is on
-                    cameraBodyContent
-                        .frame(width: geo.size.height, height: geo.size.width)
-                        .rotationEffect(.degrees(rotationDegrees))
-                        .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                } else {
-                    cameraBodyContent
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .rotationEffect(.degrees(rotationDegrees))
-                        .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                }
+            // Viewport dimensions filling entire screen edge-to-edge
+            let viewportWidth = isPortrait ? geo.size.height : geo.size.width
+            let viewportHeight = isPortrait ? geo.size.width : geo.size.height
+
+            // Scale factor to ensure everything is completely flush with screen edges
+            let scale = max(viewportWidth / canvasWidth, viewportHeight / canvasHeight)
+
+            ZStack {
+                Color(red: 42 / 255, green: 36 / 255, blue: 31 / 255)
+                    .ignoresSafeArea()
+
+                cameraCanvas
+                    .frame(width: canvasWidth, height: canvasHeight)
+                    .scaleEffect(scale)
+                    .rotationEffect(.degrees(rotationDegrees))
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
+            .ignoresSafeArea()
             .onChange(of: isPortrait) { _, newIsPortrait in
                 camera.setSimulatedLandscapeSide(simulatedLandscapeSide, isPortrait: newIsPortrait, windowOrientation: windowOrientation)
             }
@@ -86,6 +83,7 @@ struct CaptureSessionView: View {
                 flowViewModel.cameraDidDisappear()
             }
         }
+        .ignoresSafeArea()
         .navigationBarBackButtonHidden(true)
         .statusBarHidden()
         .background(
@@ -112,6 +110,11 @@ struct CaptureSessionView: View {
             DebugLastShotView(photo: flowViewModel.debugLastShot)
         }
         #endif
+        .sheet(isPresented: $flowViewModel.isInviteSheetPresented) {
+            InviteFriendSheetView(currentUser: currentUser, flowViewModel: flowViewModel)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
         .alert("Roll Finished", isPresented: $flowViewModel.showLastSlotRaceAlert) {
             Button("Open Scrapbook") {
                 flowViewModel.finalizeSessionAndOpenScrapbook()
@@ -121,346 +124,212 @@ struct CaptureSessionView: View {
         }
     }
 
-    private var cameraBodyContent: some View {
-        ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                // Top Black Camera Deck (Flash, Live, Viewfinder Housing, Advance, Shots Counter, Zoom Wheel, Shutter)
-                topCameraDeck
-                    .frame(height: 102)
+    // MARK: - Camera Canvas (874 x 402 Figma Frame)
 
-                // Green Camera Body (Strap lugs, Viewfinder Screen, Tally dot + Flip + Grid, Right Grip)
-                lowerGreenBody
-                    .frame(maxHeight: .infinity)
-            }
+    /// Leading margin offset for viewfinder and controls to clear the Dynamic Island in landscape.
+    private let viewfinderLeadingOffset: CGFloat = 64
 
-            // Optical viewfinder housing straddling the top deck and green body per Figma node 708:4941
-            opticalViewfinderHousing
-                .offset(x: -96, y: 8)
+    private var cameraCanvas: some View {
+        ZStack(alignment: .topLeading) {
+            // 1. Textured Camera Body Shape from Figma (1302:47937)
+            Image("CameraBodyShape")
+                .resizable()
+                .frame(width: 874, height: 402)
+                .position(x: 874 / 2, y: 402 / 2)
+
+            // 2. Screen Bezel & Live Preview (1302:47969)
+            screenBezelView
+                .frame(width: 487, height: 251)
+                .position(x: viewfinderLeadingOffset + 487 / 2, y: 97 + 251 / 2)
+
+            // 3. Bottom Controls Row (Flash, Live, Flip) with Equal Spacing
+            bottomControlsRow
+                .frame(width: 487, height: 32)
+                .position(x: viewfinderLeadingOffset + 487 / 2, y: 380)
+
+            // 4. Shutter Well & Button (1302:47961)
+            shutterWellView
+                .frame(width: 107, height: 107)
+                .position(x: 567 + 107 / 2, y: 164 + 107 / 2)
+
+            // 5. Circular Analog Shots-Left Dial (1302:47951)
+            ShotsLeftDialView(shotsRemaining: flowViewModel.shotsRemaining)
+                .frame(width: 83, height: 83)
+                .position(x: 697 + 83 / 2, y: 271 + 83 / 2)
+
+            // 6. Top Plate (1302:47984)
+            topPlateView
+                .frame(width: 875, height: 83)
+                .position(x: 875 / 2, y: 83 / 2)
         }
+        .frame(width: 874, height: 402)
+        .clipped()
     }
 
-    // MARK: - Top Black Deck
+    // MARK: - Top Plate
 
-    private var topCameraDeck: some View {
-        ZStack {
+    private var topPlateView: some View {
+        ZStack(alignment: .topLeading) {
+            // Metallic Gradient Background
             LinearGradient(
-                colors: [Color(white: 0.15), Color(white: 0.08)],
+                stops: [
+                    .init(color: Color(red: 42 / 255, green: 36 / 255, blue: 31 / 255), location: 0.0),
+                    .init(color: Color(red: 23 / 255, green: 23 / 255, blue: 23 / 255), location: 0.55),
+                    .init(color: Color(red: 42 / 255, green: 36 / 255, blue: 31 / 255), location: 1.0)
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-
-            HStack(spacing: 14) {
-                // Flash toggle pill
-                Button {
-                    camera.cycleFlash()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 13, weight: .bold))
-                        Text(camera.flashChoice.rawValue)
-                            .font(.system(size: 13, weight: .semibold))
-                            .tracking(0.8)
-                    }
-                    .foregroundStyle(ScrapTheme.cameraGold)
-                    .frame(width: 96, height: 48)
-                    .background(
-                        Capsule()
-                            .fill(Color(white: 0.19))
-                            .overlay(
-                                Capsule()
-                                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
-                            )
-                    )
+            .overlay(
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.1))
+                        .frame(height: 1)
+                    Spacer()
+                    Rectangle()
+                        .fill(Color.black.opacity(0.6))
+                        .frame(height: 2)
                 }
-                .buttonStyle(.plain)
+            )
 
-                // LIVE toggle pill
-                Button {
-                    camera.isLivePhotoEnabled.toggle()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "livephoto")
-                            .font(.system(size: 14, weight: .bold))
-                        Text("LIVE")
-                            .font(.system(size: 13, weight: .semibold))
-                            .tracking(0.8)
-                    }
-                    .foregroundStyle(
-                        camera.isLivePhotoEnabled
-                            ? ScrapTheme.cameraGold
-                            : Color.white.opacity(0.45)
+            // Back Button (Leading aligned with viewfinder: left: 64px, top: 19px)
+            Button {
+                flowViewModel.returnToHomepage()
+            } label: {
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Image(systemName: "chevron.backward")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Color(white: 0.15))
+                            .offset(x: -1)
                     )
-                    .frame(width: 96, height: 48)
-                    .background(
-                        Capsule()
-                            .fill(Color(white: 0.19))
-                            .overlay(
-                                Capsule()
-                                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
+                    .shadow(color: Color.black.opacity(0.35), radius: 4, x: 0, y: 2)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Return to Homepage")
+            .position(x: viewfinderLeadingOffset + 22, y: 19 + 22)
 
-                // Space reserved for optical viewfinder housing
-                Spacer()
-                    .frame(width: 148)
-
-                // Silver advance / host controls button (▶◀)
-                Menu {
-                    if isHost {
-                        Button(role: .destructive) {
-                            flowViewModel.endSessionManuallyByHost(
-                                currentUser: currentUser
-                            )
-                        } label: {
-                            Label("End Roll Now (Host)", systemImage: "stop.circle.fill")
-                        }
-                    }
-                    Button {
-                        flowViewModel.simulateHostDisconnect()
-                    } label: {
-                        Label("Simulate Host Disconnect Handover", systemImage: "person.badge.key.fill")
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 12))
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 12))
-                            .rotationEffect(.degrees(180))
-                    }
-                    .foregroundStyle(Color(white: 0.55))
-                    .frame(width: 68, height: 42)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(white: 0.90), Color(white: 0.78)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    )
-                }
-
-                // Shots Counter: taken / total (00 /36 → 36 /36)
-                VStack(spacing: 4) {
-                    Text("SHOTS")
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.0)
-                        .foregroundStyle(Color.white.opacity(0.75))
-
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(takenShotsText)
-                            .font(.system(size: 24, weight: .bold, design: .monospaced))
-                            .foregroundStyle(ScrapTheme.cameraGold)
-                        Text(totalShotsText)
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.55))
-                    }
-                    .frame(width: 78, height: 44)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(white: 0.07))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                            )
-                    )
-                }
-
-                // Knurled Zoom Wheel (ZOOM 1.0x)
+            // Zoom Control (Back camera only: left: 537px, top: 0px, width: 172px, height: 83px, Figma 1302:47985)
+            if !camera.isUsingFrontCamera {
                 VStack(spacing: 4) {
                     Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.0)
-                        .foregroundStyle(Color.white.opacity(0.75))
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.88)
+                        .foregroundStyle(Color(red: 185 / 255, green: 181 / 255, blue: 173 / 255))
 
                     KnurledZoomWheelView(
                         capabilities: camera.zoomCapabilities,
                         zoomFactor: camera.zoomFactor,
-                        isEnabled: !camera.isUsingFrontCamera,
+                        isEnabled: true,
                         onZoomChanged: { camera.setZoomFactor($0) },
                         onLensSelected: { camera.rampZoom(to: $0) }
                     )
                 }
-
-                // Metallic Circular Shutter Button
-                Button {
-                    Task {
-                        await flowViewModel.shutterTapped(
-                            currentUser: currentUser
-                        )
-                    }
-                } label: {
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    Color.white,
-                                    Color(white: 0.72),
-                                    Color(white: 0.42)
-                                ],
-                                center: .center,
-                                startRadius: 4,
-                                endRadius: 32
-                            )
-                        )
-                        .frame(width: 56, height: 56)
-                }
-                .buttonStyle(ShutterButtonStyle(isProgrammaticallyPressed: flowViewModel.isShutterPressed))
+                .frame(width: 172, height: 83)
+                .position(x: 537 + 172 / 2, y: 83 / 2)
             }
-            .padding(.horizontal, 24)
-        }
-    }
 
-    private var opticalViewfinderHousing: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 24)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(white: 0.18), Color(white: 0.09)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 142, height: 112)
-                .shadow(color: .black.opacity(0.45), radius: 8, y: 4)
-
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color(white: 0.04))
-                .frame(width: 92, height: 68)
-
-            RoundedRectangle(cornerRadius: 8)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(white: 0.10),
-                            Color(red: 0.16, green: 0.20, blue: 0.20),
-                            Color(white: 0.08)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: 52, height: 34)
-        }
-    }
-
-    // MARK: - Lower Green Camera Body
-
-    private var lowerGreenBody: some View {
-        ZStack {
-            ScrapTheme.cameraGreen
-
-            HStack(spacing: 18) {
-                // Left strap lugs
-                VStack(spacing: 12) {
-                    Capsule()
-                        .fill(Color(white: 0.10))
-                        .frame(width: 14, height: 58)
-                    Capsule()
-                        .fill(Color(white: 0.10))
-                        .frame(width: 14, height: 58)
-                }
-                .padding(.leading, 18)
-
-                // Main Viewfinder Screen (No other users' photos shown — only own viewfinder)
+            // Info Button (Trailing: left: 789px, top: 22px, size: 44px, Figma 1302:48002)
+            Button {
+                flowViewModel.isInviteSheetPresented = true
+            } label: {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(Color(white: 0.06))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18)
-                                .stroke(Color(white: 0.12), lineWidth: 8)
-                        )
+                    Image("CameraInfoRing")
+                        .resizable()
+                        .frame(width: 44, height: 44)
 
-                    // Live preview with the roll's filter (photo = preview). Kept in the view tree from the start:
-                    // RotationCoordinator reads the screen orientation from this layer.
-                    if let renderer = camera.previewRenderer {
-                        FilteredCameraPreviewView(renderer: renderer)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .padding(6)
-                    }
+                    Text("i")
+                        .font(.system(size: 20, weight: .bold, design: .serif))
+                        .foregroundStyle(Color(red: 235 / 255, green: 203 / 255, blue: 107 / 255))
+                        .offset(y: -1)
+                }
+                .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Show Roll Invite Code")
+            .position(x: 789 + 22, y: 22 + 22)
+        }
+        .frame(width: 875, height: 83)
+    }
 
-                    // Rule-of-thirds Grid Overlay when GRID button is active
-                    if camera.isGridVisible {
-                        CameraGridOverlay()
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .padding(6)
-                    }
+    // MARK: - Screen Bezel & Live Preview (Figma 1302:47969)
 
-                    // Shutter flash feedback
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.white.opacity(camera.shutterFlashOpacity))
-                        .animation(.easeOut(duration: 0.1), value: camera.shutterFlashOpacity)
-                        .padding(6)
-                        .allowsHitTesting(false)
+    private var screenBezelView: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14.5)
+                .fill(Color(red: 18 / 255, green: 18 / 255, blue: 18 / 255))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14.5)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.4), radius: 5.2, x: 0, y: 5.2)
 
-                    // Viewfinder HUD overlays (presence & offline indicator, host/debug actions)
-                    VStack {
-                        HStack {
-                            Spacer()
+            // Live Preview with Roll Filter
+            ZStack {
+                Color(red: 28 / 255, green: 27 / 255, blue: 26 / 255)
 
-                            // Live presence count & offline queue status
-                            HStack(spacing: 6) {
-                                Image(systemName: "person.2.fill")
-                                    .font(.system(size: 10))
-                                Text("\(flowViewModel.participantCount)")
-                                    .font(.system(size: 11, weight: .semibold))
+                if let renderer = camera.previewRenderer {
+                    FilteredCameraPreviewView(renderer: renderer)
+                }
 
-                                if flowViewModel.showsOfflineStatus {
-                                    Text("• \(flowViewModel.queuedShotCount) queued")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(ScrapTheme.cameraGold)
-                                }
+                // Shutter flash feedback
+                RoundedRectangle(cornerRadius: 6.2)
+                    .fill(Color.white.opacity(camera.shutterFlashOpacity))
+                    .animation(.easeOut(duration: 0.1), value: camera.shutterFlashOpacity)
+                    .allowsHitTesting(false)
+
+                // Viewfinder HUD
+                VStack {
+                    // Top-Left: Participant presence badge (per user instruction)
+                    HStack {
+                        HStack(spacing: 5) {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("\(flowViewModel.participantCount)")
+                                .font(.system(size: 11.4, weight: .semibold))
+                                .tracking(0.9)
+
+                            if flowViewModel.showsOfflineStatus {
+                                Text("• \(flowViewModel.queuedShotCount) queued")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(ScrapTheme.cameraGold)
                             }
-                            .foregroundStyle(.white.opacity(0.85))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.black.opacity(0.65))
-                            )
                         }
-
-                        if let banner = flowViewModel.hostHandoverBanner {
-                            Text(banner)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(ScrapTheme.cameraGold)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Capsule().fill(Color.black.opacity(0.75)))
-                        }
+                        .foregroundStyle(Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255))
+                        .padding(.horizontal, 8.3)
+                        .padding(.vertical, 3.1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4.14)
+                                .fill(Color.black.opacity(0.62))
+                        )
 
                         Spacer()
+                    }
+                    .padding(.top, 10.36)
+                    .padding(.leading, 10.36)
 
-                        HStack {
-                            if isHost {
-                                Button {
-                                    flowViewModel.endSessionManuallyByHost(
-                                        currentUser: currentUser
-                                    )
-                                } label: {
-                                    Text("END ROLL")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .tracking(0.6)
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 5)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 6)
-                                                .fill(ScrapTheme.indicatorRed.opacity(0.85))
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                            }
+                    if let banner = flowViewModel.hostHandoverBanner {
+                        Text(banner)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(ScrapTheme.cameraGold)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Color.black.opacity(0.75)))
+                    }
 
-                            #if DEBUG
+                    Spacer()
+
+                    // Bottom HUD row: Host End Roll & Debug buttons
+                    HStack(spacing: 8) {
+                        if isHost {
                             Button {
-                                showsDebugLastShot = true
+                                flowViewModel.endSessionManuallyByHost(
+                                    currentUser: currentUser
+                                )
                             } label: {
-                                Text("DEBUG: LAST SHOT")
+                                Text("END ROLL")
                                     .font(.system(size: 10, weight: .bold))
                                     .tracking(0.6)
                                     .foregroundStyle(.white)
@@ -468,93 +337,136 @@ struct CaptureSessionView: View {
                                     .padding(.vertical, 5)
                                     .background(
                                         RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color.purple.opacity(0.85))
+                                            .fill(ScrapTheme.indicatorRed.opacity(0.85))
                                     )
                             }
                             .buttonStyle(.plain)
-                            #endif
-
-                            Spacer()
                         }
-                    }
-                    .padding(18)
-                }
-                .frame(maxWidth: 490)
-                .padding(.vertical, 16)
 
-                // Right Column Controls: Red tally dot, FLIP button, GRID button
-                VStack(spacing: 18) {
-                    Circle()
-                        .fill(ScrapTheme.indicatorRed)
-                        .frame(width: 18, height: 18)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white.opacity(0.85), lineWidth: 2.5)
-                        )
-                        .padding(.bottom, 4)
-
-                    // FLIP camera button
-                    Button {
-                        camera.toggleCameraPosition()
-                    } label: {
-                        VStack(spacing: 5) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(white: 0.10))
-                                    .frame(width: 54, height: 54)
-                                    .shadow(color: .black.opacity(0.35), radius: 4, y: 3)
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(ScrapTheme.cameraGold)
-                            }
-                            Text("FLIP")
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(0.8)
+                        #if DEBUG
+                        Button {
+                            showsDebugLastShot = true
+                        } label: {
+                            Text("DEBUG: LAST SHOT")
+                                .font(.system(size: 10, weight: .bold))
+                                .tracking(0.6)
                                 .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.purple.opacity(0.85))
+                                )
                         }
-                    }
-                    .buttonStyle(.plain)
+                        .buttonStyle(.plain)
+                        #endif
 
-                    // GRID overlay button
-                    Button {
-                        camera.isGridVisible.toggle()
-                    } label: {
-                        VStack(spacing: 5) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(white: 0.10))
-                                    .frame(width: 54, height: 54)
-                                    .shadow(color: .black.opacity(0.35), radius: 4, y: 3)
-                                Image(systemName: "squareshape.split.3x3")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(
-                                        camera.isGridVisible
-                                            ? ScrapTheme.cameraGold
-                                            : ScrapTheme.cameraGold.opacity(0.65)
-                                    )
-                            }
-                            Text("GRID")
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(0.8)
-                                .foregroundStyle(.white)
-                        }
+                        Spacer()
                     }
-                    .buttonStyle(.plain)
+                    .padding(8)
                 }
-                .padding(.horizontal, 8)
-
-                // Molded Right Hand Grip
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(ScrapTheme.cameraDarkGreen)
-                    .frame(width: 190)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 28)
-                            .stroke(Color.black.opacity(0.25), lineWidth: 2)
-                    )
-                    .padding(.vertical, 14)
-                    .padding(.trailing, -24)
             }
+            .clipShape(RoundedRectangle(cornerRadius: 6.2))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
         }
+        .frame(width: 487, height: 251)
+    }
+
+    // MARK: - Bottom Controls (Equal Spacing)
+
+    private var bottomControlsRow: some View {
+        HStack(spacing: 0) {
+            // Flash toggle
+            Button {
+                camera.cycleFlash()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: camera.flashChoice == .off ? "bolt.slash" : (camera.flashChoice == .on ? "bolt.fill" : "bolt.badge.automatic"))
+                        .font(.system(size: 14, weight: .bold))
+                    Text(camera.flashChoice == .auto ? "FLASH AUTO" : "FLASH")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .foregroundStyle(
+                    camera.flashChoice == .off
+                        ? Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255).opacity(0.7)
+                        : ScrapTheme.cameraGold
+                )
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+
+            // LIVE toggle
+            Button {
+                camera.isLivePhotoEnabled.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "livephoto")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("LIVE")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .foregroundStyle(
+                    camera.isLivePhotoEnabled
+                        ? ScrapTheme.cameraGold
+                        : Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255).opacity(0.4)
+                )
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+
+            // Flip camera button
+            Button {
+                camera.toggleCameraPosition()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
+                        .font(.system(size: 14, weight: .bold))
+                    Text("FLIP")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .foregroundStyle(Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255))
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+        }
+        .frame(width: 487)
+    }
+
+    // MARK: - Shutter Well & Button (Figma 1302:47961)
+
+    private var shutterWellView: some View {
+        ZStack {
+            // Recessed Well from Figma (107x107)
+            Image("CameraShutterWell")
+                .resizable()
+                .frame(width: 107, height: 107)
+
+            // Metallic circular shutter button
+            Button {
+                Task {
+                    await flowViewModel.shutterTapped(currentUser: currentUser)
+                }
+            } label: {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color.white,
+                                Color(white: 0.72),
+                                Color(white: 0.42)
+                            ],
+                            center: .center,
+                            startRadius: 4,
+                            endRadius: 38
+                        )
+                    )
+                    .frame(width: 76, height: 76)
+                    .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 4)
+            }
+            .buttonStyle(ShutterButtonStyle(isProgrammaticallyPressed: flowViewModel.isShutterPressed))
+        }
+        .frame(width: 107, height: 107)
     }
 }
 
@@ -563,16 +475,10 @@ private struct ShutterButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let isPressed = configuration.isPressed || isProgrammaticallyPressed
-        ZStack {
-            Circle()
-                .fill(Color(white: 0.08))
-                .frame(width: 74, height: 74)
-
-            configuration.label
-                .scaleEffect(isPressed ? 0.90 : 1.0)
-                .opacity(isPressed ? 0.92 : 1.0)
-                .animation(.spring(response: 0.18, dampingFraction: 0.65), value: isPressed)
-        }
-        .contentShape(Circle())
+        configuration.label
+            .scaleEffect(isPressed ? 0.92 : 1.0)
+            .opacity(isPressed ? 0.92 : 1.0)
+            .animation(.spring(response: 0.18, dampingFraction: 0.65), value: isPressed)
+            .contentShape(Circle())
     }
 }

@@ -396,6 +396,19 @@ struct RollRoomTests {
         #expect(vm.lobbyJoinedCount == 3)
     }
 
+    // MARK: - Camera UI Update (Change 041)
+
+    @Test func returnToHomepagePopsToRoot() {
+        let vm = makeViewModel()
+        navigator.path = [.captureSession]
+        vm.isInviteSheetPresented = true
+
+        vm.returnToHomepage()
+
+        #expect(navigator.path.isEmpty)
+        #expect(!vm.isInviteSheetPresented)
+    }
+
     // MARK: - Avatars
 
     @Test(arguments: [("Sanny", "S"), ("Brian Chang", "BC"), ("fikri ahmad rizal", "FA"), ("", "?")])

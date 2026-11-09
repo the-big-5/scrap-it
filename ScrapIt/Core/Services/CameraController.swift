@@ -33,7 +33,6 @@ struct CapturedShot {
 final class CameraController {
     var flashChoice: CameraFlashChoice = .auto
     var isLivePhotoEnabled: Bool = true
-    var isGridVisible: Bool = false
     private(set) var isUsingFrontCamera: Bool = false
     private(set) var zoomFactor: CGFloat = 1.0
     private(set) var zoomCapabilities: ZoomCapabilities = .none

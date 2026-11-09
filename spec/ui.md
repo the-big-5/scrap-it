@@ -59,9 +59,13 @@ Figma node 725:6659
 - Error messages under the boxes [Draft]: "No roll found for this code", "This roll has ended", "You're offline. Connect to the internet to join.", "Couldn't join. Make sure you're signed in to iCloud and try again."
 
 ## Screen: Capture session [Locked]
-Figma node 708:4941 (landscape design). Camera behavior from the camera POC (FilterCam), change 008.
+Figma nodes 1302:47935 (back camera) and 1300:33796 (front camera) (landscape design, change 041). Camera behavior from the camera POC (FilterCam), change 008.
 - Orientation: landscape only (supports both Landscape Left and Landscape Right dynamically even when system Portrait Orientation Lock is active; change 037); the other screens are portrait for now (see tech.md). Photos are landscape 4:3; preview = photo (same rotation and filter)
-- Camera-body UI: flash toggle (Off / On / Auto, default Auto), LIVE (Live Photo) toggle, shots counter taken / total ("00/36" counting up to "36/36") with "SHOTS" label positioned above the counter box, knurled zoom wheel with "ZOOM" factor label positioned above the wheel (change 036), shutter button with mechanical pressed animation and analog shutter haptic (change 040), viewfinder, red recording indicator, FLIP and GRID buttons
+- Camera-body UI (change 041):
+  - Top plate: circular Back button on leading edge returning to Homepage, knurled zoom wheel with "ZOOM" factor label (back camera only; omitted on front camera), circular Info button on trailing edge presenting the invite friend / roll code sheet
+  - Viewfinder screen: live preview with real-time film filter, participant presence count badge (`person.2.fill` + count, plus queued count if offline) positioned at top-left of the preview HUD; grid overlay and button removed; host "END ROLL" button and debug actions preserved
+  - Bottom controls shelf: Flash toggle (Off / On / Auto), LIVE toggle, and FLIP camera button equally spaced across the bottom shelf under the viewfinder
+  - Lower right deck: circular analog shots-left dial (rotating mechanical drum displaying remaining count) beside the recessed metallic shutter button with mechanical pressed animation and analog shutter haptic (change 040)
 - Live preview shows the roll's filter in real time (Cinematic 400 B&W = Noir, 200 Color Print = Chrome); no filter switching on this screen
 - Knurled zoom wheel (172×44, look from 007):
   - Back camera range: 0.5× (phones with ultra wide) or 1× up to 4× (or the device maximum if lower), in 0.1 steps
@@ -74,8 +78,8 @@ Figma node 708:4941 (landscape design). Camera behavior from the camera POC (Fil
 - "Turn On Camera Adjustments" pop-up on phones with Camera Control: ~1 s after the camera opens, at most once per app launch, until the control has been seen opening or the user picks "Already On" / "Don't Remind Me" ("Later" asks again next launch). Text [Draft]: "To zoom and switch cameras with a light press on Camera Control, turn on Camera Adjustments in Settings › Camera › Camera Control."
 - Live Photo (still + ~3 s movie, no audio), filtered like the photo; still photo kept if the movie fails
 - DEBUG builds only: "DEBUG: LAST SHOT" button shows the last shot taken on this device, long press plays the Live Photo (exception to "no photos during the roll", debug only)
-- No other users' photos shown; shows only own viewfinder and the shots counter
-- Presence list during session is not in the design: [Open]
+- No other users' photos shown; shows only own viewfinder and the remaining shots dial
+- Presence during session: participant count shown in top-left badge of the camera preview HUD
 - States (waiting for others, roll finished, offline queued, end session by host): [Open]
 
 ## Screen: Profile tab [Open] (design in progress, Figma 1109:4648)
