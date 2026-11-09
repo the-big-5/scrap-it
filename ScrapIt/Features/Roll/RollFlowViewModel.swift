@@ -57,6 +57,7 @@ final class RollFlowViewModel {
     @ObservationIgnored let roomService: any RollRoomServicing
     @ObservationIgnored private lazy var archiveSync = ScrapbookArchiveSync(modelContext: modelContext, roomService: roomService)
     @ObservationIgnored private var lobbyRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var lastSlotClaimTask: Task<Void, Never>?
     @ObservationIgnored private var roomChangeObserver: NSObjectProtocol?
 
     /// How often the lobby re-reads the room when no push arrives.
@@ -586,9 +587,16 @@ final class RollFlowViewModel {
         if let rollCode = activeSession?.rollCode {
             let realtimeService = self.realtimeService
             Task { [weak self] in
-                await realtimeService.connect(rollCode: rollCode) { [weak self] incomingSlots in
-                    self?.applyRemoteSlotCount(incomingSlots)
-                }
+                await realtimeService.connect(
+                    rollCode: rollCode,
+                    onSlotUpdate: { [weak self] incomingSlots in
+                        self?.applyRemoteSlotCount(incomingSlots)
+                    },
+                    onRollEnded: { [weak self] in
+                        print("⚡️ [RollFlowViewModel] Received real-time roll_ended event! Finalizing session...")
+                        self?.finalizeSessionAndOpenScrapbook()
+                    }
+                )
             }
         }
     }
@@ -650,6 +658,7 @@ final class RollFlowViewModel {
         guard let photo, let movieTask = shot.livePhotoMovie else { return }
         // The still is saved first; the filtered Live Photo movie follows when ready.
         if let movieData = await movieTask.value {
+            guard photo.modelContext != nil else { return }
             photo.livePhotoMovieData = movieData
             try? modelContext.save()
             // If the roll already ended while movie was encoding, ensure this photo gets uploaded with movie (change 015).
@@ -680,45 +689,106 @@ final class RollFlowViewModel {
     ) async -> ScrapPhoto? {
         guard let session = activeSession else { return nil }
 
+        // If roll has already finished, reject immediately
+        if session.status == .ended || session.slotsUsed >= session.rollSize {
+            showLastSlotRaceAlert = true
+            finalizeSessionAndOpenScrapbook()
+            return nil
+        }
+
+        // 1. Optimistic photo creation & local SwiftData save (zero network wait)
+        let photo = ScrapPhoto(
+            imageData: imageData,
+            livePhotoMovieData: livePhotoMovieData,
+            caption: "",
+            authorID: currentUser.appleUserID,
+            authorName: currentUser.name,
+            timestamp: .now,
+            sourceSessionID: session.id,
+            isSyncedToCloud: false
+        )
+        modelContext.insert(photo)
+
+        // 2. Optimistic local increment & immediate Supabase broadcast
+        session.slotsUsed += 1
+        let optimisticCount = session.slotsUsed
+        let optimisticFinished = session.slotsUsed >= session.rollSize
+        if optimisticFinished {
+            session.status = .ended
+            session.endTime = .now
+        }
+        try? modelContext.save()
+
+        let realtimeService = self.realtimeService
+        Task {
+            await realtimeService.broadcastSlotCount(optimisticCount)
+        }
+
+        #if DEBUG
+        debugLastShot = photo
+        #endif
+
+        // 3. Background authoritative claim with CloudKit retry loop (Spec F3)
+        let claimTask = Task(priority: .userInitiated) { @MainActor [weak self] in
+            guard let self else { return }
+            await self.resolveSlotClaim(
+                photo: photo,
+                session: session,
+                simulateLastSlotConflict: simulateLastSlotConflict
+            )
+        }
+        self.lastSlotClaimTask = claimTask
+
+        return photo
+    }
+
+    func resolveSlotClaim(
+        photo: ScrapPhoto,
+        session: CaptureSession,
+        simulateLastSlotConflict: Bool = false
+    ) async {
         let result = await cloudService.claimSlotAtomically(
             session: session,
             simulateRaceOnLastSlot: simulateLastSlotConflict
         )
 
         switch result {
-        case .claimed(let newSlotsUsed, let rollFinished):
-            let photo = ScrapPhoto(
-                imageData: imageData,
-                livePhotoMovieData: livePhotoMovieData,
-                caption: "",
-                authorID: currentUser.appleUserID,
-                authorName: currentUser.name,
-                timestamp: .now,
-                sourceSessionID: session.id,
-                isSyncedToCloud: false
-            )
-            modelContext.insert(photo)
+        case .claimed(let authoritativeSlots, let rollFinished):
+            session.slotsUsed = authoritativeSlots
+            if rollFinished {
+                session.status = .ended
+                session.endTime = .now
+            }
             try? modelContext.save()
 
-            let realtimeService = self.realtimeService
+            let realtime = self.realtimeService
             Task {
-                await realtimeService.broadcastSlotCount(newSlotsUsed)
+                await realtime.broadcastSlotCount(authoritativeSlots)
+                if rollFinished {
+                    await realtime.broadcastRollEnded()
+                }
             }
-
-            #if DEBUG
-            debugLastShot = photo
-            #endif
 
             if rollFinished {
                 finalizeSessionAndOpenScrapbook()
             }
-            return photo
 
         case .rollAlreadyFinished:
-            // First write wins; this user's shot is dropped and the user is notified
+            // First write wins (Spec F3): this user lost the last-slot race; drop photo and notify
+            session.slotsUsed = session.rollSize
+            session.status = .ended
+            session.endTime = .now
+            modelContext.delete(photo)
+            try? modelContext.save()
+
+            let realtime = self.realtimeService
+            Task {
+                await realtime.broadcastSlotCount(session.rollSize)
+                await realtime.broadcastRollEnded()
+            }
+
             showLastSlotRaceAlert = true
             finalizeSessionAndOpenScrapbook()
-            return nil
         }
     }
 
@@ -732,7 +802,9 @@ final class RollFlowViewModel {
         session.status = .ended
         session.endTime = .now
         try? modelContext.save()
+        let realtime = self.realtimeService
         Task {
+            await realtime.broadcastRollEnded()
             await cloudService.publishSessionToCloudKit(session: session)
         }
         finalizeSessionAndOpenScrapbook()
@@ -760,16 +832,28 @@ final class RollFlowViewModel {
     // MARK: - Finalize roll into scrapbook
 
     /// Restores scrapbooks on a new phone and adds friends' photos to finished rolls (change 012).
-    func syncScrapbookArchive() async {
-        await archiveSync.run()
+    @discardableResult
+    func syncScrapbookArchive(for session: CaptureSession? = nil) async -> Int {
+        if let session {
+            return await archiveSync.syncRoom(for: session)
+        } else {
+            return await archiveSync.run()
+        }
     }
 
     func finalizeSessionAndOpenScrapbook() {
         if let session = activeSession {
             let cloud = self.cloudService
             Task {
+                await cloud.publishSessionToCloudKit(session: session)
                 await cloud.uploadPendingPhotos(for: session)
-                await self.syncScrapbookArchive()
+                _ = await self.syncScrapbookArchive(for: session)
+                // Targeted sync polling over a window so friends' incoming shots are pulled automatically
+                for delay in [2, 3, 5] {
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled, session.modelContext != nil else { return }
+                    _ = await self.syncScrapbookArchive(for: session)
+                }
             }
         } else {
             Task { await syncScrapbookArchive() }

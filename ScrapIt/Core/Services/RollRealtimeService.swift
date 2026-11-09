@@ -8,25 +8,40 @@ nonisolated struct RollSlotBroadcast: Codable, Sendable, Equatable {
 protocol RollSlotRealtimeProviding: AnyObject {
     func connect(
         rollCode: String,
-        onSlotUpdate: @escaping @MainActor @Sendable (Int) -> Void
+        onSlotUpdate: @escaping @MainActor @Sendable (Int) -> Void,
+        onRollEnded: (@MainActor @Sendable () -> Void)?
     ) async
     func broadcastSlotCount(_ slotsUsed: Int) async
+    func broadcastRollEnded() async
     func disconnect() async
+}
+
+extension RollSlotRealtimeProviding {
+    func connect(
+        rollCode: String,
+        onSlotUpdate: @escaping @MainActor @Sendable (Int) -> Void
+    ) async {
+        await connect(rollCode: rollCode, onSlotUpdate: onSlotUpdate, onRollEnded: nil)
+    }
 }
 
 final class NoopRollSlotRealtimeService: RollSlotRealtimeProviding {
     func connect(
         rollCode: String,
-        onSlotUpdate: @escaping @MainActor @Sendable (Int) -> Void
+        onSlotUpdate: @escaping @MainActor @Sendable (Int) -> Void,
+        onRollEnded: (@MainActor @Sendable () -> Void)? = nil
     ) async {}
 
     func broadcastSlotCount(_ slotsUsed: Int) async {}
+
+    func broadcastRollEnded() async {}
 
     func disconnect() async {}
 }
 
 final class SupabaseRollSlotRealtimeService: RollSlotRealtimeProviding {
     static let slotTakenEvent = "slot_taken"
+    static let rollEndedEvent = "roll_ended"
 
     private let client: SupabaseClient
     private var activeChannel: RealtimeChannelV2?
@@ -50,7 +65,8 @@ final class SupabaseRollSlotRealtimeService: RollSlotRealtimeProviding {
 
     func connect(
         rollCode: String,
-        onSlotUpdate: @escaping @MainActor @Sendable (Int) -> Void
+        onSlotUpdate: @escaping @MainActor @Sendable (Int) -> Void,
+        onRollEnded: (@MainActor @Sendable () -> Void)? = nil
     ) async {
         let normalizedCode = rollCode
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -67,16 +83,32 @@ final class SupabaseRollSlotRealtimeService: RollSlotRealtimeProviding {
             config.broadcast.receiveOwnBroadcasts = false
         }
         let stream = channel.broadcastStream(event: Self.slotTakenEvent)
+        let rollEndedStream = channel.broadcastStream(event: Self.rollEndedEvent)
 
         activeChannel = channel
         listenTask = Task { [weak self] in
-            for await message in stream {
-                guard !Task.isCancelled,
-                      self?.activeConnectionID == connectionID,
-                      let payload = Self.decodeSlotBroadcast(from: message) else {
-                    continue
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { [weak self] in
+                    for await message in stream {
+                        guard !Task.isCancelled,
+                              self?.activeConnectionID == connectionID,
+                              let payload = Self.decodeSlotBroadcast(from: message) else {
+                            continue
+                        }
+                        onSlotUpdate(payload.slotsUsed)
+                    }
                 }
-                onSlotUpdate(payload.slotsUsed)
+                if let onRollEnded {
+                    group.addTask { [weak self] in
+                        for await _ in rollEndedStream {
+                            guard !Task.isCancelled,
+                                  self?.activeConnectionID == connectionID else {
+                                continue
+                            }
+                            onRollEnded()
+                        }
+                    }
+                }
             }
         }
 
@@ -104,6 +136,22 @@ final class SupabaseRollSlotRealtimeService: RollSlotRealtimeProviding {
                 try? await channel.broadcast(event: Self.slotTakenEvent, message: payload)
             } else {
                 try? await channel.httpSend(event: Self.slotTakenEvent, message: payload)
+            }
+        }
+        pendingBroadcastTask = sendTask
+        await sendTask.value
+    }
+
+    func broadcastRollEnded() async {
+        guard let channel = activeChannel else { return }
+        let previousTask = pendingBroadcastTask
+        let sendTask = Task {
+            await previousTask?.value
+            let emptyPayload: [String: String] = ["status": "ended"]
+            if channel.status == .subscribed {
+                try? await channel.broadcast(event: Self.rollEndedEvent, message: emptyPayload)
+            } else {
+                try? await channel.httpSend(event: Self.rollEndedEvent, message: emptyPayload)
             }
         }
         pendingBroadcastTask = sendTask

@@ -147,11 +147,20 @@ final class ScrapbookViewModel {
 
     /// Only this roll's photos (own and friends'), oldest first.
     var rollPhotos: [ScrapPhoto] {
-        (scrapbook?.photos ?? []).sorted { $0.timestamp < $1.timestamp }
+        if let sessionID = scrapbook?.sourceSessionID {
+            let descriptor = FetchDescriptor<ScrapPhoto>(
+                predicate: #Predicate { $0.sourceSessionID == sessionID },
+                sortBy: [SortDescriptor(\.timestamp, order: .forward)]
+            )
+            if let fetched = try? modelContext.fetch(descriptor), !fetched.isEmpty {
+                return fetched
+            }
+        }
+        return (scrapbook?.photos ?? []).sorted { $0.timestamp < $1.timestamp }
     }
 
     var photosByID: [UUID: ScrapPhoto] {
-        Dictionary((scrapbook?.photos ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        Dictionary(rollPhotos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     func presentPhotoPicker() {

@@ -113,13 +113,9 @@ nonisolated struct RollRoomLocation: Equatable, Sendable {
 ///   (anyone with the link can read and write), plus a public `RollCode-<code>` record (code → link)
 /// - participant: accepts the share, then writes their own `RollParticipant` record in the shared zone
 extension CKContainer {
-    /// The CloudKit container for this app build.
-    /// Uses the developer's registered container when it differs from default `iCloud.<bundle ID>`.
+    /// The canonical CloudKit container for ScrapIt (`iCloud.lepin.scrapit`).
     static var app: CKContainer {
-        if let bundleID = Bundle.main.bundleIdentifier, bundleID == "com.lepin.ScrapIt" {
-            return CKContainer(identifier: "iCloud.lepin.scrapit")
-        }
-        return .default()
+        CKContainer(identifier: "iCloud.lepin.scrapit")
     }
 }
 
@@ -383,7 +379,13 @@ final class CloudKitRollRoomService: RollRoomServicing {
             }
             for zone in zones where zone.zoneID.zoneName.hasPrefix("Roll-") {
                 let code = String(zone.zoneID.zoneName.dropFirst("Roll-".count))
-                if let room = try? await fetchRoom(code: code, zoneOwnerName: isOwn ? nil : zone.zoneID.ownerName) {
+                var room = try? await fetchRoom(code: code, zoneOwnerName: isOwn ? nil : zone.zoneID.ownerName)
+                if room == nil {
+                    // Retry once on failure to recover from transient network drops
+                    try? await Task.sleep(for: .milliseconds(600))
+                    room = try? await fetchRoom(code: code, zoneOwnerName: isOwn ? nil : zone.zoneID.ownerName)
+                }
+                if let room {
                     rooms.append(room)
                 }
             }
@@ -422,20 +424,38 @@ final class CloudKitRollRoomService: RollRoomServicing {
         return record
     }
 
-    /// All records in the room zone (no query index needed).
+    /// All records in the room zone (no query index needed) with automatic retry on network drops.
     private func zoneRecords(location: RollRoomLocation, in database: CKDatabase) async throws -> [CKRecord] {
         var records: [CKRecord] = []
         var token: CKServerChangeToken?
         var moreComing = true
         while moreComing {
-            let changes = try await database.recordZoneChanges(inZoneWith: location.zoneID, since: token)
-            for (_, result) in changes.modificationResultsByID {
-                if let modification = try? result.get() {
-                    records.append(modification.record)
+            var lastError: (any Error)?
+            var gotChanges = false
+            for attempt in 1...3 {
+                do {
+                    let changes = try await database.recordZoneChanges(inZoneWith: location.zoneID, since: token)
+                    for (_, result) in changes.modificationResultsByID {
+                        if let modification = try? result.get() {
+                            records.append(modification.record)
+                        }
+                    }
+                    token = changes.changeToken
+                    moreComing = changes.moreComing
+                    gotChanges = true
+                    break
+                } catch {
+                    lastError = error
+                    let retryAfter = (error as? CKError)?.retryAfterSeconds ?? 1.0
+                    if attempt < 3 {
+                        try? await Task.sleep(for: .seconds(min(retryAfter, 2.0)))
+                    }
                 }
             }
-            token = changes.changeToken
-            moreComing = changes.moreComing
+            if !gotChanges {
+                if let lastError { throw lastError }
+                break
+            }
         }
         return records
     }
