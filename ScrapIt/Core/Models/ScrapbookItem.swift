@@ -62,3 +62,35 @@ final class ScrapbookItem {
         }
     }
 }
+
+extension ScrapbookItem {
+    func toPayload() -> ScrapbookItemPayload {
+        ScrapbookItemPayload(
+            id: id,
+            photoID: photoID,
+            stickerID: stickerID,
+            centerX: centerX,
+            centerY: centerY,
+            width: width,
+            rotation: rotation,
+            zIndex: zIndex,
+            loopEnabled: loopEnabled,
+            maskData: maskData
+        )
+    }
+
+    convenience init(payload: ScrapbookItemPayload) {
+        self.init(
+            photoID: payload.photoID,
+            stickerID: payload.stickerID,
+            centerX: payload.centerX,
+            centerY: payload.centerY,
+            width: payload.width,
+            rotation: payload.rotation,
+            zIndex: payload.zIndex,
+            loopEnabled: payload.loopEnabled
+        )
+        self.id = payload.id
+        self.maskData = payload.maskData
+    }
+}
