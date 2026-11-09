@@ -31,9 +31,10 @@ Figma node 984:3556
 - Pill button "Next".
 
 ## Screen: Create Roll Filter [Locked]
-Figma node 675:5759
+Figma node 1187:8489 (replaces 675:5759, change 017)
 - Header decoration and "Choose your filter".
 - Film canister picker ("Cinematic 400 Pro 35 Black & White" vs "200 Color Print") with shot badge.
+- Each canister's film strip: 4 sample photos (96 × 84 pt frames, horizontal scroll), filtered with that canister's real camera look. Only the selected canister's strip shows its photos; the other strip stays dark
 - Pill button "Next".
 
 ## Screen: Create Roll Lobby [Locked]

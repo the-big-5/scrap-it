@@ -1,18 +1,12 @@
-import CoreImage.CIFilterBuiltins
-import SwiftData
 import SwiftUI
 
+/// A filter canister with its film strip. The selected filter's strip shows its sample photos, rendered with
+/// the camera pipeline (change 017, Figma 1187:8489); the other strip stays dark.
 struct FilmCanisterFilterRow: View {
     let filter: RollFilter
     let isSelected: Bool
+    let samples: [CGImage]
     let onSelect: () -> Void
-
-    private let sampleScenes: [(icon: String, label: String)] = [
-        ("person.2.fill", "Friends"),
-        ("cup.and.saucer.fill", "Cafe"),
-        ("sun.max.fill", "Golden Hr"),
-        ("sparkles", "Night Out")
-    ]
 
     var body: some View {
         Button(action: onSelect) {
@@ -28,29 +22,18 @@ struct FilmCanisterFilterRow: View {
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 2) {
-                            ForEach(0..<sampleScenes.count, id: \.self) { index in
-                                let sample = sampleScenes[index]
+                            ForEach(0..<FilterSamplePhotos.countPerFilter, id: \.self) { index in
                                 ZStack {
-                                    Rectangle()
-                                        .fill(
-                                            isSelected
-                                                ? AnyShapeStyle(frameBackground(for: filter, index: index))
-                                                : AnyShapeStyle(ScrapTheme.filmStripDark)
-                                        )
-                                        .frame(width: 96, height: 84)
-
-                                    if isSelected {
-                                        VStack(spacing: 6) {
-                                            Image(systemName: sample.icon)
-                                                .font(.system(size: 22))
-                                                .foregroundStyle(frameForeground(for: filter))
-                                            Text(sample.label)
-                                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                                .foregroundStyle(frameForeground(for: filter).opacity(0.85))
-                                        }
-                                        .transition(.opacity.combined(with: .scale))
+                                    ScrapTheme.filmStripDark
+                                    if isSelected, samples.indices.contains(index) {
+                                        Image(decorative: samples[index], scale: 1)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .transition(.opacity)
                                     }
                                 }
+                                .frame(width: 96, height: 84)
+                                .clipped()
                                 .overlay(
                                     Rectangle()
                                         .stroke(Color.black, lineWidth: 1.5)
@@ -68,35 +51,5 @@ struct FilmCanisterFilterRow: View {
             .scaleEffect(isSelected ? 1.0 : 0.97, anchor: .leading)
         }
         .buttonStyle(.plain)
-    }
-
-    private func frameBackground(for filter: RollFilter, index: Int) -> LinearGradient {
-        switch filter {
-        case .cinematicBW400:
-            let shade = 0.20 + Double(index % 2) * 0.08
-            return LinearGradient(
-                colors: [Color(white: shade + 0.12), Color(white: shade)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        case .colorPrint200:
-            return LinearGradient(
-                colors: [
-                    Color(red: 0.42, green: 0.30, blue: 0.20),
-                    Color(red: 0.24, green: 0.19, blue: 0.16)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-    }
-
-    private func frameForeground(for filter: RollFilter) -> Color {
-        switch filter {
-        case .cinematicBW400:
-            return Color(white: 0.92)
-        case .colorPrint200:
-            return Color(red: 0.99, green: 0.85, blue: 0.52)
-        }
     }
 }

@@ -69,7 +69,7 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
     private let previewPipeline = FilmFilterPipeline() // videoQueue
     private let photoPipeline = FilmFilterPipeline()   // processingQueue
     private let lookLock = NSLock()
-    private var currentLook: FilmLook = .chrome
+    private var currentLook: FilmLook = .digicam
 
     var look: FilmLook {
         get { lookLock.withLock { currentLook } }
@@ -399,7 +399,7 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
                                     continuation.resume(throwing: CameraEngineError.captureFailed)
                                     return
                                 }
-                                let filtered = self.photoPipeline.apply(look, to: image)
+                                let filtered = self.photoPipeline.apply(look, to: image, forFinalPhoto: true)
                                 continuation.resume(returning: CapturedPhoto(image: filtered, liveMovie: liveMovie))
                             }
                         }

@@ -8,15 +8,15 @@ import UniformTypeIdentifiers
 nonisolated enum FilmLook: Sendable, Equatable {
     /// Cinematic 400 Pro 35 Black & White.
     case noir
-    /// 200 Color Print.
-    case chrome
+    /// 200 Color Print (yellow canister): Digicam look, change 016.
+    case digicam
 }
 
 extension RollFilter {
     var look: FilmLook {
         switch self {
         case .cinematicBW400: .noir
-        case .colorPrint200: .chrome
+        case .colorPrint200: .digicam
         }
     }
 }
@@ -37,18 +37,61 @@ nonisolated enum RenderContext {
 /// Filter objects are created once; per frame only the input changes.
 /// Not thread-safe: use one instance per queue.
 nonisolated final class FilmFilterPipeline {
-    private let noir = CIFilter.photoEffectNoir()
-    private let chrome = CIFilter.photoEffectChrome()
+    /// Digicam still photos are scaled to this long side before the look, so blur / sharpen match the preview.
+    static let digicamPhotoLongSide: CGFloat = 2048
 
-    func apply(_ look: FilmLook, to image: CIImage) -> CIImage {
+    private let noir = CIFilter.photoEffectNoir()
+
+    // Digicam (change 016, camera POC): grade → soft lens blur → edge sharpen → vignette.
+    private let grade = CIFilter.colorCubeWithColorSpace()
+    private let blur = CIFilter.gaussianBlur()
+    private let sharpen = CIFilter.sharpenLuminance()
+    private let vignette = CIFilter.vignette()
+    private let downscale = CIFilter.lanczosScaleTransform()
+
+    init() {
+        grade.cubeDimension = Float(DigicamGrade.dimension)
+        grade.cubeData = DigicamGrade.cubeData
+        grade.colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
+        blur.radius = 0.6
+        sharpen.sharpness = 0.4
+        vignette.intensity = 0.5
+        vignette.radius = 1.5
+        downscale.aspectRatio = 1
+    }
+
+    /// `forFinalPhoto`: the still photo. Digicam photos are downscaled to 2048 px first; the preview and the
+    /// Live Photo movie frames are filtered as they are.
+    func apply(_ look: FilmLook, to image: CIImage, forFinalPhoto: Bool = false) -> CIImage {
         switch look {
         case .noir:
             noir.inputImage = image
             return noir.outputImage ?? image
-        case .chrome:
-            chrome.inputImage = image
-            return chrome.outputImage ?? image
+        case .digicam:
+            return digicam(forFinalPhoto ? downscaled(image) : image)
         }
+    }
+
+    private func digicam(_ input: CIImage) -> CIImage {
+        let extent = input.extent
+        grade.inputImage = input
+        blur.inputImage = grade.outputImage?.clampedToExtent()
+        sharpen.inputImage = blur.outputImage?.cropped(to: extent)
+        vignette.inputImage = sharpen.outputImage
+        return vignette.outputImage?.cropped(to: extent) ?? input
+    }
+
+    private func downscaled(_ image: CIImage) -> CIImage {
+        let scale = Self.digicamPhotoLongSide / max(image.extent.width, image.extent.height)
+        guard scale < 1 else { return image }
+        downscale.inputImage = image
+        downscale.scale = Float(scale)
+        guard let output = downscale.outputImage else { return image }
+        // Lanczos with a Float scale can round up a pixel (4032 → 2049); crop to the exact target size.
+        let e = output.extent
+        return output.cropped(to: CGRect(x: e.minX, y: e.minY,
+                                         width: (image.extent.width * scale).rounded(.down),
+                                         height: (image.extent.height * scale).rounded(.down)))
     }
 }
 
