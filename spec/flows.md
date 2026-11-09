@@ -21,15 +21,17 @@ Edge cases:
 2. Friend lands in the lobby as a participant; late joining is allowed while the roll lasts (goes straight to the camera if the roll is live)
 3. Codes and links stay valid until the roll ends or the host deletes it
 4. Same iCloud as the host (same or another device): opening the link or entering the code goes straight into the room as the host; no error, no extra participant. Joining again never adds the same person twice
+5. Join Roll screen (change 019): "Turn on AirDrop to accept the invite" hint, then the code. The code field accepts letters / numbers only (uppercased, max 6); backspace, editing and paste work
 Edge cases:
-- Code not found, roll ended, offline, iCloud problem: stay on Join Roll with a message
+- Fewer than 6 characters: "Enter all 6 characters of the code", no server call (change 019)
+- Code not found, roll ended, offline, iCloud problem: stay on Join Roll with a short message only; technical detail goes to the developer log, never on screen (change 019)
 - App not installed: the iCloud link shows Apple's iCloud web page pointing to the App Store
 
 ## F3: Roll (real-time shared capture session) [Locked]
 1. Host taps the disposable camera on Workbench, taps "Create Roll"
 2. Setup step: enters roll name, chooses shot count (24, 36 default, 48, 72) with friendship size guidance ("4-6 friends")
 3. Filter step: chooses film filter ("Cinematic 400 Pro 35 Black & White" or "200 Color Print")
-4. Lobby: roll title, stats (joined, shots) and participant avatars (initials). Host: top-right button opens the "Invite friend" sheet (roll code, Copy link, share); long-press another person's avatar → Remove; "Delete roll" deletes it for everyone. Participant: "⋯" → Leave roll. X (both) closes the lobby back to the Workbench; the roll keeps existing (reopening it: [Open]). No confirmation dialogs
+4. Lobby: roll title, stats (joined, shots) and participant avatars (initials). Host (change 019): "⋯" menu → Edit Room (no action yet [Open]), Share Room (system share sheet), Delete Room (asks first, then deletes it for everyone); a "+" tile after the avatars opens Invite Friends (Invite via AirDrop, or Invite via Room Code → the code, long-press copies it); long-press another person's avatar → Remove (no confirmation). Participant: "⋯" → Share Room, Leave Room (no confirmation [Open]). X (both) closes the lobby back to the Workbench; the roll keeps existing (reopening it: [Open])
 5. Host taps "Start Roll"; participants see "Waiting for the host to start..." and move to the camera when the host starts
 6. Removed participants, or everyone when the host deletes the roll, return to the Workbench with a short message
 7. Everyone takes photos (still and Live Photo) at the same time in-app. Slot counts sync live in <50ms via Supabase Realtime broadcast (backed up by 3-second CloudKit polling, change 011). Photos are stored locally at optimized resolution (max 2048px still, 1440px movie, ~1.4 MB total per shot, change 014). Nobody, including the host, sees others' photos during the roll

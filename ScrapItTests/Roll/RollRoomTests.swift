@@ -191,7 +191,6 @@ struct RollRoomTests {
 
         #expect(vm.inviteContent == nil)
         #expect(vm.inviteLinkError?.hasPrefix(RollFlowViewModel.inviteLinkFailedMessage) == true)
-        #expect(vm.inviteCopyText == vm.activeSession?.rollCode, "Copy falls back to the code without a link")
 
         rooms.createError = nil
         await vm.createInviteLinkIfNeeded(currentUser: host)
@@ -407,6 +406,135 @@ struct RollRoomTests {
 
         #expect(navigator.path.isEmpty)
         #expect(!vm.isInviteSheetPresented)
+    }
+
+    // MARK: - Join code entry and messages (change 019)
+
+    @Test func joinCodeTypingBackspaceEditAndPaste() {
+        let vm = makeViewModel()
+        vm.updateJoinCode("n4b")
+        #expect(vm.joinCode == "N4B")
+        vm.updateJoinCode("N4")            // backspace
+        #expect(vm.joinCode == "N4")
+        vm.updateJoinCode("N4X13L")        // fix the typo and finish
+        #expect(vm.joinCode == "N4X13L")
+        #expect(vm.joinCodeCharacter(at: 2) == "X")
+        #expect(vm.joinCodeCharacter(at: 5) == "L")
+        vm.updateJoinCode("")
+        vm.updateJoinCode(" n4-b1 3l99 ")  // paste: filtered, uppercased, max 6
+        #expect(vm.joinCode == "N4B13L")
+        vm.updateJoinCode("ÄB")            // letters / numbers only (ASCII)
+        #expect(vm.joinCode == "B")
+    }
+
+    @Test func shortCodeShowsAMessageWithoutCallingTheServer() async {
+        rooms.joinError = .unavailable
+        let vm = makeViewModel()
+        vm.updateJoinCode("N4B")
+
+        await vm.submitJoinCode(currentUser: guest)
+
+        #expect(vm.joinErrorMessage == RollFlowViewModel.joinIncompleteCodeMessage)
+        #expect(navigator.path.isEmpty)
+    }
+
+    @Test func editingTheCodeClearsTheMessage() async {
+        let vm = makeViewModel()
+        vm.updateJoinCode("N4")
+        await vm.submitJoinCode(currentUser: guest)
+        #expect(vm.joinErrorMessage != nil)
+        vm.updateJoinCode("N4B")
+        #expect(vm.joinErrorMessage == nil)
+    }
+
+    @Test func serverErrorsShowOnlyTheShortMessage() async {
+        rooms.joinError = .notFound
+        rooms.lastErrorDescription = "own room: <CKError 0x1 \"Zone Not Found\" (26/2036)>"
+        let vm = makeViewModel()
+        vm.updateJoinCode("GCDFYH")
+
+        await vm.submitJoinCode(currentUser: guest)
+
+        #expect(vm.joinErrorMessage == RollFlowViewModel.joinNotFoundMessage)
+        #expect(vm.joinErrorMessage?.contains("CKError") == false)
+    }
+
+    @Test func failedInviteLinkMessageHasNoTechnicalDetail() async {
+        rooms.createError = .unavailable
+        let vm = makeViewModel()
+        vm.createLobbySession(currentUser: host)
+        await waitUntil { vm.inviteLinkError != nil }
+        #expect(vm.inviteLinkError == RollFlowViewModel.inviteLinkFailedMessage)
+    }
+
+    // MARK: - Lobby menu and invites (change 019)
+
+    @Test func inviteTileIsForTheHostOnly() async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+        #expect(vm.lobbyTiles(currentUser: guest).contains(.invite) == false)
+        #expect(vm.lobbyTiles(currentUser: host).last == .invite)
+        #expect(vm.lobbyTiles(currentUser: host).count == vm.lobbyParticipants.count + 1)
+    }
+
+    @Test func inviteFriendsOpensOnTheOptionsPage() {
+        let vm = makeViewModel()
+        vm.showRoomCode()
+        vm.presentInviteFriends()
+        #expect(vm.isInviteSheetPresented)
+        #expect(vm.invitePage == .options)
+        vm.showRoomCode()
+        #expect(vm.invitePage == .code)
+        vm.showInviteOptions()
+        #expect(vm.invitePage == .options)
+    }
+
+    @Test func shareRoomOpensTheShareSheetOnceTheLinkExists() async {
+        let vm = makeViewModel()
+        vm.createLobbySession(currentUser: host)
+        await waitUntil { vm.inviteContent != nil }
+
+        await vm.shareRoom(currentUser: host)
+        #expect(vm.isShareSheetPresented)
+
+        await vm.inviteViaAirDrop(currentUser: host)
+        #expect(vm.isAirDropSheetPresented)
+    }
+
+    @Test func shareRoomWithoutALinkShowsAnError() async {
+        rooms.createError = .unavailable
+        let vm = makeViewModel()
+        vm.createLobbySession(currentUser: host)
+        await waitUntil { vm.inviteLinkError != nil }
+
+        await vm.shareRoom(currentUser: host)
+
+        #expect(!vm.isShareSheetPresented)
+        #expect(vm.shareErrorMessage == RollFlowViewModel.inviteLinkFailedMessage)
+    }
+
+    @Test func deleteRoomAsksBeforeDeleting() async {
+        let vm = makeViewModel()
+        vm.createLobbySession(currentUser: host)
+        await waitUntil { vm.inviteContent != nil }
+        let code = vm.roomCode
+
+        vm.requestDeleteRoom()
+        #expect(vm.isDeleteRoomConfirmationPresented)
+        #expect(rooms.deleted.isEmpty)
+
+        vm.deleteRoll()
+        await waitUntil { !rooms.deleted.isEmpty }
+        #expect(rooms.deleted == [code])
+    }
+
+    @Test func airDropInviteHidesEverythingButAirDrop() {
+        let excluded = RollInviteContent.airDropOnlyExcludedActivityTypes
+        #expect(!excluded.contains(.airDrop))
+        #expect(excluded.contains(.message))
+        #expect(excluded.contains(.mail))
+        #expect(excluded.contains(UIActivity.ActivityType("net.whatsapp.WhatsApp.ShareExtension")))
     }
 
     // MARK: - Avatars

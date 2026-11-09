@@ -1,96 +1,141 @@
 import SwiftUI
 import UIKit
 
-/// Invite friend sheet (Figma 1068:4233): roll code, Copy link, share button. Host only. No QR code.
+/// Invite Friends sheet (change 019), host only, opened from the "+" tile.
+/// Page 1 (Figma 1300:26163): Invite via AirDrop / Invite via Room Code.
+/// Page 2 (Figma 1300:26710): the room code; long-press copies it.
 struct InviteFriendSheetView: View {
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
     @State private var hasCopied = false
 
-    private var codeCharacters: [String] {
-        let chars = Array((flowViewModel.activeSession?.rollCode ?? "").uppercased())
-        return (0..<6).map { $0 < chars.count ? String(chars[$0]) : "" }
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                CircleIconButton(systemName: "xmark", accessibilityLabel: "Close") {
-                    flowViewModel.isInviteSheetPresented = false
-                }
-                Spacer()
-                Text("Invite friend")
-                    .font(.headline)
-                    .foregroundStyle(DSColor.Brand.primary.color)
-                Spacer()
-                CircleIconButton(systemName: "square.and.arrow.up", accessibilityLabel: "Share invite") {
-                    flowViewModel.isShareSheetPresented = true
-                }
-                .disabled(flowViewModel.inviteContent == nil)
-                .opacity(flowViewModel.inviteContent == nil ? 0.4 : 1)
+            switch flowViewModel.invitePage {
+            case .options:
+                optionsPage
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            case .code:
+                codePage
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 20)
-
-            Spacer(minLength: 24)
-
-            Text("Roll code:")
-                .font(.system(size: 20, weight: .light))
-                .foregroundStyle(Color.black)
-                .padding(.bottom, 16)
-
-            HStack(spacing: 5) {
-                ForEach(Array(codeCharacters.enumerated()), id: \.offset) { _, character in
-                    RollCodeBox { Text(character) }
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Roll code \(codeCharacters.joined())")
-
-            Button {
-                UIPasteboard.general.string = flowViewModel.inviteCopyText
-                withAnimation(.easeInOut(duration: 0.2)) { hasCopied = true }
-                Task {
-                    try? await Task.sleep(for: .seconds(2))
-                    withAnimation(.easeInOut(duration: 0.2)) { hasCopied = false }
-                }
-            } label: {
-                Text(hasCopied ? "Copied!" : "Copy link")
-                    .font(.system(size: 20, weight: .light))
-                    .underline()
-                    .foregroundStyle(Color.black)
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 28)
-
-            // Link state: preparing, or failed with a retry [Draft].
-            if flowViewModel.isCreatingInviteLink {
-                ProgressView()
-                    .padding(.top, 16)
-            } else if let error = flowViewModel.inviteLinkError {
-                VStack(spacing: 8) {
-                    Text(error)
-                        .font(.system(size: 13))
-                        .foregroundStyle(DSColor.State.error.color)
-                        .multilineTextAlignment(.center)
-                    Button("Try again") {
-                        Task { await flowViewModel.createInviteLinkIfNeeded(currentUser: currentUser) }
-                    }
-                    .font(.system(size: 15, weight: .semibold))
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
-            }
-
-            Spacer(minLength: 24)
         }
-        .frame(maxWidth: .infinity)
-        .task { await flowViewModel.createInviteLinkIfNeeded(currentUser: currentUser) }
-        .sheet(isPresented: $flowViewModel.isShareSheetPresented) {
+        .animation(.easeInOut(duration: 0.25), value: flowViewModel.invitePage)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(DSColor.Kraft.lightActive.color)
+        .sheet(isPresented: $flowViewModel.isAirDropSheetPresented) {
             if let content = flowViewModel.inviteContent {
-                RollInviteShareSheet(content: content)
+                RollInviteShareSheet(content: content, airDropOnly: true)
                     .presentationDetents([.medium, .large])
             }
         }
+        .alert(
+            flowViewModel.shareErrorMessage ?? "",
+            isPresented: Binding(
+                get: { flowViewModel.shareErrorMessage != nil },
+                set: { if !$0 { flowViewModel.shareErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        }
+    }
+
+    // MARK: - Page 1
+
+    private var optionsPage: some View {
+        VStack(spacing: 0) {
+            header(leading: CircleIconButton(systemName: "xmark", accessibilityLabel: "Close") {
+                flowViewModel.isInviteSheetPresented = false
+            })
+
+            Image("InviteHandshake")
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 376)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .accessibilityHidden(true)
+
+            Spacer(minLength: 16)
+
+            VStack(spacing: 24) {
+                Button("Invite via AirDrop") {
+                    Task { await flowViewModel.inviteViaAirDrop(currentUser: currentUser) }
+                }
+                .buttonStyle(OffsetPillButtonStyle())
+                .disabled(flowViewModel.isCreatingInviteLink)
+
+                Button("Invite via Room Code") {
+                    flowViewModel.showRoomCode()
+                }
+                .buttonStyle(OffsetPillButtonStyle())
+            }
+            .padding(.horizontal, 25)
+            .padding(.bottom, 24)
+        }
+    }
+
+    // MARK: - Page 2
+
+    private var codePage: some View {
+        VStack(spacing: 0) {
+            header(leading: CircleIconButton(systemName: "arrow.left", accessibilityLabel: "Back") {
+                flowViewModel.showInviteOptions()
+            })
+
+            Text("Share this code with your friends to join the roll.")
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(Color.black)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 34)
+                .padding(.top, 28)
+
+            Image("InviteStars")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 213, height: 162)
+                .padding(.top, 24)
+                .accessibilityHidden(true)
+
+            Text(flowViewModel.roomCode)
+                .font(.system(size: 36, weight: .regular))
+                .tracking(12)
+                .foregroundStyle(Color.black)
+                .padding(.top, 24)
+                .contentShape(Rectangle())
+                .onLongPressGesture {
+                    UIPasteboard.general.string = flowViewModel.roomCode
+                    withAnimation(.easeInOut(duration: 0.2)) { hasCopied = true }
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        withAnimation(.easeInOut(duration: 0.2)) { hasCopied = false }
+                    }
+                }
+                .sensoryFeedback(.success, trigger: hasCopied) { _, copied in copied }
+                .accessibilityLabel("Room code \(flowViewModel.roomCode)")
+                .accessibilityHint("Long press to copy")
+
+            Text("Copied")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(DSColor.Component.textSecondary.color)
+                .opacity(hasCopied ? 1 : 0)
+                .padding(.top, 8)
+
+            Spacer(minLength: 16)
+        }
+    }
+
+    private func header(leading: some View) -> some View {
+        ZStack {
+            Text("Invite Friends")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(DSColor.Brand.primary.color)
+            HStack {
+                leading
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 20)
     }
 }
