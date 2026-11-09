@@ -7,6 +7,8 @@ struct CaptureSessionView: View {
     #if DEBUG
     @State private var showsDebugLastShot = false
     #endif
+    @State private var simulatedLandscapeSide: RollCameraOrientation.LandscapeSide = .left
+    @State private var motionService = CameraMotionService()
 
     private var camera: CameraController {
         flowViewModel.camera
@@ -24,23 +26,64 @@ struct CaptureSessionView: View {
         flowViewModel.totalShotsText
     }
 
+    private var currentInterfaceOrientation: UIInterfaceOrientation {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        if let activeScene = scenes.first(where: { $0.activationState == .foregroundActive }) {
+            return activeScene.interfaceOrientation
+        }
+        return scenes.first?.interfaceOrientation ?? .unknown
+    }
+
     var body: some View {
         GeometryReader { geo in
             let isPortrait = geo.size.height > geo.size.width
+            let windowOrientation = currentInterfaceOrientation
+            let rotationDegrees = RollCameraOrientation.viewRotationDegrees(
+                isPortraitWindow: isPortrait,
+                windowInterfaceOrientation: windowOrientation,
+                physicalSide: simulatedLandscapeSide
+            )
+
             ZStack {
                 Color.black.ignoresSafeArea()
 
                 if isPortrait {
-                    // Render the landscape camera body rotated 90° so it fills portrait phones naturally
-                    // while also supporting true landscape rotation seamlessly
+                    // Render the landscape camera body rotated 90° or -90° so it fills portrait phones naturally
+                    // while supporting both landscape orientations seamlessly when orientation lock is on
                     cameraBodyContent
                         .frame(width: geo.size.height, height: geo.size.width)
-                        .rotationEffect(.degrees(90))
+                        .rotationEffect(.degrees(rotationDegrees))
                         .position(x: geo.size.width / 2, y: geo.size.height / 2)
                 } else {
                     cameraBodyContent
                         .frame(width: geo.size.width, height: geo.size.height)
+                        .rotationEffect(.degrees(rotationDegrees))
+                        .position(x: geo.size.width / 2, y: geo.size.height / 2)
                 }
+            }
+            .onChange(of: isPortrait) { _, newIsPortrait in
+                camera.setSimulatedLandscapeSide(simulatedLandscapeSide, isPortrait: newIsPortrait, windowOrientation: windowOrientation)
+            }
+            .onChange(of: simulatedLandscapeSide) { _, newSide in
+                camera.setSimulatedLandscapeSide(newSide, isPortrait: isPortrait, windowOrientation: windowOrientation)
+            }
+            .onAppear {
+                motionService.start { newSide in
+                    if newSide != simulatedLandscapeSide {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            simulatedLandscapeSide = newSide
+                        }
+                    }
+                }
+                camera.setSimulatedLandscapeSide(simulatedLandscapeSide, isPortrait: isPortrait, windowOrientation: windowOrientation)
+                OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: true))
+                flowViewModel.cameraDidAppear()
+            }
+            .onDisappear {
+                motionService.stop()
+                camera.setSimulatedLandscapeSide(.left, isPortrait: false, windowOrientation: .unknown)
+                OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: false))
+                flowViewModel.cameraDidDisappear()
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -57,14 +100,6 @@ struct CaptureSessionView: View {
                 }
             )
         )
-        .onAppear {
-            OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: true))
-            flowViewModel.cameraDidAppear()
-        }
-        .onDisappear {
-            OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: false))
-            flowViewModel.cameraDidDisappear()
-        }
         .alert("Turn On Camera Adjustments", isPresented: Bindable(camera).showsCameraAdjustmentsPrompt) {
             Button("Already On") { camera.confirmCameraAdjustmentsOn() }
             Button("Don't Remind Me") { camera.dismissCameraAdjustmentsPromptForever() }
