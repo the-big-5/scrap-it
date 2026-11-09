@@ -147,6 +147,37 @@ struct CameraBehaviorTests {
         #expect(PrimaryButtonAction.resolve(hasCameraControl: false) == .flipCamera)
     }
 
+    @Test func shutterAnimationTriggersAndResets() async throws {
+        let context = Self.makeInMemoryContext()
+        let store = SessionStore(modelContext: context)
+        let viewModel = RollFlowViewModel(modelContext: context, sessionStore: store)
+
+        #expect(!viewModel.isShutterPressed)
+        let task = viewModel.triggerShutterAnimation(durationNanoseconds: 20_000_000)
+        #expect(viewModel.isShutterPressed)
+
+        await task.value
+        #expect(!viewModel.isShutterPressed)
+    }
+
+    @Test func shutterTappedActivatesShutterPressedState() async throws {
+        let context = Self.makeInMemoryContext()
+        let store = SessionStore(modelContext: context)
+        let viewModel = RollFlowViewModel(modelContext: context, sessionStore: store)
+        let user = UserProfile(appleUserID: "user-1", name: "Tester")
+
+        #expect(!viewModel.isShutterPressed)
+        await viewModel.shutterTapped(currentUser: user)
+        #expect(viewModel.isShutterPressed)
+
+        await viewModel.shutterAnimationTask?.value
+        #expect(!viewModel.isShutterPressed)
+    }
+
+    @Test func shutterHapticExecutesSafely() {
+        HapticService.shared.playShutterClick()
+    }
+
     @Test func flashCyclesOffOnAuto() {
         let camera = CameraController()
         camera.flashChoice = .off

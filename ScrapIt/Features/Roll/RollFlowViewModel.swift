@@ -38,6 +38,11 @@ final class RollFlowViewModel {
     var lastSlotRaceMessage: String = "The roll just finished! Another friend took the final shot first, so your last photo was dropped."
     var hostHandoverBanner: String?
 
+    // Shutter animation state
+    private(set) var isShutterPressed: Bool = false
+    @ObservationIgnored private var shutterPressSequence: Int = 0
+    @ObservationIgnored private(set) var shutterAnimationTask: Task<Void, Never>?
+
     #if DEBUG
     /// Last shot taken on this device, for the debug Live Photo viewer (DEBUG builds only).
     private(set) var debugLastShot: ScrapPhoto?
@@ -595,8 +600,28 @@ final class RollFlowViewModel {
         }
     }
 
+    @discardableResult
+    @MainActor
+    func triggerShutterAnimation(durationNanoseconds: UInt64 = 120_000_000) -> Task<Void, Never> {
+        isShutterPressed = true
+        HapticService.shared.playShutterClick()
+        shutterPressSequence += 1
+        let currentSequence = shutterPressSequence
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: durationNanoseconds)
+            if self.shutterPressSequence == currentSequence {
+                self.isShutterPressed = false
+            }
+        }
+        shutterAnimationTask = task
+        return task
+    }
+
     func shutterTapped(currentUser: UserProfile) async {
         guard camera.canCapture else { return }
+        await MainActor.run {
+            triggerShutterAnimation()
+        }
         let shot = await camera.captureShot(
             filter: activeSession?.filter ?? .colorPrint200,
             rollName: activeSession?.name ?? "Roll"

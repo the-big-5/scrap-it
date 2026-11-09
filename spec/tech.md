@@ -10,7 +10,7 @@
 - Sharing: CKShare (CloudKit sharing) for roll rooms; scrapbook photos in the public database, encrypted, readable only with the roll key from the room (change 012) [Locked]
 - Auth: Sign in with Apple / iCloud only [Locked]
 - Invites: share sheet with invite link [Locked]
-- Camera: AVFoundation custom camera (`CameraEngine`, ported from the camera POC): multi-lens virtual back camera, filtered live preview (Core Image + Metal), one filter pipeline for preview / photo / Live Photo movie (B&W: `photoEffectNoir`; 200 Color Print: Digicam look from the camera POC, change 016), `RotationCoordinator` rotation, iOS 18 Camera Control "Zoom" slider [Locked]
+- Camera: AVFoundation custom camera (`CameraEngine`, ported from the camera POC): multi-lens virtual back camera, filtered live preview (Core Image + Metal), one filter pipeline for preview / photo / Live Photo movie (B&W: `photoEffectNoir`; 200 Color Print: Digicam look from the camera POC, change 016), `RotationCoordinator` rotation, iOS 18 Camera Control "Zoom" slider, mechanical shutter pressed animation and analog shutter haptic (`HapticService.playShutterClick`, change 040) [Locked]
 - Third-party libraries: `supabase-swift` (approved for Realtime slot count sync, change 011); only specific ones approved [Locked]
 - Scrapbook drawing: PencilKit (iOS 13+, system framework). Tool picker built with `PKToolPicker(toolItems:)` (iOS 18) so the reed pen (iOS 26) never shows; the drawing is stored in a fixed 600 × 800 space and zoomed to the page. PaperKit markup (iOS 26) not used (change 013)
 - Deleted scrapbooks: their roll IDs are kept in `UserDefaults` (`DeletedScrapbookList`) so `ScrapbookArchiveSync` skips them on this device (change 013)

@@ -80,4 +80,17 @@ final class HapticService {
         let event = CHHapticEvent(eventType: .hapticTransient, parameters: [intensity, sharpness], relativeTime: 0)
         playPattern(events: [event])
     }
+
+    /// Crisp mechanical shutter click simulating physical shutter actuation and release
+    func playShutterClick() {
+        let openIntensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.90)
+        let openSharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.85)
+        let openEvent = CHHapticEvent(eventType: .hapticTransient, parameters: [openIntensity, openSharpness], relativeTime: 0)
+
+        let closeIntensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.65)
+        let closeSharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.70)
+        let closeEvent = CHHapticEvent(eventType: .hapticTransient, parameters: [closeIntensity, closeSharpness], relativeTime: 0.05)
+
+        playPattern(events: [openEvent, closeEvent])
+    }
 }
