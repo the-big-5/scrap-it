@@ -50,6 +50,8 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
     private var currentDisplayZoom: CGFloat = 1
     private var hasCameraControl = false
     private var rotationAngle: CGFloat = 0
+    private var baseRotationAngle: CGFloat = 0
+    private var simulatedLandscapeDelta: CGFloat = 0
     /// `AVCaptureSlider` "Zoom" (iOS 18+).
     private var zoomSlider: AnyObject?
     /// Watches the camera's real `videoZoomFactor`, so the screen follows every zoom change.
@@ -452,7 +454,40 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
             self.rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview,
                                                            options: [.initial, .new]) { [weak self] coordinator, _ in
                 let angle = coordinator.videoRotationAngleForHorizonLevelPreview
-                self?.sessionQueue.async { self?.applyRotation(angle, for: device) }
+                self?.sessionQueue.async {
+                    guard let self else { return }
+                    self.baseRotationAngle = angle
+                    let effective = (self.simulatedLandscapeDelta != 0)
+                        ? (angle + self.simulatedLandscapeDelta).truncatingRemainder(dividingBy: 360)
+                        : angle
+                    let normalized = effective < 0 ? effective + 360 : effective
+                    self.applyRotation(normalized, for: device)
+                }
+            }
+        }
+    }
+
+    /// Updates rotation offset when simulating landscape in a portrait window or handling locked landscape.
+    func setSimulatedLandscapeSide(
+        _ side: RollCameraOrientation.LandscapeSide,
+        isPortrait: Bool,
+        windowOrientation: UIInterfaceOrientation = .unknown
+    ) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            let newDelta = RollCameraOrientation.cameraRotationDelta(
+                isPortraitWindow: isPortrait,
+                windowInterfaceOrientation: windowOrientation,
+                physicalSide: side
+            )
+            guard newDelta != self.simulatedLandscapeDelta else { return }
+            self.simulatedLandscapeDelta = newDelta
+            if let device = self.videoInput?.device {
+                let effective = RollCameraOrientation.effectiveCameraAngle(
+                    baseAngle: self.baseRotationAngle,
+                    delta: newDelta
+                )
+                self.applyRotation(effective, for: device)
             }
         }
     }

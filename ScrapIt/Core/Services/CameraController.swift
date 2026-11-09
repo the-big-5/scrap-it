@@ -125,6 +125,15 @@ final class CameraController {
         }
     }
 
+    /// Updates rotation offset when simulating landscape in a portrait window or handling locked landscape.
+    func setSimulatedLandscapeSide(
+        _ side: RollCameraOrientation.LandscapeSide,
+        isPortrait: Bool,
+        windowOrientation: UIInterfaceOrientation = .unknown
+    ) {
+        engine.setSimulatedLandscapeSide(side, isPortrait: isPortrait, windowOrientation: windowOrientation)
+    }
+
     func toggleCameraPosition() {
         guard isSessionRunning, !isCapturing else { return }
         Task {

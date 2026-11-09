@@ -59,7 +59,7 @@ Figma node 725:6659
 
 ## Screen: Capture session [Locked]
 Figma node 708:4941 (landscape design). Camera behavior from the camera POC (FilterCam), change 008.
-- Orientation: landscape only (left and right, following how the phone is held); the other screens are portrait for now (see tech.md). Photos are landscape 4:3; preview = photo (same rotation and filter)
+- Orientation: landscape only (supports both Landscape Left and Landscape Right dynamically even when system Portrait Orientation Lock is active; change 037); the other screens are portrait for now (see tech.md). Photos are landscape 4:3; preview = photo (same rotation and filter)
 - Camera-body UI: flash toggle (Off / On / Auto, default Auto), LIVE (Live Photo) toggle, shots counter taken / total ("00/36" counting up to "36/36"), knurled zoom wheel, shutter button, viewfinder with "LIVE" badge (gold while recording) and zoom label, red recording indicator, FLIP and GRID buttons
 - Live preview shows the roll's filter in real time (Cinematic 400 B&W = Noir, 200 Color Print = Chrome); no filter switching on this screen
 - Knurled zoom wheel (172×44, look from 007):

@@ -2,7 +2,7 @@
 - Platform: iOS (ScrapIt.xcodeproj) [Locked]
 - Minimum iOS: 18 [Locked]
 - Devices: iPhone and iPad [Locked]
-- Orientation: for now every screen is portrait, except the Capture session which is landscape only (change 008, per-screen lock via `OrientationLock` in `Core/Services/` and `AppDelegate` in `App/`). Supporting both portrait and landscape on the other screens later: [Open]
+- Orientation: for now every screen is portrait, except the Capture session which is landscape only (change 008, dual landscape rotation under orientation lock change 037, per-screen lock via `OrientationLock` in `Core/Services/` and `AppDelegate` in `App/`). Supporting both portrait and landscape on the other screens later: [Open]
 - UI: SwiftUI [Locked]
 - Architecture: MVVM with @Observable [Locked]
 - Persistence: SwiftData [Locked]
@@ -48,9 +48,9 @@ ScrapIt/
 ├── Core/
 │   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus,
 │   │                   ScrapbookPage, ScrapbookItem, StickerSheet; PageBackground, StickerCatalog;
-│   │                   camera logic: ZoomWheelModel, CameraButtonRules; AppBrand (app name constant)
+│   │                   camera logic: ZoomWheelModel, CameraButtonRules, RollCameraOrientation; AppBrand (app name constant)
 │   ├── Services/       CloudKitSessionService, CameraController, CameraEngine, FilmFilterPipeline, PreviewRenderer, LivePhotoMovieWriter,
-│   │                   Navigator, SessionStore, OrientationLock,
+│   │                   Navigator, SessionStore, OrientationLock, CameraMotionService,
 │   │                   AppleCredentialChecker, NetworkMonitor, HapticService, ZoomCapabilities,
 │   │                   RollRoomService (CloudKit rooms: RollRoomServicing, CloudKitRollRoomService, RollRoomLocation),
 │   │                   RollRealtimeService (RollSlotRealtimeProviding, SupabaseRollSlotRealtimeService, NoopRollSlotRealtimeService), SupabaseConfig,
