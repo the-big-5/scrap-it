@@ -367,23 +367,9 @@ struct CaptureSessionView: View {
                         .padding(6)
                         .allowsHitTesting(false)
 
-                    // Viewfinder HUD overlays (LIVE badge, presence & offline indicator, zoom badge)
+                    // Viewfinder HUD overlays (presence & offline indicator, host/debug actions)
                     VStack {
                         HStack {
-                            if camera.isLivePhotoEnabled && camera.isLiveSupported {
-                                Text("LIVE")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .tracking(0.8)
-                                    // Gold while the Live Photo movie records
-                                    .foregroundStyle(camera.isRecordingLive ? ScrapTheme.cameraGold : .white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color.black.opacity(0.65))
-                                    )
-                            }
-
                             Spacer()
 
                             // Live presence count & offline queue status
@@ -459,16 +445,6 @@ struct CaptureSessionView: View {
                             #endif
 
                             Spacer()
-
-                            Text(String(format: "%.1fx", camera.zoomFactor))
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(ScrapTheme.cameraGold)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.black.opacity(0.65))
-                                )
                         }
                     }
                     .padding(18)
