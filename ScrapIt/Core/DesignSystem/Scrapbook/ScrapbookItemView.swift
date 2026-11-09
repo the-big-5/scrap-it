@@ -93,16 +93,6 @@ struct ScrapbookItemView: View {
                 // Cut pieces: plain cut edges, the frame only on the original edges.
                 .clipShape(mask)
                 .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
-                .overlay(alignment: .topTrailing) {
-                    if isEditable, isLive, !item.loopEnabled {
-                        Image(systemName: "livephoto.slash")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(4)
-                            .background(Circle().fill(.black.opacity(0.5)))
-                            .padding(frameInset + 3)
-                    }
-                }
         }
         // A sticker no longer in the catalog is not shown.
     }
