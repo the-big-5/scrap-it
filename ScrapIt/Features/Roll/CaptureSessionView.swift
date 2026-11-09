@@ -294,27 +294,22 @@ struct CaptureSessionView: View {
                         )
                     }
                 } label: {
-                    ZStack {
-                        Circle()
-                            .fill(Color(white: 0.08))
-                            .frame(width: 74, height: 74)
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [
-                                        Color.white,
-                                        Color(white: 0.72),
-                                        Color(white: 0.42)
-                                    ],
-                                    center: .center,
-                                    startRadius: 4,
-                                    endRadius: 32
-                                )
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    Color.white,
+                                    Color(white: 0.72),
+                                    Color(white: 0.42)
+                                ],
+                                center: .center,
+                                startRadius: 4,
+                                endRadius: 32
                             )
-                            .frame(width: 56, height: 56)
-                    }
+                        )
+                        .frame(width: 56, height: 56)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ShutterButtonStyle(isProgrammaticallyPressed: flowViewModel.isShutterPressed))
             }
             .padding(.horizontal, 24)
         }
@@ -560,5 +555,24 @@ struct CaptureSessionView: View {
                     .padding(.trailing, -24)
             }
         }
+    }
+}
+
+private struct ShutterButtonStyle: ButtonStyle {
+    let isProgrammaticallyPressed: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let isPressed = configuration.isPressed || isProgrammaticallyPressed
+        ZStack {
+            Circle()
+                .fill(Color(white: 0.08))
+                .frame(width: 74, height: 74)
+
+            configuration.label
+                .scaleEffect(isPressed ? 0.90 : 1.0)
+                .opacity(isPressed ? 0.92 : 1.0)
+                .animation(.spring(response: 0.18, dampingFraction: 0.65), value: isPressed)
+        }
+        .contentShape(Circle())
     }
 }
