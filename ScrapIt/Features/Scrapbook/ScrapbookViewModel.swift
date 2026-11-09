@@ -24,6 +24,8 @@ final class ScrapbookViewModel {
     private let scrapbookID: UUID
     private let playback: LivePlaybackCoordinator
     private let imageLoader: ScrapbookImageLoader
+    private let realtimeService: any ScrapbookRealtimeProviding
+    let currentUser: UserProfile?
 
     private(set) var scrapbook: Scrapbook?
     var currentPageID: UUID?
@@ -38,12 +40,16 @@ final class ScrapbookViewModel {
     /// Editor on screen; Live Photos only play while it is.
     var isVisible = false
     private var cutHistory: [CutUndoStep] = []
+    private(set) var activeCollaborators: [CollaboratorPresence] = []
+    private var isApplyingRemoteEvent = false
 
     init(
         modelContext: ModelContext,
         navigator: (any Navigator)? = nil,
         sessionStore: SessionStore,
         scrapbookID: UUID,
+        currentUser: UserProfile? = nil,
+        realtimeService: (any ScrapbookRealtimeProviding)? = nil,
         playback: LivePlaybackCoordinator = .shared,
         imageLoader: ScrapbookImageLoader = .shared
     ) {
@@ -51,6 +57,14 @@ final class ScrapbookViewModel {
         self.navigator = navigator
         self.sessionStore = sessionStore
         self.scrapbookID = scrapbookID
+        self.currentUser = currentUser
+        if let realtimeService {
+            self.realtimeService = realtimeService
+        } else if let config = SupabaseConfig.load() {
+            self.realtimeService = SupabaseScrapbookRealtimeService(config: config)
+        } else {
+            self.realtimeService = NoopScrapbookRealtimeService()
+        }
         self.playback = playback
         self.imageLoader = imageLoader
         load()
@@ -99,6 +113,7 @@ final class ScrapbookViewModel {
         guard pages.indices.contains(index) else { return }
         selectedItemID = nil
         currentPageID = pages[index].id
+        updatePresence()
     }
 
     func goToPreviousPage() { selectPage(at: currentIndex - 1) }
@@ -106,24 +121,31 @@ final class ScrapbookViewModel {
 
     func addPage() {
         guard let scrapbook else { return }
-        let page = ScrapbookPage(order: (pages.last?.order ?? -1) + 1, background: currentPage?.pageBackground ?? .cream)
+        let newOrder = (pages.last?.order ?? -1) + 1
+        let page = ScrapbookPage(order: newOrder, background: currentPage?.pageBackground ?? .cream)
         modelContext.insert(page)
         page.scrapbook = scrapbook
         save()
         selectedItemID = nil
         currentPageID = page.id
+        broadcast(ScrapbookEvent(type: .pageAdded, pageIndex: newOrder, senderID: senderID, background: page.background))
+        updatePresence()
     }
 
     func movePage(by offset: Int) {
+        let fromIndex = currentIndex
         let target = currentIndex + offset
         guard let page = currentPage, pages.indices.contains(target) else { return }
         let other = pages[target]
         (page.order, other.order) = (other.order, page.order)
         save()
+        broadcast(ScrapbookEvent(type: .pageMoved, pageIndex: fromIndex, senderID: senderID, targetPageIndex: target))
+        updatePresence()
     }
 
     func deleteCurrentPage() {
         guard canDeletePage, let page = currentPage else { return }
+        let deletedIndex = currentIndex
         let remaining = pages.filter { $0.id != page.id }
         let neighbor = remaining[max(currentIndex - 1, 0)]
         for (index, remainingPage) in remaining.enumerated() {
@@ -134,6 +156,8 @@ final class ScrapbookViewModel {
         currentPageID = neighbor.id
         modelContext.delete(page)
         save()
+        broadcast(ScrapbookEvent(type: .pageDeleted, pageIndex: deletedIndex, senderID: senderID))
+        updatePresence()
     }
 
     var currentBackground: PageBackground { currentPage?.pageBackground ?? .cream }
@@ -141,6 +165,7 @@ final class ScrapbookViewModel {
     func setBackground(_ background: PageBackground) {
         currentPage?.background = background.rawValue
         save()
+        broadcast(ScrapbookEvent(type: .pageBackground, pageIndex: currentIndex, senderID: senderID, background: background.rawValue))
     }
 
     // MARK: - Photos
@@ -179,6 +204,7 @@ final class ScrapbookViewModel {
         guard !ids.isEmpty else { return }
         var zIndex = page.maxZIndex
         let spread = Double(ids.count - 1) * 0.02
+        var addedItems: [ScrapbookItem] = []
         for (index, id) in ids.enumerated() {
             zIndex += 1
             let step = Double(index) * 0.04 - spread
@@ -193,8 +219,12 @@ final class ScrapbookViewModel {
             )
             modelContext.insert(item)
             item.page = page
+            addedItems.append(item)
         }
         save()
+        for item in addedItems {
+            broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
+        }
     }
 
     func photoAspect(for item: ScrapbookItem) -> CGFloat? {
@@ -236,6 +266,7 @@ final class ScrapbookViewModel {
         item.width = min(max(item.width * scale, ScrapbookItem.minWidth), ScrapbookItem.maxWidth)
         item.rotation = ScrapbookItemLayout.snappedRotation(item.rotation + rotationDelta)
         save()
+        broadcastItemTransformed(item)
     }
 
     /// Live position / size while the scissors move an item (long-press or two fingers).
@@ -253,24 +284,28 @@ final class ScrapbookViewModel {
         item.centerY = min(max(item.centerY, 0), 1)
         item.rotation = ScrapbookItemLayout.snappedRotation(item.rotation)
         save()
+        broadcastItemTransformed(item)
     }
 
     func bringToFront(_ itemID: UUID) {
         guard let page = currentPage, let item = item(itemID) else { return }
         item.zIndex = page.maxZIndex + 1
         save()
+        broadcastItemTransformed(item)
     }
 
     func sendToBack(_ itemID: UUID) {
         guard let page = currentPage, let item = item(itemID) else { return }
         item.zIndex = page.minZIndex - 1
         save()
+        broadcastItemTransformed(item)
     }
 
     func toggleMotion(_ itemID: UUID) {
         guard let item = item(itemID) else { return }
         item.loopEnabled.toggle()
         save()
+        broadcastItemTransformed(item)
     }
 
     func removeItem(_ itemID: UUID) {
@@ -278,6 +313,21 @@ final class ScrapbookViewModel {
         if selectedItemID == itemID { selectedItemID = nil }
         modelContext.delete(item)
         save()
+        broadcast(ScrapbookEvent(type: .itemRemoved, pageIndex: currentIndex, senderID: senderID, itemID: itemID))
+    }
+
+    private func broadcastItemTransformed(_ item: ScrapbookItem) {
+        broadcast(ScrapbookEvent(
+            type: .itemTransformed,
+            pageIndex: currentIndex,
+            senderID: senderID,
+            itemID: item.id,
+            centerX: item.centerX,
+            centerY: item.centerY,
+            width: item.width,
+            rotation: item.rotation,
+            zIndex: item.zIndex
+        ))
     }
 
     // MARK: - Tools
@@ -341,7 +391,11 @@ final class ScrapbookViewModel {
         modelContext.insert(item)
         item.page = page
         sheet.usedStickerIDs.append(sticker.id)
-        return save()
+        let saved = save()
+        if saved {
+            broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
+        }
+        return saved
     }
 
     // MARK: - Scissors
@@ -416,6 +470,14 @@ final class ScrapbookViewModel {
             guard save() else { return false }
             cutHistory.append(step)
             if cutHistory.count > Self.maxUndoSteps { cutHistory.removeFirst() }
+            broadcast(ScrapbookEvent(
+                type: .itemCut,
+                pageIndex: currentIndex,
+                senderID: senderID,
+                itemID: item.id,
+                maskData: item.maskData,
+                newPieces: pieceItems.dropFirst().map { $0.toPayload() }
+            ))
             return true
         }
         return false
@@ -448,6 +510,176 @@ final class ScrapbookViewModel {
         guard let page = pages.first(where: { $0.id == pageID }), page.drawingData != data else { return }
         page.drawingData = data
         save()
+        let pageIdx = pages.firstIndex(where: { $0.id == pageID }) ?? currentIndex
+        broadcast(ScrapbookEvent(type: .drawingUpdated, pageIndex: pageIdx, senderID: senderID, drawingData: data))
+    }
+
+    // MARK: - Realtime Collaboration
+
+    var senderID: String {
+        currentUser?.appleUserID ?? "anonymous-\(scrapbookID.uuidString.prefix(4))"
+    }
+
+    var userName: String {
+        currentUser?.name ?? "Friend"
+    }
+
+    var userColorHex: String {
+        Self.presenceColorHex(for: senderID)
+    }
+
+    static func presenceColorHex(for identifier: String) -> String {
+        let colors = ["#E50935", "#27AE60", "#2F80ED", "#E2B93B", "#9B51E0", "#FF6B6B", "#4ECDC4"]
+        let hash = abs(identifier.hashValue)
+        return colors[hash % colors.count]
+    }
+
+    var resolvedRollCode: String? {
+        if let sessionID = scrapbook?.sourceSessionID {
+            let session = (try? modelContext.fetch(FetchDescriptor<CaptureSession>(predicate: #Predicate { $0.id == sessionID })))?.first
+            if let code = session?.rollCode, !code.isEmpty {
+                return code
+            }
+        }
+        return scrapbookID.uuidString.prefix(6).uppercased()
+    }
+
+    func connectRealtime() async {
+        guard let rollCode = resolvedRollCode else { return }
+        let presence = CollaboratorPresence(
+            id: senderID,
+            name: userName,
+            colorHex: userColorHex,
+            currentPageIndex: currentIndex
+        )
+        await realtimeService.connect(
+            rollCode: rollCode,
+            currentUser: presence,
+            onEvent: { [weak self] event in
+                self?.handleRemoteEvent(event)
+            },
+            onPresenceUpdate: { [weak self] collaborators in
+                self?.activeCollaborators = collaborators
+            }
+        )
+    }
+
+    func connectRealtimeOnAppear() {
+        Task { [weak self] in
+            await self?.connectRealtime()
+        }
+    }
+
+    func disconnectRealtime() {
+        Task { [weak self] in
+            await self?.realtimeService.disconnect()
+        }
+    }
+
+    func updatePresence() {
+        Task { [weak self] in
+            guard let self else { return }
+            await self.realtimeService.updatePresence(pageIndex: self.currentIndex)
+        }
+    }
+
+    private func broadcast(_ event: ScrapbookEvent) {
+        guard !isApplyingRemoteEvent else { return }
+        Task { [weak self] in
+            await self?.realtimeService.broadcastEvent(event)
+        }
+    }
+
+    func handleRemoteEvent(_ event: ScrapbookEvent) {
+        isApplyingRemoteEvent = true
+        defer { isApplyingRemoteEvent = false }
+
+        switch event.type {
+        case .itemPlaced:
+            guard let payload = event.item, pages.indices.contains(event.pageIndex) else { return }
+            let page = pages[event.pageIndex]
+            if !page.allItems.contains(where: { $0.id == payload.id }) {
+                let item = ScrapbookItem(payload: payload)
+                modelContext.insert(item)
+                item.page = page
+                save()
+            }
+
+        case .itemTransformed:
+            guard let itemID = event.itemID,
+                  let cx = event.centerX,
+                  let cy = event.centerY,
+                  let w = event.width,
+                  let rot = event.rotation,
+                  let z = event.zIndex else { return }
+            if let item = (try? modelContext.fetch(FetchDescriptor<ScrapbookItem>(predicate: #Predicate { $0.id == itemID })))?.first {
+                item.centerX = cx
+                item.centerY = cy
+                item.width = w
+                item.rotation = rot
+                item.zIndex = z
+                save()
+            }
+
+        case .itemCut:
+            guard let itemID = event.itemID else { return }
+            if let item = (try? modelContext.fetch(FetchDescriptor<ScrapbookItem>(predicate: #Predicate { $0.id == itemID })))?.first {
+                item.maskData = event.maskData
+                if let newPieces = event.newPieces, pages.indices.contains(event.pageIndex) {
+                    let page = pages[event.pageIndex]
+                    for piecePayload in newPieces {
+                        if !page.allItems.contains(where: { $0.id == piecePayload.id }) {
+                            let piece = ScrapbookItem(payload: piecePayload)
+                            modelContext.insert(piece)
+                            piece.page = page
+                        }
+                    }
+                }
+                save()
+            }
+
+        case .itemRemoved:
+            guard let itemID = event.itemID else { return }
+            if let item = (try? modelContext.fetch(FetchDescriptor<ScrapbookItem>(predicate: #Predicate { $0.id == itemID })))?.first {
+                if selectedItemID == itemID { selectedItemID = nil }
+                modelContext.delete(item)
+                save()
+            }
+
+        case .pageBackground:
+            guard let bgString = event.background, pages.indices.contains(event.pageIndex) else { return }
+            pages[event.pageIndex].background = bgString
+            save()
+
+        case .drawingUpdated:
+            guard pages.indices.contains(event.pageIndex) else { return }
+            pages[event.pageIndex].drawingData = event.drawingData
+            save()
+
+        case .pageAdded:
+            guard let scrapbook else { return }
+            let order = event.pageIndex
+            let bg = PageBackground(rawValue: event.background ?? "") ?? .cream
+            let page = ScrapbookPage(order: order, background: bg)
+            modelContext.insert(page)
+            page.scrapbook = scrapbook
+            save()
+
+        case .pageMoved:
+            guard let target = event.targetPageIndex,
+                  pages.indices.contains(event.pageIndex),
+                  pages.indices.contains(target) else { return }
+            let from = pages[event.pageIndex]
+            let to = pages[target]
+            (from.order, to.order) = (to.order, from.order)
+            save()
+
+        case .pageDeleted:
+            guard pages.indices.contains(event.pageIndex) else { return }
+            let page = pages[event.pageIndex]
+            modelContext.delete(page)
+            save()
+        }
     }
 
     // MARK: - Navigation, feedback

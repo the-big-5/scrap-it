@@ -132,7 +132,8 @@ struct MainShellView: View {
                 modelContext: modelContext,
                 navigator: router,
                 sessionStore: sessionStore,
-                scrapbookID: scrapbookID
+                scrapbookID: scrapbookID,
+                currentUser: currentUser
             ))
         }
     }

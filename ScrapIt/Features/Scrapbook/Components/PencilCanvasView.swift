@@ -10,8 +10,9 @@ struct PencilCanvasView: UIViewRepresentable {
     let drawingData: Data?
     let isActive: Bool
     let onChange: (Data?) -> Void
+    var onStrokeCompleted: ((Data?) -> Void)? = nil
 
-    func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
+    func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange, onStrokeCompleted: onStrokeCompleted) }
 
     func makeUIView(context: Context) -> PKCanvasView {
         let canvas = PKCanvasView()
@@ -33,9 +34,20 @@ struct PencilCanvasView: UIViewRepresentable {
 
     func updateUIView(_ canvas: PKCanvasView, context: Context) {
         context.coordinator.onChange = onChange
+        context.coordinator.onStrokeCompleted = onStrokeCompleted
         context.coordinator.fitToBounds()
         canvas.isUserInteractionEnabled = isActive
         context.coordinator.setToolPickerVisible(isActive)
+
+        if !context.coordinator.isUserDrawing {
+            if let drawingData, let newDrawing = try? PKDrawing(data: drawingData) {
+                if canvas.drawing.dataRepresentation() != drawingData {
+                    canvas.drawing = newDrawing
+                }
+            } else if drawingData == nil && !canvas.drawing.strokes.isEmpty {
+                canvas.drawing = PKDrawing()
+            }
+        }
     }
 
     static func dismantleUIView(_ canvas: PKCanvasView, coordinator: Coordinator) {
@@ -44,11 +56,15 @@ struct PencilCanvasView: UIViewRepresentable {
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         var onChange: (Data?) -> Void
+        var onStrokeCompleted: ((Data?) -> Void)?
         weak var canvas: PKCanvasView?
         private var toolPicker: PKToolPicker?
+        private var debounceWorkItem: DispatchWorkItem?
+        var isUserDrawing = false
 
-        init(onChange: @escaping (Data?) -> Void) {
+        init(onChange: @escaping (Data?) -> Void, onStrokeCompleted: ((Data?) -> Void)? = nil) {
             self.onChange = onChange
+            self.onStrokeCompleted = onStrokeCompleted
         }
 
         /// Zooms the fixed drawing space to the page width.
@@ -93,7 +109,17 @@ struct PencilCanvasView: UIViewRepresentable {
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             let drawing = canvasView.drawing
-            onChange(drawing.strokes.isEmpty ? nil : drawing.dataRepresentation())
+            let data = drawing.strokes.isEmpty ? nil : drawing.dataRepresentation()
+            onChange(data)
+
+            isUserDrawing = true
+            debounceWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.isUserDrawing = false
+                self?.onStrokeCompleted?(data)
+            }
+            debounceWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
         }
     }
 }

@@ -78,12 +78,16 @@ struct ScrapbookEditorView: View {
         .onAppear {
             viewModel.load()
             viewModel.isVisible = true
+            viewModel.connectRealtimeOnAppear()
             stickerController.onPlace = { [viewModel, stickerController] sticker, center, width, rotation in
                 viewModel.placeSticker(sticker, center: center, width: width, rotation: rotation,
                                        pageFrame: stickerController.pageFrame)
             }
         }
-        .onDisappear { viewModel.isVisible = false }
+        .onDisappear {
+            viewModel.isVisible = false
+            viewModel.disconnectRealtime()
+        }
     }
 
     // MARK: - Header
@@ -98,6 +102,10 @@ struct ScrapbookEditorView: View {
 
             HStack {
                 BackCircleButton(action: viewModel.goBack)
+
+                CollaboratorPresenceHeaderView(collaborators: viewModel.activeCollaborators)
+                    .padding(.leading, 6)
+
                 Spacer()
                 if viewModel.tool == .scissors || viewModel.canUndoCut {
                     Button(action: viewModel.undoLastCut) {
@@ -152,7 +160,8 @@ struct ScrapbookEditorView: View {
                 PencilCanvasView(
                     drawingData: page.drawingData,
                     isActive: viewModel.tool == .pencil,
-                    onChange: { [pageID = page.id, viewModel] data in viewModel.updateDrawing(data, pageID: pageID) }
+                    onChange: { [pageID = page.id, viewModel] data in viewModel.updateDrawing(data, pageID: pageID) },
+                    onStrokeCompleted: { [pageID = page.id, viewModel] data in viewModel.updateDrawing(data, pageID: pageID) }
                 )
                 .id(page.id)
                 .allowsHitTesting(viewModel.tool == .pencil)
