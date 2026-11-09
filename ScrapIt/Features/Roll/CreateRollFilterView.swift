@@ -52,6 +52,7 @@ struct CreateRollFilterView: View {
                         FilmCanisterFilterRow(
                             filter: filter,
                             isSelected: flowViewModel.draftFilter == filter,
+                            samples: flowViewModel.filterSamples[filter] ?? [],
                             onSelect: {
                                 withAnimation(.spring(duration: 0.3)) {
                                     flowViewModel.draftFilter = filter
@@ -75,5 +76,6 @@ struct CreateRollFilterView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .task { await flowViewModel.loadFilterSamples() }
     }
 }

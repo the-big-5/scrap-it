@@ -267,14 +267,14 @@ struct CameraBehaviorTests {
     }
 
     @Test func colorFilterKeepsColor() {
-        let output = FilmFilterPipeline().apply(.chrome, to: Self.orange)
+        let output = FilmFilterPipeline().apply(.digicam, to: Self.orange)
         let p = Self.pixel(of: output)
 
         #expect(p.r > p.b + 20)
     }
 
     @Test func previewAndPhotoUseTheSameResult() {
-        for look in [FilmLook.noir, .chrome] {
+        for look in [FilmLook.noir, .digicam] {
             let preview = Self.pixel(of: FilmFilterPipeline().apply(look, to: Self.orange))
             let photo = Self.pixel(of: FilmFilterPipeline().apply(look, to: Self.orange))
             #expect(preview == photo)
@@ -283,7 +283,7 @@ struct CameraBehaviorTests {
 
     @Test func rollFiltersMapToLooks() {
         #expect(RollFilter.cinematicBW400.look == .noir)
-        #expect(RollFilter.colorPrint200.look == .chrome)
+        #expect(RollFilter.colorPrint200.look == .digicam)
     }
 
     // MARK: - Live Photo pairing

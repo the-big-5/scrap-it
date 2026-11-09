@@ -10,7 +10,7 @@
 - Sharing: CKShare (CloudKit sharing) for roll rooms; scrapbook photos in the public database, encrypted, readable only with the roll key from the room (change 012) [Locked]
 - Auth: Sign in with Apple / iCloud only [Locked]
 - Invites: share sheet with invite link [Locked]
-- Camera: AVFoundation custom camera (`CameraEngine`, ported from the camera POC): multi-lens virtual back camera, filtered live preview (Core Image + Metal), one filter pipeline for preview / photo / Live Photo movie, `RotationCoordinator` rotation, iOS 18 Camera Control "Zoom" slider [Locked]
+- Camera: AVFoundation custom camera (`CameraEngine`, ported from the camera POC): multi-lens virtual back camera, filtered live preview (Core Image + Metal), one filter pipeline for preview / photo / Live Photo movie (B&W: `photoEffectNoir`; 200 Color Print: Digicam look from the camera POC, change 016), `RotationCoordinator` rotation, iOS 18 Camera Control "Zoom" slider [Locked]
 - Third-party libraries: `supabase-swift` (approved for Realtime slot count sync, change 011); only specific ones approved [Locked]
 - Scrapbook drawing: PencilKit (iOS 13+, system framework). Tool picker built with `PKToolPicker(toolItems:)` (iOS 18) so the reed pen (iOS 26) never shows; the drawing is stored in a fixed 600 × 800 space and zoomed to the page. PaperKit markup (iOS 26) not used (change 013)
 - Deleted scrapbooks: their roll IDs are kept in `UserDefaults` (`DeletedScrapbookList`) so `ScrapbookArchiveSync` skips them on this device (change 013)
@@ -27,6 +27,9 @@
 - iCloud share links need `CKSharingSupported`; CloudKit pushes need Background Modes › Remote notifications. Both are in `ScrapIt-Info.plist` (repo root), merged into the generated Info.plist via `INFOPLIST_FILE` (`.xcodeproj` exception, change 011)
 - Rooms use the host's own iCloud storage (private database): a full iCloud gives "Quota Exceeded". Rooms are small; photos no longer go to the user's iCloud (change 012)
 - Scrapbook photos (change 012): each shot is a public `RollShot` record named with a random UUID holding one AES-GCM encrypted `payload` asset (photo, Live Photo movie, author, caption, time); no readable fields, no indexes. Each roll has a random 256-bit key (`RollSession.rollKey`, local `CaptureSession.rollKey`). A `RollShotRef` per shot in the room zone is the members-only index.
+- Digicam look (change 016, yellow 200 Color Print canister; the UI name stays "200 Color Print", renaming is up to design [Open]): 33³ color cube (`DigicamGrade`: −0.6 EV, S-curve 0.18, warm shadows, saturation 1.2, output 0.03–0.9) → Gaussian blur 0.6 → luminance sharpen 0.4 → vignette 0.5 / 1.5, no grain. The Digicam still photo is scaled to 2048 px (Lanczos, exact size) **before** the look so it matches the preview; preview and Live Photo frames are not scaled
+- Choose Filter samples (change 017): 4 bundled photos per filter (`Assets.xcassets/FilterSamples/`, 720 px) rendered at runtime with `FilmFilterPipeline` (`FilterSampleRenderer`, cached), so they always match the camera
+- Sample photo license (change 017) [Open]: the photos are from Freepik. A free Freepik license needs a credit (Freepik / the author) where they are used; Premium does not. Not decided which applies or where a credit goes (options: small "Sample photos: Freepik" text on the Choose Filter page, a Credits / About screen, the App Store description as an extra). Check the license file of the Freepik download. Source file names are listed in `spec/changes/archive/017-filter-sample-photos.md`
 - Photo & movie compression (change 014): Still photos are proportionally downsampled to max 2048px on the longest edge (4:3 ratio preserved, zero cropping) with 0.78 JPEG quality. Live Photo movies are proportionally capped to max 1440px on the longest edge (1080p standard) and encoded in HEVC with average bitrate ~2.5 Mbps (~1.4 MB total per shot, ~85% reduction) [Locked]
 - Restore (change 012): on every launch after sign-in and when a roll ends, `ScrapbookArchiveSync` reads the user's own (private) and joined (shared) `Roll-*` zones, and for ended rolls downloads, decrypts and rebuilds missing scrapbooks / photos (Live Photos included). Leaving a roll or the host deleting it removes access to its photos: [Open]
 - Privacy of encrypted public storage (vs members-only CKShare): product sign-off [Open]
@@ -55,7 +58,8 @@ ScrapIt/
 │   │                   RollRoomService (CloudKit rooms: RollRoomServicing, CloudKitRollRoomService, RollRoomLocation),
 │   │                   RollRealtimeService (RollSlotRealtimeProviding, SupabaseRollSlotRealtimeService, NoopRollSlotRealtimeService), SupabaseConfig,
 │   │                   RollShotCrypto (AES-GCM shot payload), ScrapbookArchiveSync (restore),
-│   │                   CutGeometry, ScrapbookItemLayout, ScrapbookImageLoader, LiveMovieFileCache, LivePlaybackCoordinator, DeletedScrapbookList
+│   │                   CutGeometry, ScrapbookItemLayout, ScrapbookImageLoader, LiveMovieFileCache, LivePlaybackCoordinator, DeletedScrapbookList,
+│   │                   DigicamGrade, FilterSamplePhotos (+ FilterSampleRenderer)
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle, CircleIconButton, LivePhotoPlayerView,
 │                       Scrapbook/ (ScrapbookPageView, ScrapbookItemView, PageBackgroundView, LoopingVideoView, ScrapbookDrawingImage, ViewFrameReader)
 └── Features/

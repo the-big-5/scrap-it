@@ -1,3 +1,4 @@
+import CoreGraphics
 import CloudKit
 import Foundation
 import Observation
@@ -12,6 +13,8 @@ final class RollFlowViewModel {
     var draftRollName: String = ""
     var draftShotCount: Int = 36
     var draftFilter: RollFilter = .colorPrint200
+    /// Sample photos per filter, rendered with the camera pipeline (change 017).
+    private(set) var filterSamples: [RollFilter: [CGImage]] = [:]
 
     // Join Roll input fields
     var joinCodeCharacters: [String] = Array(repeating: "", count: 6)
@@ -150,6 +153,13 @@ final class RollFlowViewModel {
     }
 
     // MARK: - Navigation
+
+    /// Choose Filter page (change 017): renders each filter's samples once.
+    func loadFilterSamples(renderer: FilterSampleRenderer = .shared) async {
+        for filter in RollFilter.allCases where filterSamples[filter] == nil {
+            filterSamples[filter] = await renderer.samples(for: filter)
+        }
+    }
 
     func startCreateRollWizard() {
         draftRollName = ""
