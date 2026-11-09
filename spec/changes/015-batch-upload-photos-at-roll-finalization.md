@@ -1,5 +1,5 @@
 # 015: Batch Upload Photos at Roll Finalization
-Status: Approved
+Status: Done
 
 ## Why
 Currently, every shutter tap in `RollFlowViewModel` immediately triggers `enqueueOrUploadPhoto` in the background, and triggers it a second time when the Live Photo movie finishes encoding. In addition, the 3-second live polling loop repeatedly attempts to sync offline photos while shooting. This causes incomplete, test, or abandoned rolls to upload to CloudKit, wasting developer quota and device bandwidth, while tying the camera shutter to network activity.

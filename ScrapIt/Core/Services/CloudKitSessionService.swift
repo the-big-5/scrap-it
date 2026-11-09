@@ -55,17 +55,25 @@ final class CloudKitSessionService {
 
     /// Pushes status / host / end time of the session to its room record (start, end, host handover).
     func publishSessionToCloudKit(session: CaptureSession) async {
-        guard isOnline, session.ckRecordName != nil else { return }
+        guard isOnline, session.ckRecordName != nil else {
+            print("⚠️ [CloudKitSessionService] publishSessionToCloudKit skipped: isOnline=\(isOnline), ckRecordName=\(String(describing: session.ckRecordName))")
+            return
+        }
         let location = roomLocation(for: session)
         let database = location.database(in: CKContainer.app)
-        guard let record = try? await database.record(for: location.sessionRecordID) else { return }
-        record["statusRaw"] = session.statusRaw as CKRecordValue
-        record["hostUserID"] = session.hostUserID as CKRecordValue
-        record["startTime"] = session.startTime as CKRecordValue
-        if let endTime = session.endTime {
-            record["endTime"] = endTime as CKRecordValue
+        do {
+            let record = try await database.record(for: location.sessionRecordID)
+            record["statusRaw"] = session.statusRaw as CKRecordValue
+            record["hostUserID"] = session.hostUserID as CKRecordValue
+            record["startTime"] = session.startTime as CKRecordValue
+            if let endTime = session.endTime {
+                record["endTime"] = endTime as CKRecordValue
+            }
+            try await database.save(record)
+            print("✅ [CloudKitSessionService] publishSessionToCloudKit saved: status=\(session.statusRaw), roll=\(session.rollCode)")
+        } catch {
+            print("🚨 [CloudKitSessionService] publishSessionToCloudKit failed: \(error)")
         }
-        _ = try? await database.save(record)
     }
 
     // MARK: - Atomic Slot Claim (First Write Wins on Last-Slot Race)
@@ -74,13 +82,7 @@ final class CloudKitSessionService {
         session: CaptureSession,
         simulateRaceOnLastSlot: Bool = false
     ) async -> SlotClaimResult {
-        if session.status == .ended || session.slotsUsed >= session.rollSize {
-            session.status = .ended
-            session.endTime = .now
-            return .rollAlreadyFinished
-        }
-
-        if simulateRaceOnLastSlot && session.remainingSlots == 1 {
+        if simulateRaceOnLastSlot {
             session.slotsUsed = session.rollSize
             session.status = .ended
             session.endTime = .now
@@ -92,7 +94,17 @@ final class CloudKitSessionService {
             let location = roomLocation(for: session)
             let recordID = location.sessionRecordID
             let db = location.database(in: CKContainer.app)
-            if let serverRecord = try? await db.record(for: recordID) {
+
+            let maxRetries = 4
+            for attempt in 1...maxRetries {
+                guard let serverRecord = try? await db.record(for: recordID) else {
+                    if attempt < maxRetries {
+                        try? await Task.sleep(nanoseconds: 50_000_000 * UInt64(attempt))
+                        continue
+                    }
+                    break
+                }
+
                 let serverSlotsUsed = (serverRecord["slotsUsed"] as? Int) ?? session.slotsUsed
                 let serverRollSize = (serverRecord["rollSize"] as? Int) ?? session.rollSize
                 let serverStatus = (serverRecord["statusRaw"] as? String) ?? session.statusRaw
@@ -106,27 +118,45 @@ final class CloudKitSessionService {
 
                 let nextSlots = serverSlotsUsed + 1
                 serverRecord["slotsUsed"] = nextSlots as CKRecordValue
-                if nextSlots >= serverRollSize {
+                let willFinish = nextSlots >= serverRollSize
+                if willFinish {
                     serverRecord["statusRaw"] = SessionStatus.ended.rawValue as CKRecordValue
+                    serverRecord["endTime"] = Date.now as CKRecordValue
                 }
 
                 let conflictDetected = await saveRecordIfUnchanged(serverRecord, in: db)
-                if conflictDetected {
-                    // Re-fetch to see if another user claimed the last slot
-                    if let latest = try? await db.record(for: recordID) {
-                        let latestUsed = (latest["slotsUsed"] as? Int) ?? nextSlots
-                        if latestUsed >= serverRollSize {
-                            session.slotsUsed = serverRollSize
-                            session.status = .ended
-                            session.endTime = .now
-                            return .rollAlreadyFinished
-                        }
+                if !conflictDetected {
+                    // Confirmed save to CloudKit
+                    session.slotsUsed = nextSlots
+                    if willFinish {
+                        session.status = .ended
+                        session.endTime = .now
                     }
+                    return .claimed(newSlotsUsed: nextSlots, rollFinished: willFinish)
+                }
+
+                // Conflict occurred (.serverRecordChanged).
+                // Another phone claimed a slot at the same time. Retry with latest server count.
+                if attempt < maxRetries {
+                    try? await Task.sleep(nanoseconds: 50_000_000 * UInt64(attempt))
+                }
+            }
+
+            // Retries exhausted — perform final verification against latest server record
+            if let latest = try? await db.record(for: recordID) {
+                let latestUsed = (latest["slotsUsed"] as? Int) ?? session.slotsUsed
+                let latestRollSize = (latest["rollSize"] as? Int) ?? session.rollSize
+                let latestStatus = (latest["statusRaw"] as? String) ?? session.statusRaw
+                if latestStatus == SessionStatus.ended.rawValue || latestUsed >= latestRollSize {
+                    session.slotsUsed = latestRollSize
+                    session.status = .ended
+                    session.endTime = .now
+                    return .rollAlreadyFinished
                 }
             }
         }
 
-        session.slotsUsed += 1
+        // Offline fallback or test mock path: slots are tracked locally
         let finished = session.slotsUsed >= session.rollSize
         if finished {
             session.status = .ended
@@ -139,6 +169,7 @@ final class CloudKitSessionService {
         await withCheckedContinuation { continuation in
             let op = CKModifyRecordsOperation(recordsToSave: [record], recordIDsToDelete: nil)
             op.savePolicy = .ifServerRecordUnchanged
+            op.qualityOfService = .userInitiated
             op.modifyRecordsResultBlock = { result in
                 switch result {
                 case .success:
@@ -175,15 +206,20 @@ final class CloudKitSessionService {
 
     @discardableResult
     func uploadPendingPhotos(for session: CaptureSession) async -> Int {
-        guard isOnline else { return 0 }
+        guard isOnline else {
+            print("⚠️ [CloudKitSessionService] uploadPendingPhotos skipped: offline")
+            return 0
+        }
         let targetSessionID = session.id
         let descriptor = FetchDescriptor<ScrapPhoto>(
             predicate: #Predicate { $0.sourceSessionID == targetSessionID && !$0.isSyncedToCloud }
         )
         guard let pending = try? modelContext.fetch(descriptor), !pending.isEmpty else {
+            print("ℹ️ [CloudKitSessionService] uploadPendingPhotos: no unsynced photos found for session \(session.id)")
             return 0
         }
 
+        print("🚀 [CloudKitSessionService] uploadPendingPhotos: uploading \(pending.count) photos for session \(session.rollCode)...")
         var uploadedCount = 0
         for photo in pending {
             let ok = await uploadPhotoRecord(photo: photo)
@@ -194,6 +230,7 @@ final class CloudKitSessionService {
         }
         try? modelContext.save()
         updateQueuedCount()
+        print("✅ [CloudKitSessionService] uploadPendingPhotos: finished (\(uploadedCount)/\(pending.count) uploaded)")
         return uploadedCount
     }
 
@@ -278,6 +315,7 @@ final class CloudKitSessionService {
               session.ckRecordName != nil,
               let key = session.rollKey else {
             // Not a CloudKit room (no iCloud, Simulator): nothing to upload.
+            print("ℹ️ [CloudKitSessionService] uploadPhotoRecord: not a CloudKit session or missing key (ckRecordName=\(String(describing: (try? modelContext.fetch(descriptor).first)?.ckRecordName)))")
             return true
         }
         let payload = RollShotPayload(
@@ -308,8 +346,10 @@ final class CloudKitSessionService {
             ref["authorID"] = photo.authorID
             _ = try await location.database(in: CKContainer.app)
                 .modifyRecords(saving: [ref], deleting: [], savePolicy: .allKeys)
+            print("📸 [CloudKitSessionService] Uploaded shot \(photo.id.uuidString) to public DB and zone ref to \(location.zoneID.zoneName)")
             return true
         } catch {
+            print("🚨 [CloudKitSessionService] uploadPhotoRecord failed for shot \(photo.id.uuidString): \(error)")
             return false
         }
     }

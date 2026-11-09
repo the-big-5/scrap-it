@@ -23,28 +23,61 @@ final class ScrapbookArchiveSync {
         self.deletedScrapbooks = deletedScrapbooks
     }
 
-    /// Returns how many photos were added.
+    /// Fast-path sync for a specific roll that just ended, avoiding scanning all historical rooms.
+    @discardableResult
+    func syncRoom(for session: CaptureSession) async -> Int {
+        guard !deletedScrapbooks.contains(session.id) else { return 0 }
+        guard let key = session.rollKey else {
+            print("⚠️ [ScrapbookArchiveSync] syncRoom: session \(session.rollCode) has no rollKey")
+            return 0
+        }
+        print("🔄 [ScrapbookArchiveSync] Fast-path syncing room \(session.rollCode)...")
+        do {
+            let room = try await roomService.fetchRoom(code: session.rollCode, zoneOwnerName: session.ckZoneOwnerName)
+            print("📦 [ScrapbookArchiveSync] Fast-path fetched room \(room.rollCode): status=\(room.statusRaw), remoteShots=\(room.shotRecordNames.count)")
+            let added = await restore(room, key: key)
+            try? modelContext.save()
+            print("✅ [ScrapbookArchiveSync] Fast-path sync for \(session.rollCode) finished. Added \(added) photos.")
+            return added
+        } catch {
+            print("🚨 [ScrapbookArchiveSync] Fast-path fetchRoom \(session.rollCode) failed: \(error)")
+            return await run()
+        }
+    }
+
+    /// Returns how many photos were added across all ended rooms.
     @discardableResult
     func run() async -> Int {
         guard !isRunning else { return 0 }
         isRunning = true
         defer { isRunning = false }
 
+        print("🔄 [ScrapbookArchiveSync] Starting archive sync...")
         let rooms: [RoomSnapshot]
         do {
             rooms = try await roomService.listRooms()
+            print("🔄 [ScrapbookArchiveSync] listRooms found \(rooms.count) room(s)")
         } catch {
+            print("🚨 [ScrapbookArchiveSync] listRooms failed: \(error)")
             log.error("listRooms failed: \(String(describing: error), privacy: .public)")
             return 0
         }
 
         var added = 0
         // Scrapbooks the user deleted on this device are not brought back (change 013).
-        for room in rooms where room.statusRaw == SessionStatus.ended.rawValue && !deletedScrapbooks.contains(room.sessionID) {
-            guard let key = room.rollKey else { continue }
+        for room in rooms {
+            print("📦 [ScrapbookArchiveSync] Room \(room.rollCode): status=\(room.statusRaw), shots=\(room.shotRecordNames.count), hasKey=\(room.rollKey != nil)")
+            guard room.statusRaw == SessionStatus.ended.rawValue && !deletedScrapbooks.contains(room.sessionID) else {
+                continue
+            }
+            guard let key = room.rollKey else {
+                print("⚠️ [ScrapbookArchiveSync] Room \(room.rollCode) has no rollKey!")
+                continue
+            }
             added += await restore(room, key: key)
         }
         try? modelContext.save()
+        print("✅ [ScrapbookArchiveSync] Archive sync finished. Total added photos: \(added)")
         return added
     }
 
@@ -59,8 +92,12 @@ final class ScrapbookArchiveSync {
         )
 
         var added = 0
+        print("📦 [ScrapbookArchiveSync] Restoring room \(room.rollCode) with \(room.shotRecordNames.count) shots (already have \(existing.count) local)")
         for name in room.shotRecordNames {
-            guard let id = UUID(uuidString: name), !existing.contains(id) else { continue }
+            guard let id = UUID(uuidString: name), !existing.contains(id) else {
+                print("ℹ️ [ScrapbookArchiveSync] Shot \(name) already in local store; skipping")
+                continue
+            }
             do {
                 let sealed = try await roomService.downloadShotPayload(recordName: name)
                 let payload = try RollShotCrypto.open(sealed, key: key)
@@ -79,7 +116,9 @@ final class ScrapbookArchiveSync {
                 modelContext.insert(photo)
                 scrapbook.photos = (scrapbook.photos ?? []) + [photo]
                 added += 1
+                print("✅ [ScrapbookArchiveSync] Restored shot \(name) from \(payload.authorName)")
             } catch {
+                print("🚨 [ScrapbookArchiveSync] Shot \(name) not restored: \(error)")
                 log.error("Shot \(name, privacy: .public) not restored: \(String(describing: error), privacy: .public)")
             }
         }

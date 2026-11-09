@@ -22,27 +22,40 @@ final class MockRollSlotRealtimeService: RollSlotRealtimeProviding {
     private(set) var connectedRollCodes: [String] = []
     private(set) var broadcastedCounts: [Int] = []
     private(set) var disconnectCount: Int = 0
+    private(set) var broadcastRollEndedCount: Int = 0
     private var slotUpdateHandler: (@MainActor @Sendable (Int) -> Void)?
+    private var rollEndedHandler: (@MainActor @Sendable () -> Void)?
 
     func connect(
         rollCode: String,
-        onSlotUpdate: @escaping @MainActor @Sendable (Int) -> Void
+        onSlotUpdate: @escaping @MainActor @Sendable (Int) -> Void,
+        onRollEnded: (@MainActor @Sendable () -> Void)? = nil
     ) async {
         connectedRollCodes.append(rollCode)
         slotUpdateHandler = onSlotUpdate
+        rollEndedHandler = onRollEnded
     }
 
     func broadcastSlotCount(_ slotsUsed: Int) async {
         broadcastedCounts.append(slotsUsed)
     }
 
+    func broadcastRollEnded() async {
+        broadcastRollEndedCount += 1
+    }
+
     func disconnect() async {
         disconnectCount += 1
         slotUpdateHandler = nil
+        rollEndedHandler = nil
     }
 
     func simulateIncomingSlotCount(_ slotsUsed: Int) {
         slotUpdateHandler?(slotsUsed)
+    }
+
+    func simulateIncomingRollEnded() {
+        rollEndedHandler?()
     }
 }
 
