@@ -18,6 +18,7 @@ private final class FakeRoomService: RollRoomServicing {
     var joinError: RoomError?
     var fetchError: RoomError?
     var created: [RoomDraft] = []
+    var updated: [(user: RoomParticipant, code: String)] = []
     var removed: [(userID: String, code: String)] = []
     var left: [(code: String, owner: String, userID: String)] = []
     var deleted: [String] = []
@@ -62,6 +63,14 @@ private final class FakeRoomService: RollRoomServicing {
         guard var room = rooms[code] else { throw RoomError.deleted }
         room.zoneOwnerName = zoneOwnerName
         return room
+    }
+
+    func updateParticipant(_ user: RoomParticipant, inRoom code: String, zoneOwnerName: String?) async throws {
+        updated.append((user, code))
+        guard var room = rooms[code],
+              let index = room.participants.firstIndex(where: { $0.userID == user.userID }) else { return }
+        room.participants[index] = user
+        rooms[code] = room
     }
 
     func removeParticipant(userID: String, fromRoom code: String) async throws {
@@ -555,5 +564,54 @@ struct RollRoomTests {
     @Test(arguments: [("Sanny", "S"), ("Brian Chang", "BC"), ("fikri ahmad rizal", "FA"), ("", "?")])
     func initials(_ name: String, _ expected: String) {
         #expect(RollFlowViewModel.initials(for: name) == expected)
+    }
+
+    @Test func hostAndGuestCarryAvatarThumbnailsWhenCreatingAndJoining() async {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400))
+        let avatarBytes = renderer.image { ctx in
+            UIColor.systemTeal.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
+        }.pngData()!
+
+        host.avatarData = avatarBytes
+        guest.avatarData = avatarBytes
+
+        let hostVM = makeViewModel()
+        hostVM.createLobbySession(currentUser: host)
+        await waitUntil { hostVM.inviteContent != nil }
+
+        #expect(hostVM.lobbyParticipants.first?.avatarData != nil)
+        #expect(rooms.created.first?.host.avatarData != nil)
+
+        let guestVM = makeViewModel()
+        await guestVM.joinRollWithCode(code: hostVM.roomCode, currentUser: guest)
+
+        #expect(guestVM.lobbyParticipants.count == 2)
+        #expect(guestVM.lobbyParticipants.allSatisfy { $0.avatarData != nil })
+    }
+
+    @Test func reenteringLobbySyncsUpdatedProfileNameAndAvatar() async {
+        let vm = makeViewModel()
+        vm.createLobbySession(currentUser: host)
+        await waitUntil { vm.inviteContent != nil }
+        #expect(vm.lobbyParticipants.first?.name == "Nabiel")
+        #expect(vm.lobbyParticipants.first?.avatarData == nil)
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 300))
+        let newAvatar = renderer.image { ctx in
+            UIColor.systemOrange.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 300, height: 300))
+        }.pngData()!
+        host.name = "Nabiel Updated"
+        host.avatarData = newAvatar
+
+        vm.lobbyDidAppear(currentUser: host)
+        await waitUntil { !rooms.updated.isEmpty }
+        vm.lobbyDidDisappear()
+
+        #expect(rooms.updated.last?.user.name == "Nabiel Updated")
+        #expect(rooms.updated.last?.user.avatarData != nil)
+        #expect(vm.lobbyParticipants.first?.name == "Nabiel Updated")
+        #expect(vm.lobbyParticipants.first?.avatarData != nil)
     }
 }

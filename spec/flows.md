@@ -1,13 +1,13 @@
 # Flows
 ## F1: Sign in [Locked]
 1. User opens app
-2. Not signed in: sees Welcome screen, taps "Sign in with Apple"; Apple verifies the Apple Account (Face ID / passcode). Only on success is the profile created (or loaded). Requested data: full name only. Apple sends the name only on the first authorization; when it does, the profile name is set or updated to it. Without a name, a new profile is called "Friend". After sign-in from Welcome, user is presented with 3 onboarding slides before navigating to Home (change 053)
+2. Not signed in: sees Welcome screen, taps "Sign in with Apple"; Apple verifies the Apple Account (Face ID / passcode). Only on success is the profile created (or loaded). Requested data: full name and email. Apple sends the name and email only on the first authorization; when it does, the profile name (unless customized) and read-only email are set or updated. Without a name, a new profile is called "Friend". After sign-in from Welcome, user is presented with 3 onboarding slides before navigating to Home (change 053)
 3. Already signed in (saved Apple user ID + local profile):
    - Online: checked with Apple on launch. Authorized → straight to Home. Revoked, not found, transferred, or check error → Welcome
    - Offline: straight to Home with local data; the Apple check runs once the network is back, and anything but authorized → Welcome
    - No local profile → Welcome
 4. After sign-in (and on every launch), scrapbooks and photos from the user's ended rolls are restored in the background, e.g. on a new phone (change 012). No restore UI
-5. Sign out (temporary, on Profile tab until the Profile design is ready): returns to Welcome; local data is kept
+5. Sign out (in Edit Profile via "Log out" and confirmation): returns to Welcome; local data is kept
 Edge cases:
 - Cancel: stay on Welcome, no message
 - Sign-in fails (including no Apple Account on the device): stay on Welcome with an error message

@@ -546,11 +546,17 @@ final class ScrapbookViewModel {
 
     func connectRealtime() async {
         guard let rollCode = resolvedRollCode else { return }
+        let avatarThumbnail = ProfileAvatarProcessor.thumbnail(
+            from: currentUser?.avatarData,
+            maxPixelSize: 80,
+            compressionQuality: 0.55
+        )
         let presence = CollaboratorPresence(
             id: senderID,
             name: userName,
             colorHex: userColorHex,
-            currentPageIndex: currentIndex
+            currentPageIndex: currentIndex,
+            avatarData: avatarThumbnail
         )
         await realtimeService.connect(
             rollCode: rollCode,

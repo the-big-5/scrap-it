@@ -8,9 +8,10 @@ struct MainShellView: View {
     let modelContext: ModelContext
     let onSignOut: () -> Void
 
-    @State private var router = AppRouter()
+    @State private var router: AppRouter
     @State private var sessionStore: SessionStore
     @State private var rollViewModel: RollFlowViewModel?
+    @State private var profileViewModel: ProfileViewModel
     /// Restores scrapbooks after sign-in / on launch (change 012).
     @State private var archiveSync: ScrapbookArchiveSync
 
@@ -18,7 +19,15 @@ struct MainShellView: View {
         self.currentUser = currentUser
         self.modelContext = modelContext
         self.onSignOut = onSignOut
+        let appRouter = AppRouter()
+        _router = State(initialValue: appRouter)
         _sessionStore = State(initialValue: SessionStore(modelContext: modelContext))
+        _profileViewModel = State(initialValue: ProfileViewModel(
+            modelContext: modelContext,
+            currentUser: currentUser,
+            navigator: appRouter,
+            onSignOut: onSignOut
+        ))
         _archiveSync = State(initialValue: ScrapbookArchiveSync(
             modelContext: modelContext,
             roomService: CloudKitRollRoomService()
@@ -39,12 +48,7 @@ struct MainShellView: View {
                             sessionStore: sessionStore
                         )
                     case .profile:
-                        ProfileView(
-                            modelContext: modelContext,
-                            currentUser: currentUser,
-                            navigator: router,
-                            onSignOut: onSignOut
-                        )
+                        ProfileView(viewModel: profileViewModel)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -138,6 +142,8 @@ struct MainShellView: View {
                 scrapbookID: scrapbookID,
                 currentUser: currentUser
             ))
+        case .editProfile:
+            EditProfileView(viewModel: profileViewModel)
         case .rollReveal(let scrapbookID):
             RollRevealView(viewModel: RollRevealViewModel(
                 modelContext: modelContext,

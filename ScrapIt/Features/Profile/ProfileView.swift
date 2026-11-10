@@ -2,56 +2,65 @@ import SwiftData
 import SwiftUI
 
 struct ProfileView: View {
-    @State private var viewModel: ProfileViewModel
-    var onSignOut: () -> Void
+    @Bindable var viewModel: ProfileViewModel
 
     private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+
+    init(viewModel: ProfileViewModel) {
+        self.viewModel = viewModel
+    }
 
     init(
         modelContext: ModelContext,
         currentUser: UserProfile,
         navigator: (any Navigator)? = nil,
-        onSignOut: @escaping () -> Void
+        onSignOut: @escaping () -> Void = {}
     ) {
-        _viewModel = State(initialValue: ProfileViewModel(
+        self.viewModel = ProfileViewModel(
             modelContext: modelContext,
             currentUser: currentUser,
-            navigator: navigator
-        ))
-        self.onSignOut = onSignOut
-    }
-
-    init(viewModel: ProfileViewModel, onSignOut: @escaping () -> Void) {
-        _viewModel = State(initialValue: viewModel)
-        self.onSignOut = onSignOut
+            navigator: navigator,
+            onSignOut: onSignOut
+        )
     }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                Circle()
-                    .fill(ScrapTheme.charcoal.opacity(0.12))
-                    .frame(width: 88, height: 88)
-                    .overlay(
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 38))
-                            .foregroundStyle(ScrapTheme.charcoal)
-                    )
-                    .padding(.top, 24)
+            VStack(spacing: 0) {
+                ProfileAvatarView(avatarData: viewModel.avatarData, size: 120)
+                    .padding(.top, 56)
 
-                Text(viewModel.displayName)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(ScrapTheme.charcoal)
+                HStack(spacing: 8) {
+                    Text(viewModel.displayName)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Color.black)
 
-                // Temporary until the Profile design is ready (change 004).
-                DSButton("Sign Out", variant: .secondary, action: onSignOut)
+                    Button(action: viewModel.openEditProfile) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(DSColor.Brand.primary.color)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Edit profile")
+                }
+                .padding(.top, 12)
+
+                Text(viewModel.bioText)
+                    .font(.system(size: 13))
+                    .italic(!viewModel.hasBio)
+                    .foregroundStyle(viewModel.hasBio ? DSColor.Brand.primary.color : Color.black)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 6)
 
                 scrapbookGrid
-                    .padding(.top, 8)
+                    .padding(.top, 28)
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 140)
         }
+        .background(DSColor.Kraft.lightActive.color.ignoresSafeArea())
         .onAppear { viewModel.reload() }
         .confirmationDialog(
             "Delete this scrapbook?",

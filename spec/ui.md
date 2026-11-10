@@ -54,7 +54,7 @@ Figma nodes 1282:21858 (host, change 019), 1187:9657 / 1187:9798 (participant + 
 - Toolbar: X (close to the Workbench) on the left, "⋯" menu on the right (same round button; the label keeps its 3 pt offset shadow inside its frame so it does not flicker when the menu closes)
   - Host: Edit Room (`square.and.pencil`, shown, no action yet [Open]), Share Room (`square.and.arrow.up`), Delete Room (`trash`, red) → alert "Delete this room?" / "Everyone in the room will be removed." with Cancel and Delete Room [Draft text]
   - Participant: two rows only, Share Room on top, then Leave Room (`rectangle.portrait.and.arrow.right`, the HIG leave symbol instead of Figma's trash; red)
-- Avatar grid, 3 per row: 100pt circles with initials (surface/ink or burgundy/paper, alternating by user [Draft]), name, "(Host)" / "(You)". Profile photos: [Open]
+- Avatar grid, 3 per row: 100pt circles showing the participant's shared profile photo thumbnail when set, or initials (surface/ink or burgundy/paper, alternating by user [Draft]), name, "(Host)" / "(You)" (change 044).
 - Host: "+" tile after the avatars (100 pt circle `Paper.normalHover`, SF Symbol `plus` 44 pt light in `Paper.darker`, Figma 1300:26199). Figma's "+" is a 75 pt text character (visible ≈ 38–40 pt); the 44 pt symbol gives the same visible size, centered and the same on every iPhone (user decision)
 - Host: long-press another avatar → "Remove"; only the "Start Roll" pill at the bottom (the "Delete roll" text button moved into the menu)
 - Participant: "Waiting for the host to start..." (20pt, Paper dark active) instead of the buttons
@@ -111,13 +111,22 @@ Shown once after End Roll. No back button, no tab bar.
 - Photo detail: 40% black dim, photo with a 5 pt white border (Live Photo plays on press), "Save" pill + share circle below it; tap outside closes. Save toast: "Saved to Photos" / "Couldn't save. Allow ScrapIt to add photos in Settings."
 
 ## Screen: Profile tab [Open] (design in progress, Figma 1109:4648)
-- Temporary (change 013, camera POC look): avatar placeholder, name, "Sign Out" (`DSButton` secondary), then a 2-column grid of covers (first page drawn small with stills and drawing, title, "N pages")
+- Header (Figma 1300:36485, change 044): `Kraft.lightActive` background, `120` pt circular avatar (user photo or gray placeholder), centered `20` pt Bold name + `pencil` button (opens Edit Profile), centered `13` pt bio (italic `"No bio yet"` when empty). Top-right share button (1300:36503) and wooden shelf (1300:36486 / 1109:4648) deferred [Open]
+- Covers below header (temporary, change 013, camera POC look): 2-column grid of covers (first page drawn small with stills and drawing, title, "N pages")
 - Long-press a cover → "Delete" → confirmation "Delete this scrapbook?" / "Its photos on this phone are deleted too." [Draft]
 - Empty: "Your scrapbooks appear here after a roll ends." [Draft]
 
+## Screen: Edit Profile [Draft]
+Figma node 1300:36781 (change 044)
+- `Kraft.lightActive` background; top bar with `BackCircleButton` (`chevron.left`), `"Edit Profile"` title, and `CircleIconButton` (`checkmark`) to save
+- `120` pt circular avatar with bottom-right `camera` badge opening `PhotosPicker` (and `"Remove Photo"` when set)
+- Card 1 (`Paper.lightActive`, `1` pt `Brand.primary` border, radius `26`): editable `"Name"` (blank preserves existing name) and `"Bio"` rows
+- `"Private Information"` header + Card 2: read-only `"Email"` row (`"Not provided"` fallback when `nil`)
+- Bottom `"Log out"` pill (`OffsetPillButtonStyle`, `Paper.light`, `Brand.tertiary` text, `7` pt offset) → confirmation `"You'll need to sign in again to access your account."` with `"Log Out"` (destructive) and `"Cancel"`
+
 ## Screen: Scrapbook editor [Open] (design in progress)
 Temporary look from the camera POC (change 013). Stickers, backgrounds and scissors may change with the design.
-- Header: back button, title, Undo (cuts), "Done" while scissors / pencil are on
+- Header: back button, title, collaborator presence avatar stack (`26` pt circular profile photo thumbnails or colored initials, change 044), Undo (cuts), "Done" while scissors / pencil are on
 - 3:4 page with shadow, page indicator "n / N" with arrows, "Live Photos paused in Low Power Mode"
 - Toolbar: Photos (+), Background, Stickers, Scissors, Pencil, Pages menu (Add Page, Move Left / Right, Delete Page with confirmation)
 - Items: white print frame; tap selects and brings to front; drag / pinch / rotate (snaps to 0° within ±3°); long-press menu: Bring to Front, Send to Back, Turn Off / On Motion (Live), Remove (stickers with confirmation)

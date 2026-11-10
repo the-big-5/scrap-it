@@ -59,7 +59,7 @@ struct CreateRollLobbyView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .onAppear { flowViewModel.lobbyDidAppear() }
+        .onAppear { flowViewModel.lobbyDidAppear(currentUser: currentUser) }
         .onDisappear { flowViewModel.lobbyDidDisappear() }
         .sheet(isPresented: $flowViewModel.isInviteSheetPresented) {
             InviteFriendSheetView(currentUser: currentUser, flowViewModel: flowViewModel)
@@ -162,10 +162,12 @@ struct CreateRollLobbyView: View {
 
     @ViewBuilder
     private func avatar(_ participant: RoomParticipant) -> some View {
+        let isCurrentUser = participant.userID == currentUser.appleUserID
         let cell = RollAvatarView(
             participant: participant,
             isHost: participant.userID == session?.hostUserID,
-            isCurrentUser: participant.userID == currentUser.appleUserID
+            isCurrentUser: isCurrentUser,
+            avatarData: isCurrentUser ? currentUser.avatarData : participant.avatarData
         )
         if flowViewModel.canRemove(participant, currentUser: currentUser) {
             // Host long-press → Remove (no confirmation, user decision).

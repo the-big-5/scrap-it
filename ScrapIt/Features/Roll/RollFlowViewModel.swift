@@ -90,6 +90,7 @@ final class RollFlowViewModel {
     @ObservationIgnored private var shotsAwaitingMovie: Set<UUID> = []
     @ObservationIgnored private(set) var finalizeSessionTask: Task<Void, Never>?
     @ObservationIgnored private var roomChangeObserver: NSObjectProtocol?
+    @ObservationIgnored private var activeLobbyUser: UserProfile?
 
     deinit {
         finalizeSessionTask?.cancel()
@@ -275,7 +276,7 @@ final class RollFlowViewModel {
         modelContext.insert(session)
         try? modelContext.save()
         sessionStore.activeSession = session
-        lobbyParticipants = [RoomParticipant(userID: currentUser.appleUserID, name: currentUser.name)]
+        lobbyParticipants = [participant(currentUser)]
 
         navigator?.push(.createRollLobby)
 
@@ -297,7 +298,7 @@ final class RollFlowViewModel {
             name: session.name,
             rollSize: session.rollSize,
             filterRaw: session.filterRaw,
-            host: RoomParticipant(userID: currentUser.appleUserID, name: currentUser.name),
+            host: participant(currentUser),
             rollKey: session.rollKey
         )
         do {
@@ -403,7 +404,15 @@ final class RollFlowViewModel {
     }
 
     private func participant(_ user: UserProfile) -> RoomParticipant {
-        RoomParticipant(userID: user.appleUserID, name: user.name)
+        RoomParticipant(
+            userID: user.appleUserID,
+            name: user.name,
+            avatarData: ProfileAvatarProcessor.thumbnail(
+                from: user.avatarData,
+                maxPixelSize: 200,
+                compressionQuality: 0.7
+            )
+        )
     }
 
     /// Opens the lobby (or the camera if the roll is already live: late joining).
@@ -464,10 +473,17 @@ final class RollFlowViewModel {
 
     // MARK: - Lobby
 
-    func lobbyDidAppear() {
+    func lobbyDidAppear(currentUser: UserProfile? = nil) {
+        activeLobbyUser = currentUser
         if lobbyParticipants.isEmpty, let session = activeSession {
             lobbyParticipants = zip(session.participantIDs, session.participantNames).map {
                 RoomParticipant(userID: $0.0, name: $0.1)
+            }
+        }
+        if let currentUser {
+            let local = participant(currentUser)
+            if let index = lobbyParticipants.firstIndex(where: { $0.userID == currentUser.appleUserID }) {
+                lobbyParticipants[index] = local
             }
         }
         lobbyRefreshTask?.cancel()
@@ -487,6 +503,7 @@ final class RollFlowViewModel {
     }
 
     func lobbyDidDisappear() {
+        activeLobbyUser = nil
         lobbyRefreshTask?.cancel()
         lobbyRefreshTask = nil
         if let roomChangeObserver {
@@ -499,8 +516,16 @@ final class RollFlowViewModel {
     func refreshLobby() async {
         guard let session = activeSession, session.ckRecordName != nil else { return }
         do {
-            let snapshot = try await roomService.fetchRoom(code: session.rollCode, zoneOwnerName: session.ckZoneOwnerName)
+            var snapshot = try await roomService.fetchRoom(code: session.rollCode, zoneOwnerName: session.ckZoneOwnerName)
             guard session === activeSession else { return }
+            if let currentUser = activeLobbyUser {
+                let local = participant(currentUser)
+                if let index = snapshot.participants.firstIndex(where: { $0.userID == currentUser.appleUserID }),
+                   snapshot.participants[index].name != local.name || snapshot.participants[index].avatarData != local.avatarData {
+                    try? await roomService.updateParticipant(local, inRoom: session.rollCode, zoneOwnerName: session.ckZoneOwnerName)
+                    snapshot.participants[index] = local
+                }
+            }
             apply(snapshot, to: session)
             if session.status == .live, navigator?.path.last == .createRollLobby {
                 beginLivePolling(session: session)

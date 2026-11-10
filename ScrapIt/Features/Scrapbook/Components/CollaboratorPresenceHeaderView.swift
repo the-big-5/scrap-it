@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct CollaboratorPresenceHeaderView: View {
     let collaborators: [CollaboratorPresence]
@@ -42,22 +43,35 @@ struct CollaboratorPresenceHeaderView: View {
         }
     }
 
+    @ViewBuilder
     private func avatarCircle(for collaborator: CollaboratorPresence) -> some View {
-        let initial = String(collaborator.name.prefix(1)).uppercased()
-        let color = Color(hex: collaborator.colorHex) ?? DSColor.Brand.primary.color
-
-        return ZStack {
-            Circle()
-                .fill(color.opacity(0.18))
+        if let avatarData = collaborator.avatarData, let image = UIImage(data: avatarData) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
                 .frame(width: 26, height: 26)
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.white, lineWidth: 1.5)
+                )
+        } else {
+            let initial = String(collaborator.name.prefix(1)).uppercased()
+            let color = Color(hex: collaborator.colorHex) ?? DSColor.Brand.primary.color
 
-            Text(initial.isEmpty ? "?" : initial)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(color)
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.18))
+                    .frame(width: 26, height: 26)
 
-            Circle()
-                .strokeBorder(Color.white, lineWidth: 1.5)
-                .frame(width: 26, height: 26)
+                Text(initial.isEmpty ? "?" : initial)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(color)
+
+                Circle()
+                    .strokeBorder(Color.white, lineWidth: 1.5)
+                    .frame(width: 26, height: 26)
+            }
         }
     }
 

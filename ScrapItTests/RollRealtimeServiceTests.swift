@@ -2,6 +2,7 @@ import CloudKit
 import Foundation
 import SwiftData
 import Testing
+import UIKit
 @testable import ScrapIt
 
 private final class MockRollRoomService: RollRoomServicing {
@@ -365,5 +366,65 @@ struct RollRealtimeServiceTests {
         #expect(mockRealtime.connectedRollCodes.isEmpty)
         #expect(mockRealtime.broadcastedCounts.isEmpty)
         cloud.stopLiveSessionPolling()
+    }
+}
+
+@MainActor
+struct ScrapbookPresenceAvatarTests {
+    @Test func collaboratorPresenceEncodesAndDecodesAvatarData() throws {
+        let sampleAvatar = Data([0xFF, 0xD8, 0xFF, 0xE0])
+        let presence = CollaboratorPresence(
+            id: "user-1",
+            name: "Olifian Lepin",
+            colorHex: "#2F80ED",
+            currentPageIndex: 1,
+            avatarData: sampleAvatar
+        )
+
+        let encoded = try JSONEncoder().encode(presence)
+        let decoded = try JSONDecoder().decode(CollaboratorPresence.self, from: encoded)
+
+        #expect(decoded.id == "user-1")
+        #expect(decoded.name == "Olifian Lepin")
+        #expect(decoded.avatarData == sampleAvatar)
+    }
+
+    @Test func connectRealtimeAttachesCompressedAvatarThumbnail() async throws {
+        let container = try ModelContainer(
+            for: UserProfile.self, Scrapbook.self, ScrapPhoto.self, CaptureSession.self,
+            ScrapbookPage.self, ScrapbookItem.self, StickerSheet.self,
+            configurations: ModelConfiguration(UUID().uuidString, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        )
+        let context = container.mainContext
+        let store = SessionStore(modelContext: context)
+        let scrapbook = Scrapbook(title: "Trip", sourceSessionID: UUID())
+        context.insert(scrapbook)
+        try context.save()
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 300))
+        let rawAvatar = renderer.image { ctx in
+            UIColor.systemPink.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 300, height: 300))
+        }.pngData()!
+
+        let user = UserProfile(appleUserID: "user-1", name: "Olifian", avatarData: rawAvatar)
+        let mockRealtime = MockScrapbookRealtimeService()
+        let viewModel = ScrapbookViewModel(
+            modelContext: context,
+            sessionStore: store,
+            scrapbookID: scrapbook.id,
+            currentUser: user,
+            realtimeService: mockRealtime
+        )
+
+        await viewModel.connectRealtime()
+
+        let sentAvatar = try #require(mockRealtime.currentUser?.avatarData)
+        #expect(!sentAvatar.isEmpty)
+        let source = CGImageSourceCreateWithData(sentAvatar as CFData, nil)
+        let props = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
+        let width = props?[kCGImagePropertyPixelWidth] as? Int ?? 0
+        let height = props?[kCGImagePropertyPixelHeight] as? Int ?? 0
+        #expect(max(width, height) <= 80)
     }
 }
