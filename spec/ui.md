@@ -101,6 +101,15 @@ Figma nodes 1302:47935 (back camera) and 1300:33796 (front camera) (landscape de
 - Presence during session: participant count shown in top-left badge of the camera preview HUD
 - States (waiting for others, roll finished, offline queued, end session by host): [Open]
 
+## Screen: Roll Reveal [Draft] (change 021; Figma 1323:41568, 1323:41482, 793:3352 grid only, 1444:23620)
+Shown once after End Roll. No back button, no tab bar.
+- Envelope: cutting mat (teal mat for every stage; Figma's olive mat on 1323:41482 not used [Open]), closed kraft envelope rotated −3°, paper label: roll name (Architects Daughter 28) and "1 photo" / "N photos" (Architects Daughter 16; the photos on this phone, no "/24"), updating as photos arrive (can lag a little behind friends' uploads [Open], see tech.md End Roll sync)
+- Tear: swipe across the top flap strip (about 110 pt or a fast swipe); the strip follows the finger and flies off, heavy haptic; the photos fly out to the mat one after another and the envelope fades
+- Scattered: photos with a 1.5 pt white border, long side 150 pt, ±14° rotation, overlapping; drag moves a photo and brings it to the front; photos arriving later land on the mat
+- "Tidy Up" (top right, 44 pt pill) → 2-column grid on Kraft light-active, 175 × 233 cells, 18 pt corners, capture time badge ("16:45"), scrolls; the button then reads "Scatter"
+- "Start Scrapbook" (bottom, large pill) on both views → scrapbook editor
+- Photo detail: 40% black dim, photo with a 5 pt white border (Live Photo plays on press), "Save" pill + share circle below it; tap outside closes. Save toast: "Saved to Photos" / "Couldn't save. Allow ScrapIt to add photos in Settings."
+
 ## Screen: Profile tab [Open] (design in progress, Figma 1109:4648)
 - Temporary (change 013, camera POC look): avatar placeholder, name, "Sign Out" (`DSButton` secondary), then a 2-column grid of covers (first page drawn small with stills and drawing, title, "N pages")
 - Long-press a cover → "Delete" → confirmation "Delete this scrapbook?" / "Its photos on this phone are deleted too." [Draft]
@@ -165,5 +174,6 @@ All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, tr
 - DeskDisposableCamera (catalog root, reusable): Workbench camera
 - Flow headers: CreateRollHeaderDecoration, ShareRoomHeaderDecoration
 - FilterCanisterBW (725:6301), FilterCanisterColor (725:6480): Choose filter
+- Roll Reveal (folder `Reveal/`, change 021): RevealCuttingMat (@3x PNG, export of 1323:41569) and the envelope as SVG layers (EnvelopeBody, EnvelopeTextureA/B, EnvelopeFlap, EnvelopeFlapLine, EnvelopeLeftEdge, EnvelopeBottomFold); the body's SVG shadow is not drawn by iOS and is clipped in Figma anyway
 
 Note: designs are still in progress, so treat Figma-derived details as [Draft] until marked Locked.

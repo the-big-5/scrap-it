@@ -34,13 +34,14 @@ Edge cases:
 4. Lobby: roll title, stats (joined, shots) and participant avatars (initials). Host (change 019): "⋯" menu → Edit Room (no action yet [Open]), Share Room (system share sheet), Delete Room (asks first, then deletes it for everyone); a "+" tile after the avatars opens Invite Friends (Invite via AirDrop, or Invite via Room Code → the code, long-press copies it); long-press another person's avatar → Remove (no confirmation). Participant: "⋯" → Share Room, Leave Room (no confirmation [Open]). X (both) closes the lobby back to the Workbench; the roll keeps existing (reopening it: [Open])
 5. Host taps "Start Roll"; participants see "Waiting for the host to start..." and move to the camera when the host starts
 6. Removed participants, or everyone when the host deletes the roll, return to the Workbench with a short message
-7. Everyone takes photos (still and Live Photo) at the same time in-app. Slot counts sync live in <50ms via Supabase Realtime broadcast (backed up by 3-second CloudKit polling, change 011). Photos are stored locally at optimized resolution (max 2048px still, 1440px movie, ~1.4 MB total per shot, change 014). Nobody, including the host, sees others' photos during the roll
+7. Everyone takes photos (still and Live Photo) at the same time in-app. Slot counts sync live in <50ms via Supabase Realtime broadcast (backed up by 3-second CloudKit polling, change 011). Photos are stored locally at optimized resolution (max 2048px still, 1440px movie, ~1.4 MB total per shot, change 014). Each shot uploads to iCloud in the background right after it is taken (once its shot is confirmed and its Live Photo movie is ready), also when the app is closed (change 020). Nobody, including the host, sees others' photos during the roll
    - During capture, tapping the leading Back button returns to Workbench/Homepage while keeping the roll session active; re-entering resumes capture. Tapping the Info button presents the invite friend sheet with roll code (change 041). Exiting the camera view immediately resets orientation to portrait before navigating away (change 056). Tapping the FLIP button triggers an 8-blade mechanical iris diaphragm closure over the preview and slides dual metallic hatch covers over the zoom wheel with ratchet haptics, debouncing rapid taps and masking sensor reconfiguration freeze (change 061).
 8. One shared pool of shots; any person's photo uses one shot
 9. Roll ends when the shots run out OR the host ends it manually
-10. Photos are saved into a new shared scrapbook (others' photos become visible here), and the app opens that scrapbook in the editor (change 013, temporary until the design flow)
+10. Photos are saved into a new shared scrapbook (others' photos become visible here). Everyone (host and participants) sees the Roll Reveal once (change 021): a closed envelope with the roll name and the number of photos on this phone → swipe across the top to tear it open → the photos scatter on a cutting mat (drag to move; "Tidy Up" ↔ "Scatter" switches to a grid by time) → tap a photo for the detail (Save to Photos, a Live Photo as Live Photo; Share; tap outside closes) → "Start Scrapbook" opens the scrapbook editor (change 013). The reveal cannot be opened again
+11. After End Roll the phone keeps fetching friends' photos every few seconds until it has all of the roll's shots, for up to 2 minutes; the reveal's count and photos update as they arrive. Anything still missing comes with the next launch (change 020)
 Edge cases:
-- Network lost mid-roll: photos queue locally and sync later
+- Network lost mid-roll: photos queue locally and upload when the app runs online again (launch or reconnect, change 020)
 - Host disconnects: host role passes to the next participant
 - Last-shot race: first write wins; the other photo is dropped and that user is told the roll finished
 
@@ -51,7 +52,7 @@ Edge cases:
 Empty state: short text that scrapbooks appear after a roll ends [Draft]. Loading state: [Open]
 
 ## F5: Scrapbook creation [Draft]
-1. When a roll ends, a new scrapbook is created and opens in the editor (change 013) with one empty page; the user chooses which of the roll's photos (Live Photos included) go on the pages
+1. When a roll ends, a new scrapbook is created; after the Roll Reveal (F3 step 10, change 021) "Start Scrapbook" opens it in the editor (change 013) with one empty page; the user chooses which of the roll's photos (Live Photos included) go on the pages
 2. Friends' photos are added to the roll's photo picker as they arrive from the cloud (when the roll ends and on later launches)
 3. Editor (temporary, ported from the camera POC; may change with the design): multiple 3:4 pages (add, delete, move), photos moved / resized / rotated, Live Photos loop on the page, page background, stickers, scissors, pencil (PencilKit). No markup (PaperKit needs iOS 26)
 4. View mode (swipe pages, no tools): later with the design flow [Open]
