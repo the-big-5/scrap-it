@@ -39,6 +39,14 @@ final class RollRevealViewModel {
     private(set) var selectedPhotoID: UUID?
     private(set) var isSaving = false
     private(set) var saveMessage: String?
+    /// The roll's shots used: the photos expected on this phone (change 024).
+    private(set) var expectedPhotoCount = 0
+    /// 10 s since the reveal opened: the envelope can be torn even if photos are missing.
+    private(set) var hasWaitedForPhotos: Bool
+    /// Goes up each time friends' photos arrive after the reveal opened (envelope bounce).
+    private(set) var arrivalCount = 0
+    /// Every photo just came in while "Printing your photos…" was showing.
+    private(set) var showsReadyText = false
 
     static let photoLongSide: CGFloat = 150
     static let maxRotation: Double = 14
@@ -46,6 +54,12 @@ final class RollRevealViewModel {
     static let scatterTopInset: CGFloat = 110
     static let scatterBottomInset: CGFloat = 120
     static let scatterSideInset: CGFloat = 30
+    /// After this the envelope can be torn while photos are still missing (change 024).
+    static let tearUnlockDelay: TimeInterval = 10
+    static let printingText = "Printing your photos…"
+    /// Shown for a moment once every photo is in [Draft text].
+    static let readyText = "Your photos are ready!"
+    static let readyTextDuration: Duration = .seconds(2.5)
     static let savedMessage = "Saved to Photos"
     static let saveFailedMessage = "Couldn't save. Allow ScrapIt to add photos in Settings."
 
@@ -54,6 +68,8 @@ final class RollRevealViewModel {
     @ObservationIgnored private let scrapbookID: UUID
     @ObservationIgnored private let photoSaver: any PhotoLibrarySaving
     @ObservationIgnored private var matSize: CGSize = .zero
+    @ObservationIgnored private let openedAt: Date
+    @ObservationIgnored private var hasLoaded = false
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -65,13 +81,17 @@ final class RollRevealViewModel {
         modelContext: ModelContext,
         navigator: (any Navigator)?,
         scrapbookID: UUID,
-        photoSaver: any PhotoLibrarySaving = PhotoLibrarySaver()
+        photoSaver: any PhotoLibrarySaving = PhotoLibrarySaver(),
+        openedAt: Date = .now
     ) {
         self.modelContext = modelContext
         self.navigator = navigator
         self.scrapbookID = scrapbookID
         self.photoSaver = photoSaver
+        self.openedAt = openedAt
+        hasWaitedForPhotos = Date.now.timeIntervalSince(openedAt) >= Self.tearUnlockDelay
         refresh()
+        hasLoaded = true
     }
 
     // MARK: - Content
@@ -82,6 +102,29 @@ final class RollRevealViewModel {
     }
 
     var isTorn: Bool { stage != .envelope }
+
+    /// Friends' photos are still arriving: "Printing your photos…" shows and the envelope stays closed, until every
+    /// photo is in or 10 s have passed. The End Roll sync keeps fetching after that (change 020).
+    var isDeveloping: Bool {
+        stage == .envelope && photos.count < expectedPhotoCount && !hasWaitedForPhotos
+    }
+
+    var canTear: Bool { !isDeveloping }
+
+    /// After `readyTextDuration`.
+    func hideReadyText() {
+        showsReadyText = false
+    }
+
+    /// Unlocks the tear 10 s after the reveal opened.
+    func waitForTearUnlock() async {
+        let remaining = Self.tearUnlockDelay - Date.now.timeIntervalSince(openedAt)
+        if remaining > 0 {
+            try? await Task.sleep(for: .seconds(remaining))
+        }
+        guard !Task.isCancelled else { return }
+        hasWaitedForPhotos = true
+    }
 
     var tidyButtonTitle: String { stage == .tidy ? "Scatter" : "Tidy Up" }
 
@@ -110,6 +153,8 @@ final class RollRevealViewModel {
         guard let scrapbook = try? modelContext.fetch(scrapbookDescriptor).first else { return }
         rollName = scrapbook.title
         guard let sessionID = scrapbook.sourceSessionID else { return }
+        let sessionDescriptor = FetchDescriptor<CaptureSession>(predicate: #Predicate { $0.id == sessionID })
+        expectedPhotoCount = (try? modelContext.fetch(sessionDescriptor).first)?.slotsUsed ?? 0
         let photoDescriptor = FetchDescriptor<ScrapPhoto>(
             predicate: #Predicate { $0.sourceSessionID == sessionID },
             sortBy: [SortDescriptor(\.timestamp)]
@@ -126,7 +171,14 @@ final class RollRevealViewModel {
             )
         }
         guard !added.isEmpty else { return }
+        let wasPrinting = isDeveloping
+        if hasLoaded {
+            arrivalCount += 1
+        }
         photos += added
+        if wasPrinting && photos.count >= expectedPhotoCount {
+            showsReadyText = true
+        }
         stackOrder += added.map(\.id)
         if isTorn {
             placeMissingPhotos()
@@ -153,7 +205,7 @@ final class RollRevealViewModel {
 
     /// The swipe tore the envelope open: the photos spill onto the mat.
     func tear() {
-        guard stage == .envelope else { return }
+        guard stage == .envelope, canTear else { return }
         placeMissingPhotos()
         stage = .scattered
     }

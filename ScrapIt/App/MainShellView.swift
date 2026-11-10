@@ -65,6 +65,13 @@ struct MainShellView: View {
                 destinationView(for: route)
             }
         }
+        // Joining a roll by code or invite link (change 024).
+        .overlay {
+            if let rollViewModel, rollViewModel.isJoining {
+                JoiningOverlayView(flowViewModel: rollViewModel)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: rollViewModel?.isJoining)
         .onChange(of: router.path) { _, newPath in
             if !newPath.contains(where: \.isRollRoute) {
                 rollViewModel = nil

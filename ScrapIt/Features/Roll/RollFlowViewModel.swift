@@ -58,6 +58,9 @@ final class RollFlowViewModel {
     }
     /// Invite link state for the host's Invite sheet.
     private(set) var isCreatingInviteLink = false
+    /// When the join on screen started; `nil` = no Joining overlay (change 024).
+    private(set) var joinStartedAt: Date?
+    @ObservationIgnored private var joinAttempt: UUID?
     private(set) var inviteLinkError: String?
 
     // Alerts and banners
@@ -330,6 +333,7 @@ final class RollFlowViewModel {
         code: String,
         currentUser: UserProfile
     ) async {
+        guard !isJoining else { return }
         let cleaned = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard cleaned.count == Self.joinCodeLength else {
             joinErrorMessage = Self.joinIncompleteCodeMessage
@@ -339,11 +343,17 @@ final class RollFlowViewModel {
             joinErrorMessage = Self.joinOfflineMessage
             return
         }
+        let attempt = beginJoin()
         do {
             let snapshot = try await roomService.joinRoom(code: cleaned, as: participant(currentUser))
+            guard finishJoin(attempt) else {
+                await leaveCancelledJoin(snapshot, currentUser: currentUser)
+                return
+            }
             joinErrorMessage = nil
             enterRoom(snapshot)
         } catch {
+            guard finishJoin(attempt) else { return }
             logRoomFailure("join", error)
             joinErrorMessage = Self.joinMessage(for: error)
         }
@@ -358,13 +368,68 @@ final class RollFlowViewModel {
 
     /// An iCloud share link opened by tap or AirDrop.
     func acceptIncomingShare(_ metadata: CKShare.Metadata, currentUser: UserProfile) async {
+        guard !isJoining else { return }
+        let attempt = beginJoin()
         do {
             let snapshot = try await roomService.acceptShare(metadata, as: participant(currentUser))
+            guard finishJoin(attempt) else {
+                await leaveCancelledJoin(snapshot, currentUser: currentUser)
+                return
+            }
             enterRoom(snapshot)
         } catch {
+            guard finishJoin(attempt) else { return }
             logRoomFailure("accept share", error)
             roomExitMessage = Self.joinMessage(for: error)
         }
+    }
+
+    // MARK: - Joining overlay (change 024)
+
+    /// Status text under the Joining animation by wait time [Draft text].
+    static let joinStatusSteps: [(after: TimeInterval, text: String)] = [
+        (0, "Finding the roll…"),
+        (3, "Loading the film…"),
+        (8, "Almost there…"),
+    ]
+
+    var isJoining: Bool { joinStartedAt != nil }
+
+    static func joinStatusText(elapsed: TimeInterval) -> String {
+        joinStatusSteps.last { elapsed >= $0.after }?.text ?? joinStatusSteps[0].text
+    }
+
+    func joinStatusText(at date: Date) -> String {
+        Self.joinStatusText(elapsed: joinStartedAt.map { date.timeIntervalSince($0) } ?? 0)
+    }
+
+    /// Closes the overlay. The CloudKit request can't be stopped: a late failure is ignored, a late success is
+    /// undone with Leave Room.
+    func cancelJoin() {
+        joinAttempt = nil
+        joinStartedAt = nil
+    }
+
+    private func beginJoin() -> UUID {
+        let attempt = UUID()
+        joinAttempt = attempt
+        joinStartedAt = .now
+        return attempt
+    }
+
+    /// Ends the overlay for this attempt. `false` when it was cancelled.
+    private func finishJoin(_ attempt: UUID) -> Bool {
+        guard joinAttempt == attempt else { return false }
+        joinAttempt = nil
+        joinStartedAt = nil
+        return true
+    }
+
+    /// The join finished after Cancel: leave again so the name doesn't stay in the host's lobby. Opened as the host
+    /// (same iCloud, own zone): nothing to leave.
+    private func leaveCancelledJoin(_ snapshot: RoomSnapshot, currentUser: UserProfile) async {
+        guard snapshot.hostUserID != currentUser.appleUserID, let owner = snapshot.zoneOwnerName else { return }
+        try? await roomService.leaveRoom(code: snapshot.rollCode, zoneOwnerName: owner, userID: currentUser.appleUserID)
     }
 
     /// Technical CloudKit detail goes to the Xcode console for developers, never on screen (change 019).
