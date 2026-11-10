@@ -53,7 +53,7 @@ struct WelcomeSignInView: View {
 
                     SignInWithAppleButton(.signIn) { request in
                         authViewModel.beginSignIn()
-                        request.requestedScopes = [.fullName]
+                        request.requestedScopes = [.fullName, .email]
                     } onCompletion: { result in
                         authViewModel.handleSignInWithAppleCompletion(
                             result: result

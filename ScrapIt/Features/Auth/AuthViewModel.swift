@@ -90,7 +90,8 @@ final class AuthViewModel {
             }
             handleAppleIDCredential(
                 userID: credential.user,
-                fullName: credential.fullName
+                fullName: credential.fullName,
+                email: credential.email
             )
         case .failure(let error):
             handleSignInFailure(error)
@@ -99,18 +100,22 @@ final class AuthViewModel {
 
     func handleAppleIDCredential(
         userID: String,
-        fullName: PersonNameComponents?
+        fullName: PersonNameComponents?,
+        email: String? = nil
     ) {
         guard !isOffline else { return }
 
-        // Apple sends the name only on the first authorization for this Apple ID and app.
+        // Apple sends the name and email only on the first authorization for this Apple ID and app.
         let name = [fullName?.givenName, fullName?.familyName]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+        let trimmedEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedEmail = (trimmedEmail?.isEmpty == false) ? trimmedEmail : nil
         completeSignIn(
             appleUserID: userID,
-            appleName: name.isEmpty ? nil : name
+            appleName: name.isEmpty ? nil : name,
+            appleEmail: normalizedEmail
         )
     }
 
@@ -160,16 +165,29 @@ final class AuthViewModel {
     private func completeSignIn(
         appleUserID: String,
         appleName: String?,
+        appleEmail: String?
     ) {
         cancelPendingCredentialCheck()
         if let existing = profile(for: appleUserID) {
-            if let appleName, existing.name != appleName {
+            var didChange = false
+            if !existing.hasCustomName, let appleName, existing.name != appleName {
                 existing.name = appleName
+                didChange = true
+            }
+            if let appleEmail, existing.email != appleEmail {
+                existing.email = appleEmail
+                didChange = true
+            }
+            if didChange {
                 try? modelContext.save()
             }
             currentUser = existing
         } else {
-            let profile = UserProfile(appleUserID: appleUserID, name: appleName ?? Self.defaultName)
+            let profile = UserProfile(
+                appleUserID: appleUserID,
+                name: appleName ?? Self.defaultName,
+                email: appleEmail
+            )
             modelContext.insert(profile)
             try? modelContext.save()
             currentUser = profile

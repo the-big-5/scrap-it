@@ -135,6 +135,29 @@ struct AuthViewModelTests {
         #expect(profileCount() == 1)
     }
 
+    @Test func firstSignInStoresEmailAndPreservesItWhenLaterNil() {
+        let vm = makeViewModel()
+
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil, email: "ana@example.com")
+        #expect(vm.currentUser?.email == "ana@example.com")
+
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: nil, email: nil)
+        #expect(vm.currentUser?.email == "ana@example.com")
+    }
+
+    @Test func customProfileNameIsNotOverwrittenByAppleName() {
+        context.insert(UserProfile(appleUserID: "apple-123", name: "Olifian Lepin", hasCustomName: true))
+        try? context.save()
+        let vm = makeViewModel()
+        var name = PersonNameComponents()
+        name.givenName = "Apple"
+        name.familyName = "Name"
+
+        vm.handleAppleIDCredential(userID: "apple-123", fullName: name)
+
+        #expect(vm.currentUser?.name == "Olifian Lepin")
+    }
+
     @Test func cancelStaysOnWelcomeWithoutMessage() {
         let vm = makeViewModel()
 
