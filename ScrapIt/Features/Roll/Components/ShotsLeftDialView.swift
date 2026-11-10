@@ -7,8 +7,6 @@ struct ShotsLeftDialView: View {
     let shotsRemaining: Int
     var totalShots: Int = 36
 
-    private static let creamText = Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255)
-
     @State private var previousShots: Int?
     @State private var hapticTask: Task<Void, Never>?
 
@@ -24,12 +22,32 @@ struct ShotsLeftDialView: View {
         safeShots % 10
     }
 
+    var maxTens: Int {
+        max(0, totalShots / 10)
+    }
+
+    var aboveTensDigit: Int? {
+        tensDigit < maxTens ? tensDigit + 1 : nil
+    }
+
+    var belowTensDigit: Int {
+        max(0, tensDigit - 1)
+    }
+
+    var aboveOnesDigit: Int? {
+        safeShots < totalShots ? (onesDigit + 1) % 10 : nil
+    }
+
+    var belowOnesDigit: Int {
+        safeShots > 0 ? (onesDigit - 1 + 10) % 10 : 0
+    }
+
     var isTensBlankAbove: Bool {
-        tensDigit >= max(0, totalShots / 10)
+        aboveTensDigit == nil
     }
 
     var isOnesBlankAbove: Bool {
-        safeShots >= totalShots
+        aboveOnesDigit == nil
     }
 
     var body: some View {
@@ -49,8 +67,16 @@ struct ShotsLeftDialView: View {
 
                 // Mechanical odometer tumbler wheels
                 HStack(spacing: 1) {
-                    OdometerDigitWheelView(digit: tensDigit, blankAbove: isTensBlankAbove)
-                    OdometerDigitWheelView(digit: onesDigit, blankAbove: isOnesBlankAbove)
+                    OdometerDigitWheelView(
+                        digit: tensDigit,
+                        aboveDigit: aboveTensDigit,
+                        belowDigit: belowTensDigit
+                    )
+                    OdometerDigitWheelView(
+                        digit: onesDigit,
+                        aboveDigit: aboveOnesDigit,
+                        belowDigit: belowOnesDigit
+                    )
                 }
                 .frame(width: 50, height: 50)
                 .clipped()
@@ -86,97 +112,153 @@ struct ShotsLeftDialView: View {
 
 private struct OdometerDigitWheelView: View {
     let digit: Int
-    var blankAbove: Bool = false
+    let aboveDigit: Int?
+    let belowDigit: Int
 
-    @State private var position: Double
+    @State private var progress: Double = 0.0
+    @State private var isScrolling: Bool = false
     @State private var previousDigit: Int
+    @State private var oldAboveDigit: Int?
+    @State private var oldCurrentDigit: Int
+    @State private var animTask: Task<Void, Never>?
 
     private static let slotHeight: CGFloat = 19
 
-    init(digit: Int, blankAbove: Bool = false) {
+    init(digit: Int, aboveDigit: Int?, belowDigit: Int) {
         self.digit = digit
-        self.blankAbove = blankAbove
-        _position = State(initialValue: Double(digit))
+        self.aboveDigit = aboveDigit
+        self.belowDigit = belowDigit
         _previousDigit = State(initialValue: digit)
+        _oldCurrentDigit = State(initialValue: digit)
+        _oldAboveDigit = State(initialValue: aboveDigit)
     }
 
     var body: some View {
-        OdometerDrumWheel(position: position, slotHeight: Self.slotHeight, blankAbove: blankAbove)
-            .onChange(of: digit) { _, newDigit in
-                let oldDigit = previousDigit
-                previousDigit = newDigit
+        OdometerDrumWheel(
+            progress: progress,
+            slotHeight: Self.slotHeight,
+            isScrolling: isScrolling,
+            restingAbove: aboveDigit,
+            restingCurrent: digit,
+            restingBelow: belowDigit,
+            scrollOldAbove: oldAboveDigit,
+            scrollOldCurrent: oldCurrentDigit,
+            scrollNewCurrent: digit,
+            scrollBelow: belowDigit
+        )
+        .onChange(of: digit) { oldVal, newVal in
+            guard newVal != oldVal else { return }
 
-                guard newDigit != oldDigit else { return }
+            if newVal == (oldVal - 1 + 10) % 10 {
+                animTask?.cancel()
+                oldCurrentDigit = oldVal
+                isScrolling = true
+                progress = 0.0
 
-                // Decrement scroll (e.g. 4 -> 3 or 0 -> 9): drum rolls upwards
-                if newDigit == (oldDigit - 1 + 10) % 10 {
-                    let targetPosition = position - 1.0
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        position = targetPosition
-                    }
-                } else {
-                    // Non-sequential change (reset/initialization): snap directly
-                    position = Double(newDigit)
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    progress = 1.0
                 }
+
+                animTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 260_000_000)
+                    guard !Task.isCancelled else { return }
+                    isScrolling = false
+                    progress = 0.0
+                    previousDigit = newVal
+                    oldAboveDigit = aboveDigit
+                }
+            } else {
+                animTask?.cancel()
+                isScrolling = false
+                progress = 0.0
+                previousDigit = newVal
+                oldAboveDigit = aboveDigit
+                oldCurrentDigit = newVal
             }
+        }
+        .onChange(of: aboveDigit) { _, newAbove in
+            if !isScrolling {
+                oldAboveDigit = newAbove
+            }
+        }
     }
 }
 
 // MARK: - Odometer Drum Wheel (Animatable)
 
 private struct OdometerDrumWheel: View, Animatable {
-    var position: Double
+    var progress: Double
     let slotHeight: CGFloat
-    var blankAbove: Bool = false
+    let isScrolling: Bool
+
+    let restingAbove: Int?
+    let restingCurrent: Int
+    let restingBelow: Int
+
+    let scrollOldAbove: Int?
+    let scrollOldCurrent: Int
+    let scrollNewCurrent: Int
+    let scrollBelow: Int
 
     private static let creamText = Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255)
 
     var animatableData: Double {
-        get { position }
-        set { position = newValue }
+        get { progress }
+        set { progress = newValue }
     }
 
     var body: some View {
         ZStack {
-            ForEach(0..<10, id: \.self) { i in
-                let y = yOffset(for: i, scrollPosition: position)
-                let distance = abs(y)
-                if distance <= slotHeight * 2.2 {
-                    let isAboveSlot = y < -slotHeight * 0.5
-                    if !(blankAbove && isAboveSlot) {
-                        let normalized = distance / slotHeight
-                        let scale = max(0.75, 1.0 - (0.25 * min(1.0, normalized)))
-                        let opacity: Double = if normalized <= 1.0 {
-                            1.0 - (0.65 * normalized)
-                        } else {
-                            max(0.0, 0.35 * (2.0 - normalized))
-                        }
-
-                        Text("\(i)")
-                            .font(.system(size: 20, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(Self.creamText)
-                            .scaleEffect(scale)
-                            .opacity(opacity)
-                            .offset(y: y)
-                    }
+            if isScrolling {
+                // 1. Exiting top digit (old above)
+                if let oldAbove = scrollOldAbove {
+                    let y = -slotHeight - CGFloat(progress) * slotHeight
+                    let opacity = max(0.0, 0.35 * (1.0 - progress))
+                    digitText(oldAbove, scale: 0.75, opacity: opacity, y: y)
                 }
+
+                // 2. Old center digit moving to top
+                let yOld = -CGFloat(progress) * slotHeight
+                let scaleOld = 1.0 - (0.25 * progress)
+                let opacityOld = 1.0 - (0.65 * progress)
+                digitText(scrollOldCurrent, scale: scaleOld, opacity: opacityOld, y: yOld)
+
+                // 3. New center digit entering from bottom
+                let yNew = slotHeight - CGFloat(progress) * slotHeight
+                let scaleNew = 0.75 + (0.25 * progress)
+                let opacityNew = 0.35 + (0.65 * progress)
+                digitText(scrollNewCurrent, scale: scaleNew, opacity: opacityNew, y: yNew)
+
+                // 4. Entering bottom digit
+                let yBelow = (2.0 * slotHeight) - CGFloat(progress) * slotHeight
+                let opacityBelow = 0.35 * progress
+                digitText(scrollBelow, scale: 0.75, opacity: opacityBelow, y: yBelow)
+            } else {
+                // Resting state
+                if let above = restingAbove {
+                    digitText(above, scale: 0.75, opacity: 0.35, y: -slotHeight)
+                }
+                digitText(restingCurrent, scale: 1.0, opacity: 1.0, y: 0)
+                digitText(restingBelow, scale: 0.75, opacity: 0.35, y: slotHeight)
             }
         }
         .frame(width: 14, height: 50)
     }
 
-    private func yOffset(for digitIndex: Int, scrollPosition: Double) -> CGFloat {
-        var diff = (Double(digitIndex) - scrollPosition).truncatingRemainder(dividingBy: 10)
-        if diff > 5 { diff -= 10 }
-        if diff < -5 { diff += 10 }
-        return CGFloat(-diff * Double(slotHeight))
+    private func digitText(_ digit: Int, scale: Double, opacity: Double, y: CGFloat) -> some View {
+        Text("\(digit)")
+            .font(.system(size: 20, weight: .semibold).monospacedDigit())
+            .foregroundStyle(Self.creamText)
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .offset(y: y)
     }
 }
 
 #Preview {
     struct PreviewWrapper: View {
-        @State private var shots = 24
-        private let totalShots = 36
+        @State private var shots = 23
+        private let totalShots = 24
 
         var body: some View {
             VStack(spacing: 24) {
@@ -188,8 +270,8 @@ private struct OdometerDrumWheel: View, Animatable {
                     }
                     .buttonStyle(.borderedProminent)
 
-                    Button("Reset (36)") {
-                        shots = 36
+                    Button("Reset (24)") {
+                        shots = 24
                     }
                     .buttonStyle(.bordered)
                 }

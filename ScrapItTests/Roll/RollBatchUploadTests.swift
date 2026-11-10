@@ -35,7 +35,14 @@ struct RollBatchUploadTests {
         return service
     }
 
-    @Test func capturingShotsDuringLiveRollDoesNotUploadToCloudKit() async throws {
+    private func waitUntil(_ condition: () -> Bool) async {
+        for _ in 0..<50 where !condition() {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// Change 020: a shot uploads during the roll, right after its claim is confirmed.
+    @Test func capturedShotUploadsAfterItsClaim() async throws {
         let container = try makeInMemoryContainer()
         let context = container.mainContext
         let router = AppRouter()
@@ -70,13 +77,89 @@ struct RollBatchUploadTests {
             currentUser: user
         )
 
-        // Photo must be saved locally with isSyncedToCloud == false
         #expect(photo != nil)
-        #expect(photo?.isSyncedToCloud == false)
         #expect(session.slotsUsed == 1)
         #expect(session.status == .live)
-        // Queued offline count only counts ended sessions, so active roll photos don't inflate offline queue
-        #expect(cloud.queuedOfflineCount == 0)
+
+        await viewModel.lastSlotClaimTask?.value
+        await waitUntil { photo?.isSyncedToCloud == true }
+        #expect(photo?.isSyncedToCloud == true)
+    }
+
+    /// Change 020: a Live Photo shot waits for its movie before it uploads.
+    @Test func liveShotWaitsForItsMovieBeforeUploading() async throws {
+        let container = try makeInMemoryContainer()
+        let context = container.mainContext
+        let store = SessionStore(modelContext: context)
+        let cloud = makeCloudService(context: context, isOnline: true)
+        let user = UserProfile(appleUserID: "apple-user-1", name: "Alex")
+        context.insert(user)
+        let session = CaptureSession(
+            name: "Live", rollCode: "LIVE01", hostUserID: user.appleUserID,
+            participantIDs: [user.appleUserID], participantNames: [user.name],
+            rollSize: 24, slotsUsed: 0, status: .live
+        )
+        context.insert(session)
+        store.activeSession = session
+        let viewModel = RollFlowViewModel(
+            modelContext: context, navigator: AppRouter(), sessionStore: store,
+            cloudService: cloud, roomService: MockRollRoomService()
+        )
+
+        let photo = try #require(await viewModel.recordCapturedShot(
+            imageData: Data([0x01]),
+            currentUser: user,
+            expectsLiveMovie: true
+        ))
+        await viewModel.lastSlotClaimTask?.value
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(photo.isSyncedToCloud == false)
+    }
+
+    /// Change 020 (with 016): a shot that loses the last-shot race is dropped and never uploaded.
+    @Test func lostRaceShotIsNeverUploaded() async throws {
+        let container = try makeInMemoryContainer()
+        let context = container.mainContext
+        let store = SessionStore(modelContext: context)
+        let cloud = makeCloudService(context: context, isOnline: true)
+        let user = UserProfile(appleUserID: "apple-user-1", name: "Alex")
+        context.insert(user)
+        let session = CaptureSession(
+            name: "Race", rollCode: "RACE01", hostUserID: user.appleUserID,
+            participantIDs: [user.appleUserID], participantNames: [user.name],
+            rollSize: 24, slotsUsed: 23, status: .live
+        )
+        context.insert(session)
+        store.activeSession = session
+        let viewModel = RollFlowViewModel(
+            modelContext: context, navigator: AppRouter(), sessionStore: store,
+            cloudService: cloud, roomService: MockRollRoomService()
+        )
+
+        let photo = try #require(await viewModel.recordCapturedShot(
+            imageData: Data([0x01]),
+            currentUser: user,
+            simulateLastSlotConflict: true
+        ))
+        await viewModel.lastSlotClaimTask?.value
+        try? await Task.sleep(for: .milliseconds(100))
+        let shotID = photo.id
+        #expect(try context.fetchCount(FetchDescriptor<ScrapPhoto>(predicate: #Predicate { $0.id == shotID })) == 0)
+        #expect(photo.isSyncedToCloud == false)
+    }
+
+    @Test func endRollSyncStopsWhenAllShotsAreHereOrAfterTwoMinutes() {
+        #expect(RollFlowViewModel.shouldKeepSyncingFriendsShots(localCount: 3, shotsUsed: 6, elapsed: 10))
+        #expect(!RollFlowViewModel.shouldKeepSyncingFriendsShots(localCount: 6, shotsUsed: 6, elapsed: 10))
+        #expect(!RollFlowViewModel.shouldKeepSyncingFriendsShots(localCount: 3, shotsUsed: 6, elapsed: 120))
+    }
+
+    /// Re-uploading a shot writes the same records (named by the shot ID) and the same payload file, so no duplicates.
+    @Test func reuploadUsesTheSameRecordAndFile() {
+        let shotID = UUID()
+        let url = CloudKitSessionService.pendingPayloadURL(shotID: shotID)
+        #expect(url == CloudKitSessionService.pendingPayloadURL(shotID: shotID))
+        #expect(CloudKitSessionService.publicShotRecord(shotID: shotID, payloadURL: url).recordID.recordName == shotID.uuidString)
     }
 
     @Test func finalizingFullRollTriggersBatchUploadOfItsPhotos() async throws {
@@ -193,7 +276,8 @@ struct RollBatchUploadTests {
         #expect(p3.isSyncedToCloud == true)
     }
 
-    @Test func launchSyncIgnoresPhotosFromUnendedSessions() async throws {
+    /// Change 020: the launch / reconnect retry uploads shots of live rolls too (015 only did ended rolls).
+    @Test func launchRetryUploadsLiveAndEndedRolls() async throws {
         let container = try makeInMemoryContainer()
         let context = container.mainContext
         let cloud = makeCloudService(context: context, isOnline: true)
@@ -233,8 +317,7 @@ struct RollBatchUploadTests {
 
         await cloud.syncPendingOfflinePhotos()
 
-        // Active session's photo remains un-synced
-        #expect(activePhoto.isSyncedToCloud == false)
+        #expect(activePhoto.isSyncedToCloud == true)
         // Ended session's photo is synced
         #expect(endedPhoto.isSyncedToCloud == true)
         #expect(cloud.queuedOfflineCount == 0)

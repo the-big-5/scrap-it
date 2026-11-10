@@ -72,6 +72,23 @@ protocol RollRoomServicing: AnyObject {
     func listRooms() async throws -> [RoomSnapshot]
     /// Encrypted payload of one public `RollShot`.
     func downloadShotPayload(recordName: String) async throws -> Data
+    /// Encrypted payloads of several public `RollShot`s, fetched together (change 020).
+    func downloadShotPayloads(recordNames: [String]) async -> [String: Result<Data, Error>]
+}
+
+extension RollRoomServicing {
+    /// One by one; the CloudKit service fetches them in parallel batches.
+    func downloadShotPayloads(recordNames: [String]) async -> [String: Result<Data, Error>] {
+        var payloads: [String: Result<Data, Error>] = [:]
+        for name in recordNames {
+            do {
+                payloads[name] = .success(try await downloadShotPayload(recordName: name))
+            } catch {
+                payloads[name] = .failure(error)
+            }
+        }
+        return payloads
+    }
 }
 
 extension RollRoomServicing {
@@ -119,9 +136,13 @@ nonisolated struct RollRoomLocation: Equatable, Sendable {
 ///   (anyone with the link can read and write), plus a public `RollCode-<code>` record (code → link)
 /// - participant: accepts the share, then writes their own `RollParticipant` record in the shared zone
 extension CKContainer {
-    /// The canonical CloudKit container for ScrapIt (`iCloud.lepin.scrapit`).
+    /// The CloudKit container for this app build: `iCloud.lepin.scrapit` for the team build,
+    /// otherwise the default `iCloud.<bundle ID>` so other developers' builds use their own container.
     static var app: CKContainer {
-        CKContainer(identifier: "iCloud.lepin.scrapit")
+        if Bundle.main.bundleIdentifier == "com.lepin.ScrapIt" {
+            return CKContainer(identifier: "iCloud.lepin.scrapit")
+        }
+        return .default()
     }
 }
 
@@ -410,6 +431,46 @@ final class CloudKitRollRoomService: RollRoomServicing {
         let record = try await container.publicCloudDatabase.record(for: CKRecord.ID(recordName: recordName))
         guard let url = (record["payload"] as? CKAsset)?.fileURL else { throw RoomError.notFound }
         return try Data(contentsOf: url)
+    }
+
+    /// Change 020: friends' shots in batches of `shotBatchSize`, the batches downloaded at the same time.
+    func downloadShotPayloads(recordNames: [String]) async -> [String: Result<Data, Error>] {
+        let database = container.publicCloudDatabase
+        let batches = stride(from: 0, to: recordNames.count, by: Self.shotBatchSize).map {
+            Array(recordNames[$0..<min($0 + Self.shotBatchSize, recordNames.count)])
+        }
+        return await withTaskGroup(of: [String: Result<Data, Error>].self) { group in
+            for batch in batches {
+                group.addTask {
+                    await Self.fetchShotBatch(batch, in: database)
+                }
+            }
+            var payloads: [String: Result<Data, Error>] = [:]
+            for await result in group {
+                payloads.merge(result) { first, _ in first }
+            }
+            return payloads
+        }
+    }
+
+    private static let shotBatchSize = 6
+
+    nonisolated private static func fetchShotBatch(_ names: [String], in database: CKDatabase) async -> [String: Result<Data, Error>] {
+        var payloads: [String: Result<Data, Error>] = [:]
+        do {
+            let records = try await database.records(for: names.map { CKRecord.ID(recordName: $0) })
+            for (id, result) in records {
+                payloads[id.recordName] = Result {
+                    guard let url = (try result.get()["payload"] as? CKAsset)?.fileURL else { throw RoomError.notFound }
+                    return try Data(contentsOf: url)
+                }
+            }
+        } catch {
+            for name in names {
+                payloads[name] = .failure(error)
+            }
+        }
+        return payloads
     }
 
     // MARK: - Helpers

@@ -333,7 +333,8 @@ struct RollRealtimeServiceTests {
         #expect(store.activeScrapbook != nil)
         #expect(session.createdScrapbookID == store.activeScrapbook?.id)
         if let scrapbookID = store.activeScrapbook?.id {
-            #expect(router.path == [.scrapbook(scrapbookID)])
+            // Change 021: the photo reveal comes first.
+            #expect(router.path == [.rollReveal(scrapbookID)])
         }
         #expect(mockRealtime.disconnectCount == 1)
     }

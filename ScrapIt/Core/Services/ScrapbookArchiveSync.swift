@@ -93,13 +93,16 @@ final class ScrapbookArchiveSync {
 
         var added = 0
         print("📦 [ScrapbookArchiveSync] Restoring room \(room.rollCode) with \(room.shotRecordNames.count) shots (already have \(existing.count) local)")
-        for name in room.shotRecordNames {
-            guard let id = UUID(uuidString: name), !existing.contains(id) else {
-                print("ℹ️ [ScrapbookArchiveSync] Shot \(name) already in local store; skipping")
-                continue
-            }
+        let missing = room.shotRecordNames.filter { name in
+            guard let id = UUID(uuidString: name) else { return false }
+            return !existing.contains(id)
+        }
+        // Change 020: downloaded together instead of one by one.
+        let downloads = missing.isEmpty ? [:] : await roomService.downloadShotPayloads(recordNames: missing)
+        for name in missing {
             do {
-                let sealed = try await roomService.downloadShotPayload(recordName: name)
+                guard let download = downloads[name] else { throw RoomError.notFound }
+                let sealed = try download.get()
                 let payload = try RollShotCrypto.open(sealed, key: key)
                 let photo = ScrapPhoto(
                     id: payload.shotID,
