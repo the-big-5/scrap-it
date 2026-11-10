@@ -8,9 +8,10 @@ struct DrawingCanvasView: UIViewRepresentable {
     let drawingData: Data?
     let pageSize: CGSize
     let controller: PencilController
+    var remoteRevision: Int = 0
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(controller: controller)
+        Coordinator(controller: controller, lastRemoteRevision: remoteRevision)
     }
 
     func makeUIView(context: Context) -> PKCanvasView {
@@ -34,6 +35,11 @@ struct DrawingCanvasView: UIViewRepresentable {
 
     func updateUIView(_ canvas: PKCanvasView, context: Context) {
         applyScale(canvas)
+        if context.coordinator.lastRemoteRevision != remoteRevision {
+            context.coordinator.lastRemoteRevision = remoteRevision
+            let drawing = drawingData.flatMap { try? PKDrawing(data: $0) } ?? PKDrawing()
+            controller.replaceDrawingFromRemote(drawing)
+        }
     }
 
     static func dismantleUIView(_ canvas: PKCanvasView, coordinator: Coordinator) {
@@ -54,9 +60,11 @@ struct DrawingCanvasView: UIViewRepresentable {
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         let controller: PencilController
+        var lastRemoteRevision: Int
 
-        init(controller: PencilController) {
+        init(controller: PencilController, lastRemoteRevision: Int) {
             self.controller = controller
+            self.lastRemoteRevision = lastRemoteRevision
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {

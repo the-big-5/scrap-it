@@ -112,6 +112,13 @@ final class PencilController {
         applyTool()
     }
 
+    func replaceDrawingFromRemote(_ drawing: PKDrawing) {
+        current = drawing
+        isRestoring = true
+        canvas?.drawing = drawing
+        isRestoring = false
+    }
+
     func detach() {
         canvas = nil
         history = []

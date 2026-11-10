@@ -14,6 +14,13 @@ struct ScrapbookItemPayload: Codable, Sendable, Equatable {
     let zIndex: Int
     let loopEnabled: Bool
     let maskData: Data?
+    let letterID: String?
+    let text: String?
+    let textColor: String?
+    let washiID: String?
+    let washiLength: Double?
+    let tearSeed: Int?
+    let drawingData: Data?
 
     init(
         id: UUID,
@@ -25,7 +32,14 @@ struct ScrapbookItemPayload: Codable, Sendable, Equatable {
         rotation: Double,
         zIndex: Int,
         loopEnabled: Bool = true,
-        maskData: Data? = nil
+        maskData: Data? = nil,
+        letterID: String? = nil,
+        text: String? = nil,
+        textColor: String? = nil,
+        washiID: String? = nil,
+        washiLength: Double? = nil,
+        tearSeed: Int? = nil,
+        drawingData: Data? = nil
     ) {
         self.id = id
         self.photoID = photoID
@@ -37,6 +51,13 @@ struct ScrapbookItemPayload: Codable, Sendable, Equatable {
         self.zIndex = zIndex
         self.loopEnabled = loopEnabled
         self.maskData = maskData
+        self.letterID = letterID
+        self.text = text
+        self.textColor = textColor
+        self.washiID = washiID
+        self.washiLength = washiLength
+        self.tearSeed = tearSeed
+        self.drawingData = drawingData
     }
 }
 
@@ -68,10 +89,13 @@ struct CollaboratorPresence: Codable, Sendable, Equatable, Identifiable {
 enum ScrapbookEventType: String, Codable, Sendable {
     case itemPlaced = "item_placed"
     case itemTransformed = "item_transformed"
+    case itemTextUpdated = "item_text_updated"
     case itemCut = "item_cut"
+    case itemCutUndone = "item_cut_undone"
     case itemRemoved = "item_removed"
     case pageBackground = "page_background"
     case drawingUpdated = "drawing_updated"
+    case stickerSheetReset = "sticker_sheet_reset"
     case pageAdded = "page_added"
     case pageDeleted = "page_deleted"
     case pageMoved = "page_moved"
@@ -88,10 +112,16 @@ struct ScrapbookEvent: Codable, Sendable, Equatable {
     let width: Double?
     let rotation: Double?
     let zIndex: Int?
+    let loopEnabled: Bool?
     let maskData: Data?
     let newPieces: [ScrapbookItemPayload]?
+    let restoredItem: ScrapbookItemPayload?
+    let removedPieceIDs: [UUID]?
     let background: String?
     let drawingData: Data?
+    let text: String?
+    let textColor: String?
+    let stickerSetID: String?
     let targetPageIndex: Int?
 
     init(
@@ -105,10 +135,16 @@ struct ScrapbookEvent: Codable, Sendable, Equatable {
         width: Double? = nil,
         rotation: Double? = nil,
         zIndex: Int? = nil,
+        loopEnabled: Bool? = nil,
         maskData: Data? = nil,
         newPieces: [ScrapbookItemPayload]? = nil,
+        restoredItem: ScrapbookItemPayload? = nil,
+        removedPieceIDs: [UUID]? = nil,
         background: String? = nil,
         drawingData: Data? = nil,
+        text: String? = nil,
+        textColor: String? = nil,
+        stickerSetID: String? = nil,
         targetPageIndex: Int? = nil
     ) {
         self.type = type
@@ -121,10 +157,16 @@ struct ScrapbookEvent: Codable, Sendable, Equatable {
         self.width = width
         self.rotation = rotation
         self.zIndex = zIndex
+        self.loopEnabled = loopEnabled
         self.maskData = maskData
         self.newPieces = newPieces
+        self.restoredItem = restoredItem
+        self.removedPieceIDs = removedPieceIDs
         self.background = background
         self.drawingData = drawingData
+        self.text = text
+        self.textColor = textColor
+        self.stickerSetID = stickerSetID
         self.targetPageIndex = targetPageIndex
     }
 }

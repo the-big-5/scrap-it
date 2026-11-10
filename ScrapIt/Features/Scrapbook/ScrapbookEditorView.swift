@@ -29,6 +29,7 @@ struct ScrapbookEditorView: View {
                     VStack(spacing: 8) {
                         pageArea
                             .frame(width: pageWidth, height: pageWidth * 4 / 3)
+                            .zIndex(1)
                         pageIndicator
                         Spacer(minLength: 0)
                     }
@@ -36,6 +37,7 @@ struct ScrapbookEditorView: View {
                     .padding(.top, 4)
                 }
             }
+            .zIndex(viewModel.draggedItemID != nil ? 2 : 0)
 
             ToolTray(
                 isOpen: viewModel.isTrayOpen,
@@ -47,6 +49,21 @@ struct ScrapbookEditorView: View {
                 subTray(for: tool)
             }
             .padding(.bottom, 4)
+            .zIndex(1)
+
+            if viewModel.draggedItemID != nil {
+                ScrapbookTrashCanView(isOpen: viewModel.isTrashTargeted)
+                    .onFrameChange(in: .global) { viewModel.trashDropFrame = $0 }
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, trashBottomPadding)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    .zIndex(3)
+                    .onDisappear {
+                        if viewModel.draggedItemID == nil {
+                            viewModel.trashDropFrame = .zero
+                        }
+                    }
+            }
 
             if viewModel.activeTool == .pencil && pencil.showsSizePanel {
                 // The size panel opens above the Pencil tray.
@@ -54,10 +71,13 @@ struct ScrapbookEditorView: View {
                     .padding(.leading, 14)
                     .padding(.bottom, 4 + TrayStyle.trayHeight * 2 - TrayStyle.overlap + 6)
                     .transition(.scale(scale: 0.6, anchor: .bottomLeading).combined(with: .opacity))
+                    .zIndex(1)
             }
 
             StickerDragLayer(controller: stickerController)
+                .zIndex(4)
             TrayDragLayer(controller: trayDrag)
+                .zIndex(4)
 
             if let message = viewModel.toastMessage {
                 Text(message)
@@ -69,6 +89,7 @@ struct ScrapbookEditorView: View {
                     .padding(.top, 60)
                     .transition(.opacity)
                     .allowsHitTesting(false)
+                    .zIndex(5)
             }
 
             if viewModel.textEditor != nil {
@@ -78,6 +99,7 @@ struct ScrapbookEditorView: View {
                     onDone: viewModel.commitTextEditor
                 )
                 .transition(.opacity)
+                .zIndex(6)
             }
         }
         // The text keyboard must not shrink the page (brief K6).
@@ -88,6 +110,9 @@ struct ScrapbookEditorView: View {
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: pencil.showsSizePanel)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isCutting)
         .animation(.easeInOut(duration: 0.2), value: viewModel.toastMessage)
+        .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
+        .sensoryFeedback(.impact(weight: .light), trigger: viewModel.isTrashTargeted) { _, isTargeted in isTargeted }
+        .sensoryFeedback(.impact(weight: .medium), trigger: viewModel.trashedItemCount)
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $viewModel.isBackgroundPickerPresented) {
             BackgroundPickerView(selection: viewModel.currentBackground, onSelect: viewModel.setBackground)
@@ -216,7 +241,9 @@ struct ScrapbookEditorView: View {
                 shouldPlay: viewModel.shouldPlay(_:isInteracting:),
                 actions: itemActions,
                 onSwipePage: viewModel.allowsPageSwipe ? { viewModel.swipePage(by: $0) } : nil,
-                activeDrawingID: viewModel.activeDrawingID
+                activeDrawingID: viewModel.activeDrawingID,
+                draggedItemID: viewModel.draggedItemID,
+                isTrashTargeted: viewModel.isTrashTargeted
             )
             .id(page.id)
             .transition(.opacity)
@@ -225,6 +252,7 @@ struct ScrapbookEditorView: View {
             }
             .onFrameChange(in: .global) { frame in
                 trayDrag.pageFrame = frame
+                viewModel.pageGlobalFrame = frame
             }
             .overlay {
                 GeometryReader { geometry in
@@ -249,12 +277,18 @@ struct ScrapbookEditorView: View {
                                            width: frame.width, rotation: frame.rotation)
                 },
                 onFinishMove: { viewModel.finishItemManipulation(itemID: $0) },
-                onCut: { viewModel.cut(along: $0, pageSize: $1) }
+                onCut: { viewModel.cut(along: $0, pageSize: $1) },
+                onDragMoved: { id, location in viewModel.updateItemDrag(itemID: id, pageLocation: location) },
+                onDropInTrash: { viewModel.endItemDrag(itemID: $0) },
+                onCancelDrag: { viewModel.cancelItemDrag() }
             )
             .overlay(alignment: .top) { hint(for: .scissors) }
             .transition(.opacity)
         } else if let drawingID = viewModel.activeDrawingID {
-            DrawingCanvasView(drawingData: viewModel.activeDrawingData, pageSize: size, controller: pencil)
+            DrawingCanvasView(drawingData: viewModel.activeDrawingData,
+                              pageSize: size,
+                              controller: pencil,
+                              remoteRevision: viewModel.remoteDrawingRevision)
                 .id(drawingID)
                 .overlay(alignment: .top) { hint(for: .pencil) }
         } else if let style = viewModel.washiStyleID.flatMap(WashiCatalog.style(withID:)) {
@@ -284,6 +318,14 @@ struct ScrapbookEditorView: View {
         }
     }
 
+    private var trashBottomPadding: CGFloat {
+        guard viewModel.isTrayOpen else { return 24 }
+        if viewModel.activeTool?.hasSubTray == true {
+            return TrayStyle.trayHeight * 2 - TrayStyle.overlap + 14
+        }
+        return TrayStyle.trayHeight + 16
+    }
+
     private var itemActions: ScrapbookItemActions {
         ScrapbookItemActions(
             select: viewModel.selectItem,
@@ -297,7 +339,10 @@ struct ScrapbookEditorView: View {
             remove: viewModel.removeItem,
             deselect: viewModel.tapEmptyPage,
             doubleTap: viewModel.doubleTapItem,
-            editText: viewModel.editText
+            editText: viewModel.editText,
+            dragChanged: { id, location in viewModel.updateItemDrag(itemID: id, pageLocation: location) },
+            endDrag: { viewModel.endItemDrag(itemID: $0) },
+            cancelDrag: { viewModel.cancelItemDrag(for: $0) }
         )
     }
 
@@ -337,7 +382,10 @@ struct ScrapbookEditorView: View {
                         openSetID: viewModel.isStickerSheetOpen ? viewModel.stickerSetID : nil,
                         onToggle: viewModel.toggleStickerSheet)
         case .photo:
-            PhotoTray(photos: viewModel.trayPhotos, aspectRatio: viewModel.aspectRatio(of:), controller: trayDrag) { id in
+            PhotoTray(photos: viewModel.trayPhotos,
+                      aspectRatio: viewModel.aspectRatio(of:),
+                      controller: trayDrag,
+                      emptyMessage: viewModel.emptyPhotoTrayMessage) { id in
                 viewModel.addPhoto(id, reduceMotion: reduceMotion)
             }
         case .washi:

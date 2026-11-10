@@ -115,7 +115,14 @@ extension ScrapbookItem {
             rotation: rotation,
             zIndex: zIndex,
             loopEnabled: loopEnabled,
-            maskData: maskData
+            maskData: maskData,
+            letterID: letterID,
+            text: text,
+            textColor: textColor,
+            washiID: washiID,
+            washiLength: washiLength,
+            tearSeed: tearSeed,
+            drawingData: drawingData
         )
     }
 
@@ -132,5 +139,12 @@ extension ScrapbookItem {
         )
         self.id = payload.id
         self.maskData = payload.maskData
+        self.letterID = payload.letterID
+        self.text = payload.text
+        self.textColor = payload.textColor
+        self.washiID = payload.washiID
+        self.washiLength = payload.washiLength
+        self.tearSeed = payload.tearSeed
+        self.drawingData = payload.drawingData
     }
 }
