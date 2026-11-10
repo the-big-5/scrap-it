@@ -22,9 +22,10 @@ Edge cases:
 3. Codes and links stay valid until the roll ends or the host deletes it
 4. Same iCloud as the host (same or another device): opening the link or entering the code goes straight into the room as the host; no error, no extra participant. Joining again never adds the same person twice
 5. Join Roll screen (change 019): "Turn on AirDrop to accept the invite" hint, then the code. The code field accepts letters / numbers only (uppercased, max 6); backspace, editing and paste work
+6. While joining (code or invite link), a full-screen Joining overlay shows a film canister pulling its film strip out and in, with status text by wait time; Cancel closes it (a late failure is ignored, a late success leaves the room again; nothing to leave when opened as the host) (change 024)
 Edge cases:
 - Fewer than 6 characters: "Enter all 6 characters of the code", no server call (change 019)
-- Code not found, roll ended, offline, iCloud problem: stay on Join Roll with a short message only; technical detail goes to the developer log, never on screen (change 019)
+- Code not found, roll ended, offline, iCloud problem: the Joining overlay closes and Join Roll shows a short message only (an invite link shows the room message); technical detail goes to the developer log, never on screen (change 019)
 - App not installed: the iCloud link shows Apple's iCloud web page pointing to the App Store
 
 ## F3: Roll (real-time shared capture session) [Locked]
@@ -38,8 +39,8 @@ Edge cases:
    - During capture, tapping the leading Back button returns to Workbench/Homepage while keeping the roll session active; re-entering resumes capture. Tapping the Info button presents the invite friend sheet with roll code (change 041). Exiting the camera view immediately resets orientation to portrait before navigating away (change 056). Tapping the FLIP button triggers an 8-blade mechanical iris diaphragm closure over the preview and slides dual metallic hatch covers over the zoom wheel with ratchet haptics, debouncing rapid taps and masking sensor reconfiguration freeze (change 061).
 8. One shared pool of shots; any person's photo uses one shot
 9. Roll ends when the shots run out OR the host ends it manually
-10. Photos are saved into a new shared scrapbook (others' photos become visible here). Everyone (host and participants) sees the Roll Reveal once (change 021): a closed envelope with the roll name and the number of photos on this phone → swipe across the top to tear it open → the photos scatter on a cutting mat (drag to move; "Tidy Up" ↔ "Scatter" switches to a grid by time) → tap a photo for the detail (Save to Photos, a Live Photo as Live Photo; Share; tap outside closes) → "Start Scrapbook" opens the scrapbook editor (change 013). The reveal cannot be opened again
-11. After End Roll the phone keeps fetching friends' photos every few seconds until it has all of the roll's shots, for up to 2 minutes; the reveal's count and photos update as they arrive. Anything still missing comes with the next launch (change 020)
+10. Photos are saved into a new shared scrapbook (others' photos become visible here). Everyone (host and participants) sees the Roll Reveal once (change 021): a closed envelope with the roll name and the number of photos on this phone ("Printing your photos…" while friends' photos arrive, the envelope bounces and the count rolls up; "Your photos are ready!" for 2.5 s when all are in, change 024) → swipe across the top to tear it open, once every photo is in or 10 s after the reveal opened (change 024) → the photos scatter on a cutting mat (drag to move; "Tidy Up" ↔ "Scatter" switches to a grid by time) → tap a photo for the detail (Save to Photos, a Live Photo as Live Photo; Share; tap outside closes) → "Start Scrapbook" opens the scrapbook editor (change 013). The reveal cannot be opened again
+11. After End Roll the phone keeps fetching friends' photos every few seconds until it has all of the roll's shots, for up to 2 minutes; the reveal's count and photos update as they arrive, also after the tear (they land on the mat). Anything still missing comes with the next launch (change 020)
 Edge cases:
 - Network lost mid-roll: photos queue locally and upload when the app runs online again (launch or reconnect, change 020)
 - Host disconnects: host role passes to the next participant
