@@ -1,5 +1,5 @@
 # 044: Personalized Profile Header and Edit Profile Screen
-Status: Approved
+Status: Done
 
 ## Why
 The current Profile screen uses a temporary `88` pt icon placeholder, displays only the user's Apple-provided name, and places a `Sign Out` button inline above the scrapbook grid. Users should be able to personalize their avatar photo, display name, and bio, view their Sign in with Apple email as read-only private information, and sign out from a dedicated Edit Profile screen (Figma `1300:36485` header and `1300:36781` Edit Profile), while keeping the wooden shelf UI and top-right share button deferred. In addition, updated profile photos should propagate alongside display names to Roll Lobby / Join Room avatars and Scrapbook collaborator presence headers.

@@ -41,6 +41,7 @@
 - Before TestFlight / App Store: deploy the CloudKit schema to Production; after that, model changes can only add fields
 - `.xcodeproj` exception (change 008, approved by the user): iPhone supported orientations include Landscape Left / Right; nothing else changed
 - Live Photo movies are stored in `ScrapPhoto.livePhotoMovieData`, uploaded inside the encrypted shot and played in the Scrapbook grid (change 012)
+- Shared profile thumbnails (change 044): `ProfileAvatarProcessor` downsamples picked avatars to `512` px JPEG (`0.8` quality) for `UserProfile.avatarData`, `200` px (`0.7`) for CloudKit `RollParticipant["avatarData"]` in `Roll-<code>` zones (synced on create/join/re-enter), and `80` px (`0.55`) for `CollaboratorPresence.avatarData` in Supabase Realtime.
 - "iPhone Duo" device target: [Open] (not an iOS device, clarify)
 
 ## Code structure [Locked]
@@ -61,13 +62,13 @@ ScrapIt/
 │   │                   RollRealtimeService (RollSlotRealtimeProviding, SupabaseRollSlotRealtimeService, NoopRollSlotRealtimeService), SupabaseConfig,
 │   │                   RollShotCrypto (AES-GCM shot payload), ScrapbookArchiveSync (restore),
 │   │                   CutGeometry, ScrapbookItemLayout, ScrapbookImageLoader, LiveMovieFileCache, LivePlaybackCoordinator, DeletedScrapbookList,
-│   │                   DigicamGrade, FilterSamplePhotos (+ FilterSampleRenderer)
+│   │                   DigicamGrade, FilterSamplePhotos (+ FilterSampleRenderer), ProfileAvatarProcessor
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle, CircleIconButton, LivePhotoPlayerView,
 │                       Scrapbook/ (ScrapbookPageView, ScrapbookItemView, PageBackgroundView, LoopingVideoView, ScrapbookDrawingImage, ViewFrameReader)
 └── Features/
     ├── Auth/           WelcomeSignInView, AuthViewModel
     ├── Home/           WorkbenchView, WorkbenchViewModel, WorkbenchLayout (desk asset frames, uniform scale)
-    ├── Profile/        ProfileView, ProfileViewModel
+    ├── Profile/        ProfileView, EditProfileView, ProfileViewModel, Components/ (ProfileAvatarView)
     ├── Roll/           CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, RollInviteShare, RollAvatarView, RollRoomHeader, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, DebugLastShotView)
     └── Scrapbook/      ScrapbookEditorView, ScrapbookViewModel, Components/ (ScissorsToolView, StickerPanel, StickerDragController, PencilCanvasView,
                         BackgroundPickerView, ScrapbookPhotoPickerView)
@@ -93,7 +94,7 @@ Rules:
 Stored with SwiftData. Only Profile syncs to the user's private CloudKit database; rolls, scrapbooks and photos are local, with their cloud copy in the room (CKShare) and the encrypted public shots (change 012).
 
 ### Profile [Locked]
-- name, avatar image
+- name, bio, email (optional, read-only from Sign in with Apple), hasCustomName, avatar image (`avatarData`)
 
 ### Scrapbook [Locked]
 - title, cover photo, created date
