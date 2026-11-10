@@ -2,7 +2,7 @@
 - Platform: iOS (ScrapIt.xcodeproj) [Locked]
 - Minimum iOS: 18 [Locked]
 - Devices: iPhone and iPad [Locked]
-- Orientation: for now every screen is portrait, except the Capture session which is landscape only (change 008, dual landscape rotation under orientation lock change 037, per-screen lock via `OrientationLock` in `Core/Services/` and `AppDelegate` in `App/`). Supporting both portrait and landscape on the other screens later: [Open]
+- Orientation: for now every screen is portrait, except the Capture session which is landscape only (change 008, dual landscape rotation under orientation lock change 037, per-screen lock via `OrientationLock` in `Core/Services/` and `AppDelegate` in `App/`). Exiting the Capture session immediately requests portrait orientation before navigation transitions (change 056). Supporting both portrait and landscape on the other screens later: [Open]
 - UI: SwiftUI [Locked]
 - Architecture: MVVM with @Observable [Locked]
 - Persistence: SwiftData [Locked]

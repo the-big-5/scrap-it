@@ -85,7 +85,15 @@ final class RollFlowViewModel {
     @ObservationIgnored private lazy var archiveSync = ScrapbookArchiveSync(modelContext: modelContext, roomService: roomService)
     @ObservationIgnored private var lobbyRefreshTask: Task<Void, Never>?
     @ObservationIgnored var lastSlotClaimTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var finalizeSessionTask: Task<Void, Never>?
     @ObservationIgnored private var roomChangeObserver: NSObjectProtocol?
+
+    deinit {
+        finalizeSessionTask?.cancel()
+        lobbyRefreshTask?.cancel()
+        shutterAnimationTask?.cancel()
+        lastSlotClaimTask?.cancel()
+    }
 
     /// How often the lobby re-reads the room when no push arrives.
     static let lobbyRefreshInterval: Duration = .seconds(4)
@@ -506,6 +514,7 @@ final class RollFlowViewModel {
 
     /// X: back to the Workbench. The roll keeps existing (reopening it is [Open]).
     func closeLobby() {
+        OrientationLock.resetToPortrait()
         lobbyDidDisappear()
         isInviteSheetPresented = false
         isShareSheetPresented = false
@@ -516,6 +525,7 @@ final class RollFlowViewModel {
 
     /// Back button on CaptureSessionView (change 041): returns to Homepage.
     func returnToHomepage() {
+        OrientationLock.resetToPortrait()
         isInviteSheetPresented = false
         isShareSheetPresented = false
         navigator?.popToRoot()
@@ -896,21 +906,27 @@ final class RollFlowViewModel {
     }
 
     func finalizeSessionAndOpenScrapbook() {
+        OrientationLock.resetToPortrait()
         if let session = activeSession {
             let cloud = self.cloudService
-            Task {
+            finalizeSessionTask?.cancel()
+            finalizeSessionTask = Task { [weak self] in
                 await cloud.publishSessionToCloudKit(session: session)
                 await cloud.uploadPendingPhotos(for: session)
-                _ = await self.syncScrapbookArchive(for: session)
+                _ = await self?.syncScrapbookArchive(for: session)
                 // Targeted sync polling over a window so friends' incoming shots are pulled automatically
                 for delay in [2, 3, 5] {
+                    guard !Task.isCancelled else { return }
                     try? await Task.sleep(for: .seconds(delay))
-                    guard !Task.isCancelled, session.modelContext != nil else { return }
+                    guard !Task.isCancelled, let self else { return }
                     _ = await self.syncScrapbookArchive(for: session)
                 }
             }
         } else {
-            Task { await syncScrapbookArchive() }
+            finalizeSessionTask?.cancel()
+            finalizeSessionTask = Task { [weak self] in
+                _ = await self?.syncScrapbookArchive()
+            }
         }
         cloudService.stopLiveSessionPolling()
         let realtimeService = self.realtimeService

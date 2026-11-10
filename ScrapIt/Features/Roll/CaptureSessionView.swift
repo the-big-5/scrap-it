@@ -79,7 +79,7 @@ struct CaptureSessionView: View {
             .onDisappear {
                 motionService.stop()
                 camera.setSimulatedLandscapeSide(.left, isPortrait: false, windowOrientation: .unknown)
-                OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: false))
+                OrientationLock.resetToPortrait()
                 flowViewModel.cameraDidDisappear()
             }
         }
@@ -117,6 +117,7 @@ struct CaptureSessionView: View {
         }
         .alert("Roll Finished", isPresented: $flowViewModel.showLastSlotRaceAlert) {
             Button("Open Scrapbook") {
+                OrientationLock.resetToPortrait()
                 flowViewModel.finalizeSessionAndOpenScrapbook()
             }
         } message: {
@@ -194,6 +195,7 @@ struct CaptureSessionView: View {
 
             // Back Button (Leading aligned with viewfinder: left: 64px, top: 19px)
             Button {
+                OrientationLock.resetToPortrait()
                 flowViewModel.returnToHomepage()
             } label: {
                 Circle()

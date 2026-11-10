@@ -68,7 +68,7 @@ Figma node 1187:9697 (change 019)
 
 ## Screen: Capture session [Locked]
 Figma nodes 1302:47935 (back camera) and 1300:33796 (front camera) (landscape design, change 041). Camera behavior from the camera POC (FilterCam), change 008.
-- Orientation: landscape only (supports both Landscape Left and Landscape Right dynamically even when system Portrait Orientation Lock is active; change 037); the other screens are portrait for now (see tech.md). Photos are landscape 4:3; preview = photo (same rotation and filter)
+- Orientation: landscape only (supports both Landscape Left and Landscape Right dynamically even when system Portrait Orientation Lock is active; change 037); the other screens are portrait for now (see tech.md). Photos are landscape 4:3; preview = photo (same rotation and filter). Exiting the Capture session immediately resets orientation lock to portrait before navigating away (change 056)
 - Camera-body UI (change 041):
   - Top plate: circular Back button on leading edge returning to Homepage, knurled zoom wheel with "ZOOM" factor label (back camera only; omitted on front camera), circular Info button on trailing edge presenting the invite friend / roll code sheet
   - Viewfinder screen: live preview with real-time film filter, participant presence count badge (`person.2.fill` + count, plus queued count if offline) positioned at top-left of the preview HUD; grid overlay and button removed; host "END ROLL" button and debug actions preserved

@@ -397,15 +397,28 @@ struct RollRoomTests {
 
     // MARK: - Camera UI Update (Change 041)
 
-    @Test func returnToHomepagePopsToRoot() {
+    @Test func returnToHomepagePopsToRootAndResetsOrientation() {
         let vm = makeViewModel()
+        OrientationLock.set(.landscape)
         navigator.path = [.captureSession]
         vm.isInviteSheetPresented = true
 
         vm.returnToHomepage()
 
+        #expect(OrientationLock.mask == .portrait)
         #expect(navigator.path.isEmpty)
         #expect(!vm.isInviteSheetPresented)
+    }
+
+    @Test func closeLobbyResetsOrientationLockToPortrait() {
+        let vm = makeViewModel()
+        OrientationLock.set(.landscape)
+        navigator.path = [.createRollLobby]
+
+        vm.closeLobby()
+
+        #expect(OrientationLock.mask == .portrait)
+        #expect(navigator.path.isEmpty)
     }
 
     // MARK: - Join code entry and messages (change 019)
