@@ -22,28 +22,24 @@ struct ShotsLeftDialView: View {
         safeShots % 10
     }
 
-    var aboveShots: Int? {
-        safeShots < totalShots ? safeShots + 1 : nil
-    }
-
-    var belowShots: Int {
-        max(0, safeShots - 1)
+    var maxTens: Int {
+        max(0, totalShots / 10)
     }
 
     var aboveTensDigit: Int? {
-        aboveShots.map { ($0 / 10) % 10 }
-    }
-
-    var aboveOnesDigit: Int? {
-        aboveShots.map { $0 % 10 }
+        tensDigit < maxTens ? tensDigit + 1 : nil
     }
 
     var belowTensDigit: Int {
-        (belowShots / 10) % 10
+        max(0, tensDigit - 1)
+    }
+
+    var aboveOnesDigit: Int? {
+        safeShots < totalShots ? (onesDigit + 1) % 10 : nil
     }
 
     var belowOnesDigit: Int {
-        belowShots % 10
+        safeShots > 0 ? (onesDigit - 1 + 10) % 10 : 0
     }
 
     var isTensBlankAbove: Bool {
@@ -261,7 +257,7 @@ private struct OdometerDrumWheel: View, Animatable {
 
 #Preview {
     struct PreviewWrapper: View {
-        @State private var shots = 24
+        @State private var shots = 23
         private let totalShots = 24
 
         var body: some View {
