@@ -321,6 +321,28 @@ struct CameraBehaviorTests {
         #expect(UIImage(named: "CameraDialInner") != nil)
     }
 
+    @Test func shotsLeftDialViewDigitsAndClamping() {
+        let dial36 = ShotsLeftDialView(shotsRemaining: 36)
+        #expect(dial36.safeShots == 36)
+        #expect(dial36.tensDigit == 3)
+        #expect(dial36.onesDigit == 6)
+
+        let dial9 = ShotsLeftDialView(shotsRemaining: 9)
+        #expect(dial9.safeShots == 9)
+        #expect(dial9.tensDigit == 0)
+        #expect(dial9.onesDigit == 9)
+
+        let dial0 = ShotsLeftDialView(shotsRemaining: 0)
+        #expect(dial0.safeShots == 0)
+        #expect(dial0.tensDigit == 0)
+        #expect(dial0.onesDigit == 0)
+
+        let dialNegative = ShotsLeftDialView(shotsRemaining: -5)
+        #expect(dialNegative.safeShots == 0)
+        #expect(dialNegative.tensDigit == 0)
+        #expect(dialNegative.onesDigit == 0)
+    }
+
     // MARK: - Filter pipeline
 
     private static func pixel(of image: CIImage) -> (r: Int, g: Int, b: Int) {
