@@ -6,18 +6,23 @@ enum ScrapbookItemLayout {
     /// White photo frame, relative to the photo width.
     static let frameInsetRatio: CGFloat = 0.035
 
-    /// Width / height: the sticker's, else the photo's (`photoAspect`), else square.
+    /// Width / height: the sticker's, letter's or washi piece's, a drawing layer's page ratio, else the photo's
+    /// (`photoAspect`), else square.
     static func aspectRatio(of item: ScrapbookItem, photoAspect: CGFloat?) -> CGFloat {
         if let sticker = item.sticker { return sticker.aspectRatio }
+        if let letter = item.letterID.flatMap(LetterCatalog.letter(withID:)) { return letter.aspectRatio }
+        if item.washiID != nil { return max(item.washiLength ?? item.width, 0.01) / WashiCatalog.tapeWidth }
+        if item.drawingData != nil { return 3 / 4 }
         guard let photoAspect, photoAspect > 0 else { return 1 }
         return photoAspect
     }
 
-    /// The item's box on the page: photo plus white frame, or the sticker as is.
+    /// The item's box on the page: photo plus white frame, or other items as they are.
     static func boxSize(of item: ScrapbookItem, photoAspect: CGFloat?, pageSize: CGSize) -> CGSize {
-        let width = min(max(item.width, ScrapbookItem.minWidth), ScrapbookItem.maxWidth) * pageSize.width
+        let range = item.widthRange
+        let width = min(max(item.width, range.lowerBound), range.upperBound) * pageSize.width
         let height = width / aspectRatio(of: item, photoAspect: photoAspect)
-        guard item.stickerID == nil else { return CGSize(width: width, height: height) }
+        guard item.kind == .photo else { return CGSize(width: width, height: height) }
         let inset = width * frameInsetRatio
         return CGSize(width: width + 2 * inset, height: height + 2 * inset)
     }

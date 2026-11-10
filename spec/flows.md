@@ -52,12 +52,12 @@ Edge cases:
 Empty state: short text that scrapbooks appear after a roll ends [Draft]. Loading state: [Open]
 
 ## F5: Scrapbook creation [Draft]
-1. When a roll ends, a new scrapbook is created; after the Roll Reveal (F3 step 10, change 021) "Start Scrapbook" opens it in the editor (change 013) with one empty page; the user chooses which of the roll's photos (Live Photos included) go on the pages
-2. Friends' photos are added to the roll's photo picker as they arrive from the cloud (when the roll ends and on later launches)
-3. Editor (temporary, ported from the camera POC; may change with the design): multiple 3:4 pages (add, delete, move), photos moved / resized / rotated, Live Photos loop on the page, page background, stickers, scissors, pencil (PencilKit). No markup (PaperKit needs iOS 26)
+1. When a roll ends, a new scrapbook is created; after the Roll Reveal (F3 step 10, change 021) "Start Scrapbook" opens it in the editor (change 013) with one empty page; the user adds the roll's photos (Live Photos included) from the Photos tray (change 022)
+2. Friends' photos are added to the Photos tray as they arrive from the cloud (when the roll ends and on later launches)
+3. Editor (ported from the camera POC; may change with the design): pages are always editable, tools in the leather tool tray (change 022): scissors, pencil (PencilKit drawing layers), stickers (Travel, Fun), photos, washi tape, cut-out letters, plain text. Multiple 3:4 pages (add, delete, move, swipe on an empty area), items moved / resized / rotated (pinch or the corner handle), double tap a photo for full screen, Live Photos loop on the page without stopping other apps' music (change 023), page background. No markup (PaperKit needs iOS 26)
 4. View mode (swipe pages, no tools): later with the design flow [Open]
 5. Only ended rolls create scrapbooks; no empty scrapbook, no renaming
-Layouts (pages, positions, cuts, drawings) stay on this device: not restored on a new phone, not shared with roll friends. Collaboration rules and syncing layouts: [Open]
+Layouts (pages, positions, cuts, drawings) are stored on this device: not restored on a new phone. Friends who have the same scrapbook open see changes live (change 042; letters, text, washi, drawings and Fun stickers not yet, change 022); changes made while a friend is away don't reach them later. Storing layouts in the cloud and collaboration rules: [Open]
 Collaboration rules: [Open]
 
 ## F6: Social discovery [Open]

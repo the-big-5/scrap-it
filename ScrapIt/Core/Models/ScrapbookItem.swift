@@ -2,8 +2,9 @@ import CoreGraphics
 import Foundation
 import SwiftData
 
-/// A photo or sticker on a page (change 013). Position and width are normalized (0–1) to the page;
-/// the height follows the photo's / sticker's aspect ratio.
+/// An item on a page (change 013): photo, sticker, cut-out letter, text, washi tape or drawing layer (change 022).
+/// The kind comes from the filled field (`kind`). Position and width are normalized (0–1) to the page;
+/// the height follows the content's aspect ratio.
 @Model
 final class ScrapbookItem {
     static let minWidth = 0.15
@@ -24,6 +25,21 @@ final class ScrapbookItem {
     var loopEnabled: Bool = true
     /// Scissors cut shape: JSON `[[x, y], …]` normalized to the item's box (photo + white frame). `nil` = whole photo.
     var maskData: Data?
+    /// `LetterCatalog` id, e.g. `letter.A` (change 022).
+    var letterID: String?
+    /// Plain text. For text, `width` is the font size relative to the page width (change 022).
+    var text: String?
+    /// `TextItemColor` key.
+    var textColor: String?
+    /// `WashiCatalog` id (change 022).
+    var washiID: String?
+    /// Tape length when torn, relative to the page width. With the tape width it sets the item's ratio.
+    var washiLength: Double?
+    /// Seed of the jagged ends of the tape.
+    var tearSeed: Int?
+    /// Drawing layer (change 022): `PKDrawing.dataRepresentation()` in `ScrapbookPage.canvasSize` points;
+    /// empty data = a layer without strokes yet. The layer always covers the whole page.
+    @Attribute(.externalStorage) var drawingData: Data?
     var page: ScrapbookPage?
 
     init(
@@ -46,6 +62,26 @@ final class ScrapbookItem {
         self.loopEnabled = loopEnabled
     }
 
+    var kind: ScrapbookItemKind {
+        if drawingData != nil { return .drawing }
+        if stickerID != nil { return .sticker }
+        if letterID != nil { return .letter }
+        if text != nil { return .text }
+        if washiID != nil { return .washi }
+        return .photo
+    }
+
+    /// `width` limits per kind: letters and washi go much smaller / longer than photos.
+    var widthRange: ClosedRange<Double> {
+        switch kind {
+        case .photo, .sticker: Self.minWidth...Self.maxWidth
+        case .letter: 0.04...0.8
+        case .text: 0.03...0.3
+        case .washi: 0.05...1.6
+        case .drawing: 1...1
+        }
+    }
+
     var sticker: StickerDefinition? {
         stickerID.flatMap { StickerCatalog.sticker(withID: $0)?.sticker }
     }
@@ -61,6 +97,10 @@ final class ScrapbookItem {
             maskData = newValue.flatMap { try? JSONEncoder().encode($0.map { [Double($0.x), Double($0.y)] }) }
         }
     }
+}
+
+enum ScrapbookItemKind {
+    case photo, sticker, letter, text, washi, drawing
 }
 
 extension ScrapbookItem {

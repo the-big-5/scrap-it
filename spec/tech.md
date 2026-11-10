@@ -12,7 +12,9 @@
 - Invites: share sheet with invite link [Locked]
 - Camera: AVFoundation custom camera (`CameraEngine`, ported from the camera POC): multi-lens virtual back camera, filtered live preview (Core Image + Metal), one filter pipeline for preview / photo / Live Photo movie (B&W: `photoEffectNoir`; 200 Color Print: Digicam look from the camera POC, change 016), `RotationCoordinator` rotation, iOS 18 Camera Control "Zoom" slider, mechanical shutter pressed animation and analog shutter haptic (`HapticService.playShutterClick`, change 040) [Locked]
 - Third-party libraries: `supabase-swift` (approved for Realtime slot count sync, change 011); only specific ones approved [Locked]
-- Scrapbook drawing: PencilKit (iOS 13+, system framework). Tool picker built with `PKToolPicker(toolItems:)` (iOS 18) so the reed pen (iOS 26) never shows; the drawing is stored in a fixed 600 × 800 space and zoomed to the page. PaperKit markup (iOS 26) not used (change 013)
+- Scrapbook drawing: PencilKit (iOS 13+, system framework). The Pencil tray picks the tools (no system tool picker, no reed pen; change 022); drawings are layer items stored in a fixed 600 × 800 space and zoomed to the page; only the layer being drawn is a `PKCanvasView`, the others are cached still images (light ink in dark mode). A page drawing from before 022 moves into one back layer when the page is opened. PaperKit markup (iOS 26) not used (change 013)
+- Scrapbook sync (change 042, 022): only photos, Travel stickers, moves, cuts, backgrounds and pages are broadcast with Supabase Realtime. Letters, text, washi, drawing layers and Fun stickers stay on this device, and `drawing_updated` is no longer sent. To do (Supabase side, teammate): extend `item_placed` / `item_transformed` / `item_removed` with `letterID`, `text`, `textColor`, `washiID`, `washiLength`, `tearSeed`, `drawingData` and the Fun sticker ids, and sync drawing layers per item. A `drawing_updated` from an older app version is still saved to the page and becomes another back layer the next time the page is opened [Open]
+- Live Photo loops (change 023): the audio session is set to `.ambient` before a loop plays, so other apps' music keeps playing
 - Deleted scrapbooks: their roll IDs are kept in `UserDefaults` (`DeletedScrapbookList`) so `ScrapbookArchiveSync` skips them on this device (change 013)
 - Data models: see Data models section below
 - Folder conventions / naming: see Code structure section below [Locked]
@@ -57,7 +59,7 @@ ScrapIt/
 │                   Navigation/ (AppRouter.swift, NavigationRoutes.swift), CloudKitShareHandling (share-accepting scene delegate, IncomingShareInbox)
 ├── Core/
 │   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus,
-│   │                   ScrapbookPage, ScrapbookItem, StickerSheet; PageBackground, StickerCatalog;
+│   │                   ScrapbookPage, ScrapbookItem, StickerSheet; PageBackground, StickerCatalog, LetterCatalog, WashiCatalog, TextItemColor;
 │   │                   camera logic: ZoomWheelModel, CameraButtonRules, LensSwitchingRule, RollCameraOrientation; AppBrand (app name constant)
 │   ├── Services/       CloudKitSessionService, CameraController, CameraEngine, FilmFilterPipeline, PreviewRenderer, LivePhotoMovieWriter,
 │   │                   Navigator, SessionStore, OrientationLock, CameraMotionService,
@@ -68,14 +70,15 @@ ScrapIt/
 │   │                   CutGeometry, ScrapbookItemLayout, ScrapbookImageLoader, LiveMovieFileCache, LivePlaybackCoordinator, DeletedScrapbookList,
 │   │                   DigicamGrade, FilterSamplePhotos (+ FilterSampleRenderer), ProfileAvatarProcessor
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle, CircleIconButton, LivePhotoPlayerView,
-│                       Scrapbook/ (ScrapbookPageView, ScrapbookItemView, PageBackgroundView, LoopingVideoView, ScrapbookDrawingImage, ViewFrameReader)
+│                       Scrapbook/ (ScrapbookPageView, ScrapbookItemView, PageBackgroundView, LoopingVideoView, ScrapbookDrawingImage, ViewFrameReader, WashiTapeView, TextItemAppearance)
 └── Features/
     ├── Auth/           WelcomeSignInView, AuthViewModel
     ├── Home/           WorkbenchView, WorkbenchViewModel, WorkbenchLayout (desk asset frames, uniform scale)
     ├── Profile/        ProfileView, EditProfileView, ProfileViewModel, Components/ (ProfileAvatarView)
     ├── Roll/           CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, RollInviteShare, RollAvatarView, RollRoomHeader, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, DebugLastShotView)
-    └── Scrapbook/      ScrapbookEditorView, ScrapbookViewModel, Components/ (ScissorsToolView, StickerPanel, StickerDragController, PencilCanvasView,
-                        BackgroundPickerView, ScrapbookPhotoPickerView)
+    └── Scrapbook/      ScrapbookEditorView, ScrapbookViewModel, Components/ (ScissorsToolView, StickerDragController, StickerSheetOverlay, BackgroundPickerView,
+                        TrayStyle, ToolTray, TrayScroll, ScrollPanProbe, SubTrays, TrayDragController, PencilController, PencilTray, DrawingCanvasView,
+                        WashiPullOverlay, TextItemEditor, ScrapbookPhotoViewer)
 ```
 
 Rules:
@@ -104,13 +107,13 @@ Stored with SwiftData. Only Profile syncs to the user's private CloudKit databas
 - title, cover photo, created date
 - photos (list; the caption field stays in the model but is not shown since change 013)
 - members: all members are equal co-owners (no single owner)
-- pages and sticker sheets (change 013, this device only)
+- pages and sticker sheets (change 013, this device only); tools whose hint was already shown (change 022)
 
 ### ScrapbookPage (change 013) [Draft]
-- order, background, PencilKit drawing, items. Max 20 items
+- order, background, items. Max 40 items (change 022). The old page drawing field is only read to move it into a layer
 
 ### ScrapbookItem (change 013) [Draft]
-- photo id or sticker id, center / width (normalized to the page), rotation, z-order, Live motion on / off, scissors cut shape
+- photo id, sticker id, letter id, text + text color, washi id + length + tear seed, or drawing data (change 022; the kind comes from the filled field); center / width (normalized to the page, limits per kind), rotation, z-order, Live motion on / off, scissors cut shape
 
 ### StickerSheet (change 013) [Draft]
 - sticker set id, used sticker ids, created date

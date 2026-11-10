@@ -5,20 +5,22 @@ import SwiftData
 /// One 3:4 page of a scrapbook (change 013, ported from the camera POC). Local store only.
 @Model
 final class ScrapbookPage {
-    static let maxItems = 20
+    /// Letters and washi pieces use up the slots quickly (change 022).
+    static let maxItems = 40
 
     var id: UUID = UUID()
     var order: Int = 0
     /// `PageBackground.rawValue`.
     var background: String = PageBackground.cream.rawValue
-    /// PencilKit drawing (`PKDrawing.dataRepresentation()`) in `ScrapbookPage.canvasSize` points.
+    /// PencilKit drawing (`PKDrawing.dataRepresentation()`) in `ScrapbookPage.canvasSize` points. Since change 022
+    /// drawings are layer items; the editor moves this into a back layer when the page is opened.
     @Attribute(.externalStorage) var drawingData: Data?
     @Relationship(deleteRule: .cascade, inverse: \ScrapbookItem.page)
     var items: [ScrapbookItem]? = []
     var scrapbook: Scrapbook?
 
-    /// Fixed coordinate space for the drawing, scaled to the page's size on screen.
-    static let canvasSize = CGSize(width: 600, height: 800)
+    /// Fixed coordinate space for drawings, scaled to the page's size on screen.
+    nonisolated static let canvasSize = CGSize(width: 600, height: 800)
 
     init(order: Int, background: PageBackground = .cream) {
         self.order = order

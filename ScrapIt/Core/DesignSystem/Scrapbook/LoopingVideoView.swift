@@ -54,6 +54,8 @@ final class LoopingPlayerUIView: UIView {
         }
         stop()
 
+        // Muted loops must not stop other apps' music (change 023): `.ambient` mixes with them.
+        try? AVAudioSession.sharedInstance().setCategory(.ambient)
         let player = AVQueuePlayer()
         player.isMuted = true
         player.preventsDisplaySleepDuringVideoPlayback = false
