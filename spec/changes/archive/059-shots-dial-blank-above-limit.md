@@ -10,7 +10,7 @@ ui.md (Screen: Camera capture session)
 ## Changes
 - MODIFIED `ScrapIt/Features/Roll/Components/ShotsLeftDialView.swift`:
   - Accept `totalShots: Int` alongside `shotsRemaining: Int` so the dial knows the roll capacity.
-  - In separate tumbler digit wheels, blank the slot above the active digit when `shotsRemaining >= totalShots`.
+  - In separate tumbler digit wheels, blank the slot above the active digit when at or above capacity, and align adjacent vertical slots to the physical cylinder sequence (tens wheel displays blank above max tens and preceding digit below, e.g. 1 below 2).
   - When `shotsRemaining <= 0`, keep showing zero for each digit.
 - MODIFIED `ScrapIt/Features/Roll/CaptureSessionView.swift`:
   - Pass `totalShots` (`flowViewModel.activeSession?.rollSize ?? 36`) to `ShotsLeftDialView`.
