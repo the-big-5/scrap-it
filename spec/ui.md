@@ -11,6 +11,17 @@ Figma node 676:3703
 - Message above the button [Draft]: error "Couldn't sign in. Please try again."; offline "You're offline. Connect to the internet to sign in." (offline also disables the button)
 - Logo is still a placeholder box [Open]
 
+## Screen: Onboarding Slides [Locked]
+Figma nodes 1248:21648 (OB1), 1249:22041 (OB2), 1255:22152 (OB3); change 053
+- Presented after signing in from Welcome before navigating to Home.
+- 3-slide horizontal paging view with gesture swiping and primary offset pill button progression.
+- Background: Kraft light active (`#F7F2EB`).
+- Slide 1 (OB1): disposable camera and film collage illustration, headline "A film camera experience. Shared with friends.", body "Start a shared roll, take turns capturing your moment, and make every shot count.", button "Continue".
+- Slide 2 (OB2): scrapbook notebook, scissors, and photos collage illustration, headline "Turn your memories into scrapbook.", body "Reveal your photos when the roll is complete, then create and decorate a scrapbook together.", button "Continue".
+- Slide 3 (OB3): bookshelf scrapbooks and stars collage illustration, headline "Make memories you can revisit.", body "Keep your completed scrapbooks on your bookshelf and revisit the moments you made together.", button "Lets Try It" (transitions to Home).
+- 3-dot page indicator above button (8pt circles, 8pt spacing; active dot ink `#2A241F`, inactive dot camera gray `#D2D0CB`).
+- Large Primary button (`DSColor.Paper.light` pill with 1.5pt ink border, 7pt black shadow).
+
 ## Screen: Home [Locked]
 Figma node 853:1703 (Idle) & 1062:3371 (CameraClick)
 - Overhead desk workbench flat-lay: wood desk, green cutting mat with measurement numbers and ticks, red toolbox, blue book, spiral "TUTORIAL" book, film canisters, ruler, crumpled paper, stationery.
@@ -18,7 +29,7 @@ Figma node 853:1703 (Idle) & 1062:3371 (CameraClick)
 - Interactive disposable camera resting at -14.77° on the cutting mat (Figma position).
 - Camera tap interaction: camera rotates to 0.77° and centers with spring animation; the whole desk blurs as one page (flattened, then blurred) and dims; "Create Roll" and "Join a Roll" text buttons spring up from bottom with solid 7pt offset drop shadows. Tapping the blurred background or the round "<" close button at top left (Figma "Toolbar - Top") dismisses. Tab bar hidden while active.
 - Tutorial book: the book image is the button (open stub for tutorial flow).
-- Floating 3-tab navigation bar: Home (house.fill), Explore (magnifyingglass), Profile (person.fill). Tap a tab, or drag along the bar: the selection pill follows the finger and snaps to the nearest tab on release, with a selection haptic.
+- Floating 2-tab navigation bar: Home (plus.circle.fill), Profile (books.vertical.fill). Tap a tab, or drag along the bar: the selection pill follows the finger and snaps to the nearest tab on release, with a selection haptic.
 
 ## Screen: Camera Roll (Create / Join) [Locked]
 Integrated directly into the Workbench active popup state (Figma node 1062:3371).
@@ -68,12 +79,12 @@ Figma node 1187:9697 (change 019)
 
 ## Screen: Capture session [Locked]
 Figma nodes 1302:47935 (back camera) and 1300:33796 (front camera) (landscape design, change 041). Camera behavior from the camera POC (FilterCam), change 008.
-- Orientation: landscape only (supports both Landscape Left and Landscape Right dynamically even when system Portrait Orientation Lock is active; change 037); the other screens are portrait for now (see tech.md). Photos are landscape 4:3; preview = photo (same rotation and filter)
+- Orientation: landscape camera body UI (supports both Landscape Left and Landscape Right dynamically even when system Portrait Orientation Lock is active; change 037). When held upright in portrait, captured photos are saved upright in portrait, and viewfinder HUD elements dynamically rotate upright on their own center axis (change 057): participant count badge rotates upright at screen top-right (from left-side landscape) or bottom-left (from right-side landscape); host "END ROLL" and debug buttons rotate upright at screen bottom-left (from left-side landscape) or top-right (from right-side landscape). Preview stays filled in landscape; body controls do not rotate. Exiting the Capture session immediately resets orientation lock to portrait before navigating away (change 056).
 - Camera-body UI (change 041):
-  - Top plate: circular Back button on leading edge returning to Homepage, knurled zoom wheel with "ZOOM" factor label (back camera only; omitted on front camera), circular Info button on trailing edge presenting the invite friend / roll code sheet
-  - Viewfinder screen: live preview with real-time film filter, participant presence count badge (`person.2.fill` + count, plus queued count if offline) positioned at top-left of the preview HUD; grid overlay and button removed; host "END ROLL" button and debug actions preserved
-  - Bottom controls shelf: Flash toggle (Off / On / Auto), LIVE toggle, and FLIP camera button equally spaced across the bottom shelf under the viewfinder
-  - Lower right deck: circular analog shots-left dial (rotating mechanical drum displaying remaining count) beside the recessed metallic shutter button with mechanical pressed animation and analog shutter haptic (change 040)
+  - Top plate: circular Back button on leading edge returning to Homepage, knurled zoom wheel with "ZOOM" factor label (centered at x = 585, back camera only; concealed by sliding dual metallic hatch doors with 14pt open margins on front camera, change 061), circular Info button on trailing edge presenting the invite friend / roll code sheet
+  - Viewfinder screen: live preview with real-time film filter, participant presence count badge (`person.2.fill` + count, plus queued count if offline) positioned at top-left of the preview HUD; mechanical iris diaphragm with 8 aperture blades and ratchet haptics constricting to mask camera switch latency (change 061); grid overlay and button removed; host "END ROLL" button and debug actions preserved
+  - Bottom controls shelf: Flash toggle (Off / On / Auto), LIVE toggle, and FLIP camera button (debounced and dimmed during switch transition, change 061) equally spaced across the bottom shelf under the viewfinder
+  - Lower right deck: circular analog shots-left dial (mechanical odometer drum with independent scrolling digit tumblers rolling upward on decrement, light settling haptic, and blank slot above roll capacity; changes 041, 055, 059) beside the recessed metallic shutter button with mechanical pressed animation and analog shutter haptic (change 040)
 - Live preview shows the roll's filter in real time (Cinematic 400 B&W = Noir, 200 Color Print = Digicam, change 016); no filter switching on this screen
 - Knurled zoom wheel (172×44, look from 007):
   - Back camera range: 0.5× (phones with ultra wide) or 1× up to 4× (or the device maximum if lower), in 0.1 steps

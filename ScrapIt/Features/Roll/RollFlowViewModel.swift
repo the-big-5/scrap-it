@@ -88,7 +88,15 @@ final class RollFlowViewModel {
     /// Change 020: a shot uploads only when its slot claim is confirmed and its Live Photo movie is saved.
     @ObservationIgnored private var shotsAwaitingClaim: Set<UUID> = []
     @ObservationIgnored private var shotsAwaitingMovie: Set<UUID> = []
+    @ObservationIgnored private(set) var finalizeSessionTask: Task<Void, Never>?
     @ObservationIgnored private var roomChangeObserver: NSObjectProtocol?
+
+    deinit {
+        finalizeSessionTask?.cancel()
+        lobbyRefreshTask?.cancel()
+        shutterAnimationTask?.cancel()
+        lastSlotClaimTask?.cancel()
+    }
 
     /// How often the lobby re-reads the room when no push arrives.
     static let lobbyRefreshInterval: Duration = .seconds(4)
@@ -509,6 +517,7 @@ final class RollFlowViewModel {
 
     /// X: back to the Workbench. The roll keeps existing (reopening it is [Open]).
     func closeLobby() {
+        OrientationLock.resetToPortrait()
         lobbyDidDisappear()
         isInviteSheetPresented = false
         isShareSheetPresented = false
@@ -519,6 +528,7 @@ final class RollFlowViewModel {
 
     /// Back button on CaptureSessionView (change 041): returns to Homepage.
     func returnToHomepage() {
+        OrientationLock.resetToPortrait()
         isInviteSheetPresented = false
         isShareSheetPresented = false
         navigator?.popToRoot()
@@ -948,11 +958,14 @@ final class RollFlowViewModel {
     }
 
     func finalizeSessionAndOpenScrapbook() {
+        OrientationLock.resetToPortrait()
         if let session = activeSession {
             let cloud = self.cloudService
             let notReady = shotsAwaitingClaim.union(shotsAwaitingMovie)
             let isCloudRoom = session.ckRecordName != nil
-            Task {
+            finalizeSessionTask?.cancel()
+            // Holds the ViewModel on purpose: the sync keeps running after the roll screens close (change 020).
+            finalizeSessionTask = Task {
                 guard session.modelContext != nil else { return }
                 await cloud.publishSessionToCloudKit(session: session)
                 await cloud.uploadPendingPhotos(for: session, excluding: notReady)
@@ -969,7 +982,10 @@ final class RollFlowViewModel {
                 }
             }
         } else {
-            Task { await syncScrapbookArchive() }
+            finalizeSessionTask?.cancel()
+            finalizeSessionTask = Task { [weak self] in
+                _ = await self?.syncScrapbookArchive()
+            }
         }
         cloudService.stopLiveSessionPolling()
         let realtimeService = self.realtimeService

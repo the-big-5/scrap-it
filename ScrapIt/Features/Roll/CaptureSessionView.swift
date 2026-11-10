@@ -8,6 +8,7 @@ struct CaptureSessionView: View {
     @State private var showsDebugLastShot = false
     #endif
     @State private var simulatedLandscapeSide: RollCameraOrientation.LandscapeSide = .left
+    @State private var deviceOrientation: RollCameraOrientation.DeviceOrientation = .landscapeLeft
     @State private var motionService = CameraMotionService()
 
     private var camera: CameraController {
@@ -51,7 +52,7 @@ struct CaptureSessionView: View {
                 Color(red: 42 / 255, green: 36 / 255, blue: 31 / 255)
                     .ignoresSafeArea()
 
-                cameraCanvas
+                cameraCanvas(isPortrait: isPortrait)
                     .frame(width: canvasWidth, height: canvasHeight)
                     .scaleEffect(scale)
                     .rotationEffect(.degrees(rotationDegrees))
@@ -59,27 +60,56 @@ struct CaptureSessionView: View {
             }
             .ignoresSafeArea()
             .onChange(of: isPortrait) { _, newIsPortrait in
-                camera.setSimulatedLandscapeSide(simulatedLandscapeSide, isPortrait: newIsPortrait, windowOrientation: windowOrientation)
+                camera.setSimulatedLandscapeSide(
+                    simulatedLandscapeSide,
+                    isPortrait: newIsPortrait,
+                    windowOrientation: windowOrientation,
+                    deviceOrientation: deviceOrientation
+                )
             }
             .onChange(of: simulatedLandscapeSide) { _, newSide in
-                camera.setSimulatedLandscapeSide(newSide, isPortrait: isPortrait, windowOrientation: windowOrientation)
+                camera.setSimulatedLandscapeSide(
+                    newSide,
+                    isPortrait: isPortrait,
+                    windowOrientation: windowOrientation,
+                    deviceOrientation: deviceOrientation
+                )
+            }
+            .onChange(of: deviceOrientation) { _, newOrientation in
+                camera.setSimulatedLandscapeSide(
+                    simulatedLandscapeSide,
+                    isPortrait: isPortrait,
+                    windowOrientation: windowOrientation,
+                    deviceOrientation: newOrientation
+                )
             }
             .onAppear {
-                motionService.start { newSide in
-                    if newSide != simulatedLandscapeSide {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            simulatedLandscapeSide = newSide
+                motionService.start { newOrientation in
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        deviceOrientation = newOrientation
+                        if let side = newOrientation.landscapeSide, side != simulatedLandscapeSide {
+                            simulatedLandscapeSide = side
                         }
                     }
                 }
-                camera.setSimulatedLandscapeSide(simulatedLandscapeSide, isPortrait: isPortrait, windowOrientation: windowOrientation)
+                camera.setSimulatedLandscapeSide(
+                    simulatedLandscapeSide,
+                    isPortrait: isPortrait,
+                    windowOrientation: windowOrientation,
+                    deviceOrientation: deviceOrientation
+                )
                 OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: true))
                 flowViewModel.cameraDidAppear()
             }
             .onDisappear {
                 motionService.stop()
-                camera.setSimulatedLandscapeSide(.left, isPortrait: false, windowOrientation: .unknown)
-                OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: false))
+                camera.setSimulatedLandscapeSide(
+                    .left,
+                    isPortrait: false,
+                    windowOrientation: .unknown,
+                    deviceOrientation: .landscapeLeft
+                )
+                OrientationLock.resetToPortrait()
                 flowViewModel.cameraDidDisappear()
             }
         }
@@ -117,6 +147,7 @@ struct CaptureSessionView: View {
         }
         .alert("Roll Finished", isPresented: $flowViewModel.showLastSlotRaceAlert) {
             Button("Open Scrapbook") {
+                OrientationLock.resetToPortrait()
                 flowViewModel.finalizeSessionAndOpenScrapbook()
             }
         } message: {
@@ -129,7 +160,7 @@ struct CaptureSessionView: View {
     /// Leading margin offset for viewfinder and controls to clear the Dynamic Island in landscape.
     private let viewfinderLeadingOffset: CGFloat = 64
 
-    private var cameraCanvas: some View {
+    private func cameraCanvas(isPortrait: Bool) -> some View {
         ZStack(alignment: .topLeading) {
             // 1. Textured Camera Body Shape from Figma (1302:47937)
             Image("CameraBodyShape")
@@ -138,7 +169,7 @@ struct CaptureSessionView: View {
                 .position(x: 874 / 2, y: 402 / 2)
 
             // 2. Screen Bezel & Live Preview (1302:47969)
-            screenBezelView
+            screenBezelView(isPortraitWindow: isPortrait)
                 .frame(width: 487, height: 251)
                 .position(x: viewfinderLeadingOffset + 487 / 2, y: 97 + 251 / 2)
 
@@ -153,7 +184,10 @@ struct CaptureSessionView: View {
                 .position(x: 567 + 107 / 2, y: 164 + 107 / 2)
 
             // 5. Circular Analog Shots-Left Dial (1302:47951)
-            ShotsLeftDialView(shotsRemaining: flowViewModel.shotsRemaining)
+            ShotsLeftDialView(
+                shotsRemaining: flowViewModel.shotsRemaining,
+                totalShots: flowViewModel.activeSession?.rollSize ?? 36
+            )
                 .frame(width: 83, height: 83)
                 .position(x: 697 + 83 / 2, y: 271 + 83 / 2)
 
@@ -194,6 +228,7 @@ struct CaptureSessionView: View {
 
             // Back Button (Leading aligned with viewfinder: left: 64px, top: 19px)
             Button {
+                OrientationLock.resetToPortrait()
                 flowViewModel.returnToHomepage()
             } label: {
                 Circle()
@@ -211,25 +246,28 @@ struct CaptureSessionView: View {
             .accessibilityLabel("Return to Homepage")
             .position(x: viewfinderLeadingOffset + 22, y: 19 + 22)
 
-            // Zoom Control (Back camera only: left: 537px, top: 0px, width: 172px, height: 83px, Figma 1302:47985)
-            if !camera.isUsingFrontCamera {
-                VStack(spacing: 4) {
-                    Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(0.88)
-                        .foregroundStyle(Color(red: 185 / 255, green: 181 / 255, blue: 173 / 255))
+            // Zoom Control (Back camera only: centered at x: 585px, width: 172px, height: 83px)
+            VStack(spacing: 4) {
+                Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.88)
+                    .foregroundStyle(Color(red: 185 / 255, green: 181 / 255, blue: 173 / 255))
 
-                    KnurledZoomWheelView(
-                        capabilities: camera.zoomCapabilities,
-                        zoomFactor: camera.zoomFactor,
-                        isEnabled: true,
-                        onZoomChanged: { camera.setZoomFactor($0) },
-                        onLensSelected: { camera.rampZoom(to: $0) }
-                    )
-                }
-                .frame(width: 172, height: 83)
-                .position(x: 537 + 172 / 2, y: 83 / 2)
+                KnurledZoomWheelView(
+                    capabilities: camera.zoomCapabilities,
+                    zoomFactor: camera.zoomFactor,
+                    isEnabled: !camera.isUsingFrontCamera,
+                    onZoomChanged: { camera.setZoomFactor($0) },
+                    onLensSelected: { camera.rampZoom(to: $0) }
+                )
             }
+            .frame(width: 172, height: 83)
+            .position(x: 585, y: 83 / 2)
+            .opacity(camera.isUsingFrontCamera ? 0.0 : 1.0)
+            .animation(.easeInOut(duration: 0.16), value: camera.isUsingFrontCamera)
+
+            // Sliding Mechanical Hatch Covers (parks on left and right of wheel when open; covers wheel when closed)
+            ZoomWheelHatchView(isClosed: camera.isUsingFrontCamera)
 
             // Info Button (Trailing: left: 789px, top: 22px, size: 44px, Figma 1302:48002)
             Button {
@@ -256,7 +294,7 @@ struct CaptureSessionView: View {
 
     // MARK: - Screen Bezel & Live Preview (Figma 1302:47969)
 
-    private var screenBezelView: some View {
+    private func screenBezelView(isPortraitWindow: Bool) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 14.5)
                 .fill(Color(red: 18 / 255, green: 18 / 255, blue: 18 / 255))
@@ -281,90 +319,11 @@ struct CaptureSessionView: View {
                     .allowsHitTesting(false)
 
                 // Viewfinder HUD
-                VStack {
-                    // Top-Left: Participant presence badge (per user instruction)
-                    HStack {
-                        HStack(spacing: 5) {
-                            Image(systemName: "person.2.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("\(flowViewModel.participantCount)")
-                                .font(.system(size: 11.4, weight: .semibold))
-                                .tracking(0.9)
+                // Viewfinder HUD
+                viewfinderHUD(isPortraitWindow: isPortraitWindow)
 
-                            if flowViewModel.showsOfflineStatus {
-                                Text("• \(flowViewModel.queuedShotCount) queued")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(ScrapTheme.cameraGold)
-                            }
-                        }
-                        .foregroundStyle(Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255))
-                        .padding(.horizontal, 8.3)
-                        .padding(.vertical, 3.1)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4.14)
-                                .fill(Color.black.opacity(0.62))
-                        )
-
-                        Spacer()
-                    }
-                    .padding(.top, 10.36)
-                    .padding(.leading, 10.36)
-
-                    if let banner = flowViewModel.hostHandoverBanner {
-                        Text(banner)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(ScrapTheme.cameraGold)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(Color.black.opacity(0.75)))
-                    }
-
-                    Spacer()
-
-                    // Bottom HUD row: Host End Roll & Debug buttons
-                    HStack(spacing: 8) {
-                        if isHost {
-                            Button {
-                                flowViewModel.endSessionManuallyByHost(
-                                    currentUser: currentUser
-                                )
-                            } label: {
-                                Text("END ROLL")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .tracking(0.6)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(ScrapTheme.indicatorRed.opacity(0.85))
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        #if DEBUG
-                        Button {
-                            showsDebugLastShot = true
-                        } label: {
-                            Text("DEBUG: LAST SHOT")
-                                .font(.system(size: 10, weight: .bold))
-                                .tracking(0.6)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.purple.opacity(0.85))
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        #endif
-
-                        Spacer()
-                    }
-                    .padding(8)
-                }
+                // Mechanical Iris Diaphragm Overlay (aperture blades constricting on camera switch)
+                CameraIrisDiaphragmView(isClosed: camera.isSwitchingCamera)
             }
             .clipShape(RoundedRectangle(cornerRadius: 6.2))
             .padding(.horizontal, 10)
@@ -372,6 +331,157 @@ struct CaptureSessionView: View {
         }
         .frame(width: 487, height: 251)
     }
+
+    private func viewfinderHUD(isPortraitWindow: Bool) -> some View {
+        let isPortraitDevice = deviceOrientation.isPortrait
+        let hudRotation = RollCameraOrientation.hudElementRotationDegrees(
+            deviceOrientation: deviceOrientation,
+            isPortraitWindow: isPortraitWindow,
+            windowInterfaceOrientation: currentInterfaceOrientation,
+            simulatedLandscapeSide: simulatedLandscapeSide
+        )
+
+        return ZStack {
+            // 1. Participant Presence Badge
+            participantBadgeOverlay(hudRotation: hudRotation)
+
+            // 2. Host Handover Banner (Centered)
+            if let banner = flowViewModel.hostHandoverBanner {
+                PivotingElement(angle: hudRotation) {
+                    Text(banner)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(ScrapTheme.cameraGold)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.black.opacity(0.75)))
+                }
+            }
+
+            // 3. Action and Debug Buttons
+            actionButtonsOverlay(hudRotation: hudRotation, isPortraitDevice: isPortraitDevice)
+        }
+        .frame(width: 467, height: 235)
+    }
+
+    @ViewBuilder
+    private func participantBadgeOverlay(hudRotation: Double) -> some View {
+        VStack {
+            HStack {
+                PivotingElement(angle: hudRotation) {
+                    participantBadgeView
+                }
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 10.36)
+        .padding(.leading, 10.36)
+    }
+
+    @ViewBuilder
+    private func actionButtonsOverlay(hudRotation: Double, isPortraitDevice: Bool) -> some View {
+        VStack {
+            Spacer()
+            HStack {
+                if isPortraitDevice {
+                    Spacer()
+                }
+                PivotingElement(angle: hudRotation) {
+                    actionButtonsGroup
+                }
+                if !isPortraitDevice {
+                    Spacer()
+                }
+            }
+        }
+        .padding(.bottom, 8)
+        .padding(.leading, isPortraitDevice ? 0 : 8)
+        .padding(.trailing, isPortraitDevice ? 8 : 0)
+    }
+
+    private var actionButtonsGroup: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                if isHost {
+                    endRollButton
+                }
+                #if DEBUG
+                debugLastShotButton
+                #endif
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                if isHost {
+                    endRollButton
+                }
+                #if DEBUG
+                debugLastShotButton
+                #endif
+            }
+        }
+    }
+
+    private var participantBadgeView: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 11, weight: .semibold))
+            Text("\(flowViewModel.participantCount)")
+                .font(.system(size: 11.4, weight: .semibold))
+                .tracking(0.9)
+
+            if flowViewModel.showsOfflineStatus {
+                Text("• \(flowViewModel.queuedShotCount) queued")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(ScrapTheme.cameraGold)
+            }
+        }
+        .foregroundStyle(Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255))
+        .padding(.horizontal, 8.3)
+        .padding(.vertical, 3.1)
+        .background(
+            RoundedRectangle(cornerRadius: 4.14)
+                .fill(Color.black.opacity(0.62))
+        )
+    }
+
+    private var endRollButton: some View {
+        Button {
+            flowViewModel.endSessionManuallyByHost(
+                currentUser: currentUser
+            )
+        } label: {
+            Text("END ROLL")
+                .font(.system(size: 10, weight: .bold))
+                .tracking(0.6)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(ScrapTheme.indicatorRed.opacity(0.85))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    #if DEBUG
+    private var debugLastShotButton: some View {
+        Button {
+            showsDebugLastShot = true
+        } label: {
+            Text("DEBUG: LAST SHOT")
+                .font(.system(size: 10, weight: .bold))
+                .tracking(0.6)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.purple.opacity(0.85))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+    #endif
 
     // MARK: - Bottom Controls (Equal Spacing)
 
@@ -428,6 +538,9 @@ struct CaptureSessionView: View {
                 .foregroundStyle(Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255))
             }
             .buttonStyle(.plain)
+            .disabled(camera.isSwitchingCamera)
+            .opacity(camera.isSwitchingCamera ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: camera.isSwitchingCamera)
             .frame(maxWidth: .infinity)
         }
         .frame(width: 487)
@@ -480,5 +593,62 @@ private struct ShutterButtonStyle: ButtonStyle {
             .opacity(isPressed ? 0.92 : 1.0)
             .animation(.spring(response: 0.18, dampingFraction: 0.65), value: isPressed)
             .contentShape(Circle())
+    }
+}
+
+private struct PivotingIntrinsicSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next != .zero {
+            value = next
+        }
+    }
+}
+
+private struct PivotingElement<Content: View>: View, Animatable {
+    var angle: Double
+    @ViewBuilder let content: () -> Content
+
+    @State private var intrinsicSize: CGSize = .zero
+
+    var animatableData: Double {
+        get { angle }
+        set { angle = newValue }
+    }
+
+    private var boundingWidth: CGFloat {
+        guard intrinsicSize != .zero else { return 0 }
+        let rad = angle * .pi / 180.0
+        return intrinsicSize.width * abs(cos(rad)) + intrinsicSize.height * abs(sin(rad))
+    }
+
+    private var boundingHeight: CGFloat {
+        guard intrinsicSize != .zero else { return 0 }
+        let rad = angle * .pi / 180.0
+        return intrinsicSize.width * abs(sin(rad)) + intrinsicSize.height * abs(cos(rad))
+    }
+
+    var body: some View {
+        Color.clear
+            .frame(
+                width: intrinsicSize == .zero ? nil : boundingWidth,
+                height: intrinsicSize == .zero ? nil : boundingHeight
+            )
+            .overlay(
+                content()
+                    .fixedSize()
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: PivotingIntrinsicSizeKey.self, value: proxy.size)
+                        }
+                    )
+                    .rotationEffect(.degrees(angle))
+            )
+            .onPreferenceChange(PivotingIntrinsicSizeKey.self) { size in
+                if size != .zero && size != intrinsicSize {
+                    intrinsicSize = size
+                }
+            }
     }
 }

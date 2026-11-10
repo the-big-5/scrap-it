@@ -25,6 +25,25 @@ enum RollCameraOrientation {
         }
     }
 
+    /// Physical device orientation recognized by the camera capture session.
+    enum DeviceOrientation: Equatable, Sendable {
+        case landscapeLeft   // Home button / USB-C on right (LandscapeSide.left)
+        case landscapeRight  // Home button / USB-C on left (LandscapeSide.right)
+        case portrait        // Device held upright in portrait
+
+        var isPortrait: Bool {
+            self == .portrait
+        }
+
+        var landscapeSide: LandscapeSide? {
+            switch self {
+            case .landscapeLeft: return .left
+            case .landscapeRight: return .right
+            case .portrait: return nil
+            }
+        }
+    }
+
     /// Resolves the landscape side from physical device orientation (`UIDeviceOrientation`).
     /// Returns `nil` if the orientation is not landscape (e.g. portrait, faceUp, unknown),
     /// indicating that the existing landscape side should be retained.
@@ -56,6 +75,74 @@ enum RollCameraOrientation {
             return .right
         }
         return nil
+    }
+
+    /// Resolves physical device orientation from `UIDeviceOrientation`.
+    /// Returns `nil` for unsupported orientations (e.g. portraitUpsideDown, faceUp, unknown),
+    /// indicating the existing orientation should be retained.
+    static func deviceOrientation(for deviceOrientation: UIDeviceOrientation) -> DeviceOrientation? {
+        switch deviceOrientation {
+        case .landscapeLeft:
+            return .landscapeLeft
+        case .landscapeRight:
+            return .landscapeRight
+        case .portrait:
+            return .portrait
+        default:
+            return nil
+        }
+    }
+
+    /// Resolves physical device orientation from raw accelerometer gravity values.
+    /// Operates even when iOS system Portrait Orientation Lock is active.
+    /// Returns `nil` for flat device, inverted portrait, or deadband.
+    static func deviceOrientation(accelerationX: Double, accelerationY: Double, accelerationZ: Double) -> DeviceOrientation? {
+        if abs(accelerationZ) > 0.85 {
+            return nil
+        }
+        if abs(accelerationY) > abs(accelerationX) {
+            if accelerationY < -0.25 {
+                return .portrait
+            }
+            return nil
+        }
+        if accelerationX < -0.25 {
+            return .landscapeLeft
+        } else if accelerationX > 0.25 {
+            return .landscapeRight
+        }
+        return nil
+    }
+
+    /// Standard upright portrait photo capture angle in AVFoundation on iOS (90°).
+    static let portraitCaptureAngle: CGFloat = 90.0
+
+    /// Resolves the photo capture rotation angle based on physical device orientation and landscape fallback.
+    static func photoCaptureAngle(
+        deviceOrientation: DeviceOrientation,
+        landscapeAngle: CGFloat
+    ) -> CGFloat {
+        switch deviceOrientation {
+        case .portrait:
+            return portraitCaptureAngle
+        case .landscapeLeft, .landscapeRight:
+            return landscapeAngle
+        }
+    }
+
+    /// Rotation angle (in degrees) to apply to viewfinder HUD elements (participant badge, buttons)
+    /// to keep them upright relative to the user.
+    static func hudElementRotationDegrees(
+        deviceOrientation: DeviceOrientation,
+        isPortraitWindow: Bool = false,
+        windowInterfaceOrientation: UIInterfaceOrientation = .unknown,
+        simulatedLandscapeSide: LandscapeSide = .left
+    ) -> Double {
+        guard deviceOrientation.isPortrait else { return 0.0 }
+        switch simulatedLandscapeSide {
+        case .left: return -90.0
+        case .right: return 90.0
+        }
     }
 
     /// Checks if a landscape window interface orientation aligns with the physical landscape side.

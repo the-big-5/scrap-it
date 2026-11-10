@@ -38,8 +38,6 @@ struct MainShellView: View {
                             navigator: router,
                             sessionStore: sessionStore
                         )
-                    case .explore:
-                        ExploreView()
                     case .profile:
                         ProfileView(
                             modelContext: modelContext,

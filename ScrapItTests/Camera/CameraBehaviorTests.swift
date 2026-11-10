@@ -147,6 +147,20 @@ struct CameraBehaviorTests {
         #expect(PrimaryButtonAction.resolve(hasCameraControl: false) == .flipCamera)
     }
 
+    // MARK: - Camera flip & debouncing (change 061)
+
+    @Test func cameraControllerInitialSwitchStateIsFalse() {
+        let controller = CameraController()
+        #expect(!controller.isSwitchingCamera)
+    }
+
+    @Test func cameraControllerFlipGuardedWhenSessionNotRunning() {
+        let controller = CameraController()
+        #expect(!controller.isSessionRunning)
+        controller.toggleCameraPosition()
+        #expect(!controller.isSwitchingCamera)
+    }
+
     @Test func shutterAnimationTriggersAndResets() async throws {
         let context = Self.makeInMemoryContext()
         let store = SessionStore(modelContext: context)
@@ -245,6 +259,13 @@ struct CameraBehaviorTests {
         #expect(OrientationLock.mask(isCaptureSessionVisible: false) == .portrait)
     }
 
+    @Test func resetToPortraitSetsMaskToPortrait() {
+        OrientationLock.set(.landscape)
+        #expect(OrientationLock.mask == .landscape)
+        OrientationLock.resetToPortrait()
+        #expect(OrientationLock.mask == .portrait)
+    }
+
     // MARK: - Shots counter (taken / total)
 
     @Test func shotsCounterCountsUp() {
@@ -319,6 +340,73 @@ struct CameraBehaviorTests {
         #expect(UIImage(named: "CameraShutterWell") != nil)
         #expect(UIImage(named: "CameraDialOuter") != nil)
         #expect(UIImage(named: "CameraDialInner") != nil)
+    }
+
+    @Test func shotsLeftDialViewDigitsAndClamping() {
+        let dial36 = ShotsLeftDialView(shotsRemaining: 36, totalShots: 36)
+        #expect(dial36.safeShots == 36)
+        #expect(dial36.tensDigit == 3)
+        #expect(dial36.onesDigit == 6)
+        #expect(dial36.isTensBlankAbove)
+        #expect(dial36.isOnesBlankAbove)
+        #expect(dial36.belowTensDigit == 2)
+        #expect(dial36.belowOnesDigit == 5)
+
+        let dial35 = ShotsLeftDialView(shotsRemaining: 35, totalShots: 36)
+        #expect(dial35.safeShots == 35)
+        #expect(dial35.tensDigit == 3)
+        #expect(dial35.onesDigit == 5)
+        #expect(dial35.isTensBlankAbove)
+        #expect(!dial35.isOnesBlankAbove)
+        #expect(dial35.aboveOnesDigit == 6)
+        #expect(dial35.belowTensDigit == 2)
+        #expect(dial35.belowOnesDigit == 4)
+
+        let dial24 = ShotsLeftDialView(shotsRemaining: 24, totalShots: 24)
+        #expect(dial24.safeShots == 24)
+        #expect(dial24.tensDigit == 2)
+        #expect(dial24.onesDigit == 4)
+        #expect(dial24.isTensBlankAbove)
+        #expect(dial24.isOnesBlankAbove)
+        #expect(dial24.belowTensDigit == 1)
+        #expect(dial24.belowOnesDigit == 3)
+
+        let dial23 = ShotsLeftDialView(shotsRemaining: 23, totalShots: 24)
+        #expect(dial23.safeShots == 23)
+        #expect(dial23.tensDigit == 2)
+        #expect(dial23.onesDigit == 3)
+        #expect(dial23.isTensBlankAbove)
+        #expect(!dial23.isOnesBlankAbove)
+        #expect(dial23.aboveOnesDigit == 4)
+        #expect(dial23.belowTensDigit == 1)
+        #expect(dial23.belowOnesDigit == 2)
+
+        let dial20 = ShotsLeftDialView(shotsRemaining: 20, totalShots: 24)
+        #expect(dial20.tensDigit == 2)
+        #expect(dial20.onesDigit == 0)
+        #expect(dial20.isTensBlankAbove)
+        #expect(dial20.aboveOnesDigit == 1)
+        #expect(dial20.belowTensDigit == 1)
+        #expect(dial20.belowOnesDigit == 9)
+
+        let dial19 = ShotsLeftDialView(shotsRemaining: 19, totalShots: 24)
+        #expect(dial19.tensDigit == 1)
+        #expect(dial19.onesDigit == 9)
+        #expect(!dial19.isTensBlankAbove)
+        #expect(dial19.aboveTensDigit == 2)
+        #expect(dial19.aboveOnesDigit == 0)
+        #expect(dial19.belowTensDigit == 0)
+        #expect(dial19.belowOnesDigit == 8)
+
+        let dial0 = ShotsLeftDialView(shotsRemaining: 0, totalShots: 36)
+        #expect(dial0.safeShots == 0)
+        #expect(dial0.tensDigit == 0)
+        #expect(dial0.onesDigit == 0)
+        #expect(!dial0.isTensBlankAbove)
+        #expect(dial0.aboveTensDigit == 1)
+        #expect(dial0.aboveOnesDigit == 1)
+        #expect(dial0.belowTensDigit == 0)
+        #expect(dial0.belowOnesDigit == 0)
     }
 
     // MARK: - Filter pipeline

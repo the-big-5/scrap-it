@@ -128,6 +128,7 @@ struct OptimisticShutterSlotClaimTests {
 
         // Await background resolution task
         await viewModel.lastSlotClaimTask?.value
+        viewModel.finalizeSessionTask?.cancel()
         await Task.yield()
 
         // Per Spec F3: the rejected photo is dropped from ModelContext
@@ -171,6 +172,8 @@ struct OptimisticShutterSlotClaimTests {
             imageData: Data([0xEE, 0xFF]),
             currentUser: user
         )
+
+        viewModel.finalizeSessionTask?.cancel()
 
         #expect(photo == nil)
         #expect(viewModel.showLastSlotRaceAlert == true)

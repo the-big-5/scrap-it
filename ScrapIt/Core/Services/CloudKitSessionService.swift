@@ -56,8 +56,12 @@ final class CloudKitSessionService {
 
     /// Pushes status / host / end time of the session to its room record (start, end, host handover).
     func publishSessionToCloudKit(session: CaptureSession) async {
-        guard isOnline, session.ckRecordName != nil else {
-            print("⚠️ [CloudKitSessionService] publishSessionToCloudKit skipped: isOnline=\(isOnline), ckRecordName=\(String(describing: session.ckRecordName))")
+        guard isOnline else {
+            print("⚠️ [CloudKitSessionService] publishSessionToCloudKit skipped: isOnline=false")
+            return
+        }
+        guard session.ckRecordName != nil else {
+            print("⚠️ [CloudKitSessionService] publishSessionToCloudKit skipped: ckRecordName=nil")
             return
         }
         let location = roomLocation(for: session)

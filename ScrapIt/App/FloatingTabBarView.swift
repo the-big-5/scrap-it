@@ -32,12 +32,11 @@ struct FloatingTabBarView: View {
     @State private var dragPillX: CGFloat?
 
     private let tabs: [(tab: AppTab, icon: String, label: String)] = [
-        (.home, "house.fill", "Home"),
-        (.explore, "magnifyingglass", "Explore"),
-        (.profile, "person.fill", "Profile")
+        (.home, "plus.circle.fill", "Home"),
+        (.profile, "books.vertical.fill", "Profile")
     ]
 
-    private let barWidth: CGFloat = 274
+    private let barWidth: CGFloat = 186
     private let barHeight: CGFloat = 62
     private let padding: CGFloat = 6
     private let pillSize = CGSize(width: 78, height: 44)

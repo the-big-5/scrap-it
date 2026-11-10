@@ -137,4 +137,100 @@ import UIKit
         #expect(RollCameraOrientation.effectiveCameraAngle(baseAngle: 0, side: .right) == 180)
         #expect(RollCameraOrientation.effectiveCameraAngle(baseAngle: 180, side: .right) == 0)
     }
+
+    // MARK: - Change 057 Portrait Orientation Tests
+
+    @Test func deviceOrientationResolvesPortraitAndLandscapeSides() {
+        #expect(RollCameraOrientation.deviceOrientation(for: .portrait) == .portrait)
+        #expect(RollCameraOrientation.deviceOrientation(for: .landscapeLeft) == .landscapeLeft)
+        #expect(RollCameraOrientation.deviceOrientation(for: .landscapeRight) == .landscapeRight)
+        #expect(RollCameraOrientation.deviceOrientation(for: .portraitUpsideDown) == nil)
+        #expect(RollCameraOrientation.deviceOrientation(for: .faceUp) == nil)
+        #expect(RollCameraOrientation.deviceOrientation(for: .unknown) == nil)
+    }
+
+    @Test func accelerometerResolvesPortraitUprightWhenYNegativeDominant() {
+        let portrait = RollCameraOrientation.deviceOrientation(
+            accelerationX: -0.15,
+            accelerationY: -0.92,
+            accelerationZ: 0.1
+        )
+        #expect(portrait == .portrait)
+        #expect(portrait?.isPortrait == true)
+        #expect(portrait?.landscapeSide == nil)
+    }
+
+    @Test func accelerometerIgnoresInvertedPortrait() {
+        let inverted = RollCameraOrientation.deviceOrientation(
+            accelerationX: 0.1,
+            accelerationY: 0.88,
+            accelerationZ: 0.1
+        )
+        #expect(inverted == nil)
+    }
+
+    @Test func accelerometerResolvesLandscapeSidesForDeviceOrientation() {
+        let left = RollCameraOrientation.deviceOrientation(
+            accelerationX: -0.85,
+            accelerationY: -0.1,
+            accelerationZ: 0.15
+        )
+        let right = RollCameraOrientation.deviceOrientation(
+            accelerationX: 0.82,
+            accelerationY: 0.08,
+            accelerationZ: 0.12
+        )
+        #expect(left == .landscapeLeft)
+        #expect(left?.landscapeSide == .left)
+        #expect(right == .landscapeRight)
+        #expect(right?.landscapeSide == .right)
+    }
+
+    @Test func photoCaptureAngleUsesPortraitAngleWhenDeviceIsPortrait() {
+        let portraitAngleFromLeft = RollCameraOrientation.photoCaptureAngle(
+            deviceOrientation: .portrait,
+            landscapeAngle: 0.0
+        )
+        let portraitAngleFromRight = RollCameraOrientation.photoCaptureAngle(
+            deviceOrientation: .portrait,
+            landscapeAngle: 180.0
+        )
+        #expect(portraitAngleFromLeft == 90.0)
+        #expect(portraitAngleFromRight == 90.0)
+    }
+
+    @Test func photoCaptureAngleUsesLandscapeAngleWhenDeviceIsLandscape() {
+        let leftAngle = RollCameraOrientation.photoCaptureAngle(
+            deviceOrientation: .landscapeLeft,
+            landscapeAngle: 0.0
+        )
+        let rightAngle = RollCameraOrientation.photoCaptureAngle(
+            deviceOrientation: .landscapeRight,
+            landscapeAngle: 180.0
+        )
+        #expect(leftAngle == 0.0)
+        #expect(rightAngle == 180.0)
+    }
+
+    @Test func hudElementRotationCompensatesForPortraitOnly() {
+        #expect(RollCameraOrientation.hudElementRotationDegrees(
+            deviceOrientation: .portrait,
+            simulatedLandscapeSide: .left
+        ) == -90.0)
+
+        #expect(RollCameraOrientation.hudElementRotationDegrees(
+            deviceOrientation: .portrait,
+            simulatedLandscapeSide: .right
+        ) == 90.0)
+
+        #expect(RollCameraOrientation.hudElementRotationDegrees(
+            deviceOrientation: .landscapeLeft,
+            simulatedLandscapeSide: .left
+        ) == 0.0)
+
+        #expect(RollCameraOrientation.hudElementRotationDegrees(
+            deviceOrientation: .landscapeRight,
+            simulatedLandscapeSide: .right
+        ) == 0.0)
+    }
 }

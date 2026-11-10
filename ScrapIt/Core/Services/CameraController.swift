@@ -44,6 +44,7 @@ final class CameraController {
     private(set) var isRecordingLive: Bool = false
     private(set) var hasCameraControl: Bool = false
     private(set) var isCapturing: Bool = false
+    private(set) var isSwitchingCamera: Bool = false
     var shutterFlashOpacity: Double = 0.0
     /// "Turn On Camera Adjustments" alert.
     var showsCameraAdjustmentsPrompt: Bool = false
@@ -124,23 +125,38 @@ final class CameraController {
         }
     }
 
+    private(set) var deviceOrientation: RollCameraOrientation.DeviceOrientation = .landscapeLeft
+
     /// Updates rotation offset when simulating landscape in a portrait window or handling locked landscape.
     func setSimulatedLandscapeSide(
         _ side: RollCameraOrientation.LandscapeSide,
         isPortrait: Bool,
-        windowOrientation: UIInterfaceOrientation = .unknown
+        windowOrientation: UIInterfaceOrientation = .unknown,
+        deviceOrientation: RollCameraOrientation.DeviceOrientation = .landscapeLeft
     ) {
-        engine.setSimulatedLandscapeSide(side, isPortrait: isPortrait, windowOrientation: windowOrientation)
+        self.deviceOrientation = deviceOrientation
+        engine.setSimulatedLandscapeSide(
+            side,
+            isPortrait: isPortrait,
+            windowOrientation: windowOrientation,
+            deviceOrientation: deviceOrientation
+        )
     }
 
     func toggleCameraPosition() {
-        guard isSessionRunning, !isCapturing else { return }
+        guard isSessionRunning, !isCapturing, !isSwitchingCamera else { return }
+        isSwitchingCamera = true
         Task {
+            defer { isSwitchingCamera = false }
+            // Lead time for mechanical iris closure to cover the preview before sensor disconnect
+            try? await Task.sleep(nanoseconds: 180_000_000)
             guard let position = await engine.switchCamera() else { return }
             isUsingFrontCamera = position == .front
             isLiveSupported = await engine.isLivePhotoAvailable()
             zoomCapabilities = await engine.resetZoom()
             zoomFactor = 1
+            // Settle time for the first video frame to render before mechanical iris dilates open
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 
@@ -208,7 +224,8 @@ final class CameraController {
                 filter: filter,
                 shotIndex: shotSequenceNumber,
                 rollName: rollName,
-                isLivePhoto: false
+                isLivePhoto: false,
+                isPortrait: deviceOrientation.isPortrait
             )
             return CapturedShot(imageData: data, livePhotoMovie: nil)
         }
@@ -230,7 +247,8 @@ final class CameraController {
                 filter: filter,
                 shotIndex: shotSequenceNumber,
                 rollName: rollName,
-                isLivePhoto: false
+                isLivePhoto: false,
+                isPortrait: deviceOrientation.isPortrait
             )
             return CapturedShot(imageData: data, livePhotoMovie: nil)
         }
@@ -288,10 +306,11 @@ final class CameraController {
         filter: RollFilter,
         shotIndex: Int,
         rollName: String,
-        isLivePhoto: Bool
+        isLivePhoto: Bool,
+        isPortrait: Bool = false
     ) -> Data {
         #if canImport(UIKit)
-        let size = CGSize(width: 720, height: 540)
+        let size = isPortrait ? CGSize(width: 540, height: 720) : CGSize(width: 720, height: 540)
         let renderer = UIGraphicsImageRenderer(size: size)
         let image = renderer.image { ctx in
             let rect = CGRect(origin: .zero, size: size)
