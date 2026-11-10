@@ -68,27 +68,27 @@ struct WorkbenchLayoutTests {
 }
 
 struct TabBarDragMathTests {
-    let math = TabBarDragMath(barWidth: 274, horizontalPadding: 6, tabCount: 3)
+    let math = TabBarDragMath(barWidth: 186, horizontalPadding: 6, tabCount: 2)
 
     @Test func tabUnderTheFinger() {
         #expect(math.tabIndex(atX: 20) == 0)
-        #expect(math.tabIndex(atX: 137) == 1)
-        #expect(math.tabIndex(atX: 260) == 2)
+        #expect(math.tabIndex(atX: 160) == 1)
     }
 
     @Test func fingerPastTheEndsClamps() {
         #expect(math.tabIndex(atX: -50) == 0)
-        #expect(math.tabIndex(atX: 500) == 2)
+        #expect(math.tabIndex(atX: 500) == 1)
         #expect(math.pillCenter(forFingerX: -50) == math.center(ofTab: 0))
-        #expect(math.pillCenter(forFingerX: 500) == math.center(ofTab: 2))
+        #expect(math.pillCenter(forFingerX: 500) == math.center(ofTab: 1))
     }
 
     @Test func pillFollowsTheFingerBetweenTabs() {
-        #expect(math.pillCenter(forFingerX: 120) == 120)
+        #expect(math.pillCenter(forFingerX: 93) == 93)
     }
 
-    @Test func tabCentersAreEvenlySpaced() {
-        #expect(abs(math.center(ofTab: 1) - 137) < 0.0001)
-        #expect(abs((math.center(ofTab: 2) - math.center(ofTab: 1)) - (math.center(ofTab: 1) - math.center(ofTab: 0))) < 0.0001)
+    @Test func tabCentersAreSymmetric() {
+        #expect(abs(math.center(ofTab: 0) - 49.5) < 0.0001)
+        #expect(abs(math.center(ofTab: 1) - 136.5) < 0.0001)
+        #expect(abs((math.center(ofTab: 0) + math.center(ofTab: 1)) / 2 - 93) < 0.0001)
     }
 }

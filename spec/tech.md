@@ -67,7 +67,6 @@ ScrapIt/
 └── Features/
     ├── Auth/           WelcomeSignInView, AuthViewModel
     ├── Home/           WorkbenchView, WorkbenchViewModel, WorkbenchLayout (desk asset frames, uniform scale)
-    ├── Explore/        ExploreView (3-tab placeholder)
     ├── Profile/        ProfileView, ProfileViewModel
     ├── Roll/           CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, RollInviteShare, RollAvatarView, RollRoomHeader, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, DebugLastShotView)
     └── Scrapbook/      ScrapbookEditorView, ScrapbookViewModel, Components/ (ScissorsToolView, StickerPanel, StickerDragController, PencilCanvasView,
