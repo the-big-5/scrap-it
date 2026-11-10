@@ -3,6 +3,7 @@ import SwiftUI
 
 struct WelcomeSignInView: View {
     var authViewModel: AuthViewModel
+    var onSignedIn: (() -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -58,6 +59,9 @@ struct WelcomeSignInView: View {
                         authViewModel.handleSignInWithAppleCompletion(
                             result: result
                         )
+                        if authViewModel.isSignedIn {
+                            onSignedIn?()
+                        }
                     }
                     .signInWithAppleButtonStyle(.black)
                     .frame(height: 54)

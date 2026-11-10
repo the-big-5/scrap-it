@@ -11,6 +11,17 @@ Figma node 676:3703
 - Message above the button [Draft]: error "Couldn't sign in. Please try again."; offline "You're offline. Connect to the internet to sign in." (offline also disables the button)
 - Logo is still a placeholder box [Open]
 
+## Screen: Onboarding Slides [Locked]
+Figma nodes 1248:21648 (OB1), 1249:22041 (OB2), 1255:22152 (OB3); change 053
+- Presented after signing in from Welcome before navigating to Home.
+- 3-slide horizontal paging view with gesture swiping and primary offset pill button progression.
+- Background: Kraft light active (`#F7F2EB`).
+- Slide 1 (OB1): disposable camera and film collage illustration, headline "A film camera experience. Shared with friends.", body "Start a shared roll, take turns capturing your moment, and make every shot count.", button "Continue".
+- Slide 2 (OB2): scrapbook notebook, scissors, and photos collage illustration, headline "Turn your memories into scrapbook.", body "Reveal your photos when the roll is complete, then create and decorate a scrapbook together.", button "Continue".
+- Slide 3 (OB3): bookshelf scrapbooks and stars collage illustration, headline "Make memories you can revisit.", body "Keep your completed scrapbooks on your bookshelf and revisit the moments you made together.", button "Lets Try It" (transitions to Home).
+- 3-dot page indicator above button (8pt circles, 8pt spacing; active dot ink `#2A241F`, inactive dot camera gray `#D2D0CB`).
+- Large Primary button (`DSColor.Paper.light` pill with 1.5pt ink border, 7pt black shadow).
+
 ## Screen: Home [Locked]
 Figma node 853:1703 (Idle) & 1062:3371 (CameraClick)
 - Overhead desk workbench flat-lay: wood desk, green cutting mat with measurement numbers and ticks, red toolbox, blue book, spiral "TUTORIAL" book, film canisters, ruler, crumpled paper, stationery.
