@@ -211,25 +211,28 @@ struct CaptureSessionView: View {
             .accessibilityLabel("Return to Homepage")
             .position(x: viewfinderLeadingOffset + 22, y: 19 + 22)
 
-            // Zoom Control (Back camera only: left: 537px, top: 0px, width: 172px, height: 83px, Figma 1302:47985)
-            if !camera.isUsingFrontCamera {
-                VStack(spacing: 4) {
-                    Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(0.88)
-                        .foregroundStyle(Color(red: 185 / 255, green: 181 / 255, blue: 173 / 255))
+            // Zoom Control (Back camera only: centered at x: 585px, width: 172px, height: 83px)
+            VStack(spacing: 4) {
+                Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.88)
+                    .foregroundStyle(Color(red: 185 / 255, green: 181 / 255, blue: 173 / 255))
 
-                    KnurledZoomWheelView(
-                        capabilities: camera.zoomCapabilities,
-                        zoomFactor: camera.zoomFactor,
-                        isEnabled: true,
-                        onZoomChanged: { camera.setZoomFactor($0) },
-                        onLensSelected: { camera.rampZoom(to: $0) }
-                    )
-                }
-                .frame(width: 172, height: 83)
-                .position(x: 537 + 172 / 2, y: 83 / 2)
+                KnurledZoomWheelView(
+                    capabilities: camera.zoomCapabilities,
+                    zoomFactor: camera.zoomFactor,
+                    isEnabled: !camera.isUsingFrontCamera,
+                    onZoomChanged: { camera.setZoomFactor($0) },
+                    onLensSelected: { camera.rampZoom(to: $0) }
+                )
             }
+            .frame(width: 172, height: 83)
+            .position(x: 585, y: 83 / 2)
+            .opacity(camera.isUsingFrontCamera ? 0.0 : 1.0)
+            .animation(.easeInOut(duration: 0.16), value: camera.isUsingFrontCamera)
+
+            // Sliding Mechanical Hatch Covers (parks on left and right of wheel when open; covers wheel when closed)
+            ZoomWheelHatchView(isClosed: camera.isUsingFrontCamera)
 
             // Info Button (Trailing: left: 789px, top: 22px, size: 44px, Figma 1302:48002)
             Button {
@@ -365,6 +368,9 @@ struct CaptureSessionView: View {
                     }
                     .padding(8)
                 }
+
+                // Mechanical Iris Diaphragm Overlay (aperture blades constricting on camera switch)
+                CameraIrisDiaphragmView(isClosed: camera.isSwitchingCamera)
             }
             .clipShape(RoundedRectangle(cornerRadius: 6.2))
             .padding(.horizontal, 10)
@@ -428,6 +434,9 @@ struct CaptureSessionView: View {
                 .foregroundStyle(Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255))
             }
             .buttonStyle(.plain)
+            .disabled(camera.isSwitchingCamera)
+            .opacity(camera.isSwitchingCamera ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: camera.isSwitchingCamera)
             .frame(maxWidth: .infinity)
         }
         .frame(width: 487)

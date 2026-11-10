@@ -147,6 +147,20 @@ struct CameraBehaviorTests {
         #expect(PrimaryButtonAction.resolve(hasCameraControl: false) == .flipCamera)
     }
 
+    // MARK: - Camera flip & debouncing (change 061)
+
+    @Test func cameraControllerInitialSwitchStateIsFalse() {
+        let controller = CameraController()
+        #expect(!controller.isSwitchingCamera)
+    }
+
+    @Test func cameraControllerFlipGuardedWhenSessionNotRunning() {
+        let controller = CameraController()
+        #expect(!controller.isSessionRunning)
+        controller.toggleCameraPosition()
+        #expect(!controller.isSwitchingCamera)
+    }
+
     @Test func shutterAnimationTriggersAndResets() async throws {
         let context = Self.makeInMemoryContext()
         let store = SessionStore(modelContext: context)
