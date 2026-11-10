@@ -29,7 +29,7 @@ Figma node 853:1703 (Idle) & 1062:3371 (CameraClick)
 - Interactive disposable camera resting at -14.77° on the cutting mat (Figma position).
 - Camera tap interaction: camera rotates to 0.77° and centers with spring animation; the whole desk blurs as one page (flattened, then blurred) and dims; "Create Roll" and "Join a Roll" text buttons spring up from bottom with solid 7pt offset drop shadows. Tapping the blurred background or the round "<" close button at top left (Figma "Toolbar - Top") dismisses. Tab bar hidden while active.
 - Tutorial book: the book image is the button (open stub for tutorial flow).
-- Floating 3-tab navigation bar: Home (house.fill), Explore (magnifyingglass), Profile (person.fill). Tap a tab, or drag along the bar: the selection pill follows the finger and snaps to the nearest tab on release, with a selection haptic.
+- Floating 2-tab navigation bar: Home (plus.circle.fill), Profile (books.vertical.fill). Tap a tab, or drag along the bar: the selection pill follows the finger and snaps to the nearest tab on release, with a selection haptic.
 
 ## Screen: Camera Roll (Create / Join) [Locked]
 Integrated directly into the Workbench active popup state (Figma node 1062:3371).

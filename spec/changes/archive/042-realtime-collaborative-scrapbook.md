@@ -1,5 +1,5 @@
 # 042: Real-time Collaborative Scrapbook Canvas with Supabase Realtime
-Status: Approved
+Status: Done
 
 ## Why
 Currently, after a shared roll ends, the host and participants each receive a disconnected, personal local scrapbook. Any photos added, stickers placed, scissors cuts, background choices, and PencilKit drawings made on one device are stored solely in that device's local SwiftData store. Friends who shot a roll together cannot decorate or build the scrapbook together.

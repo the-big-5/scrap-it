@@ -2,7 +2,6 @@ import Foundation
 
 enum AppTab: String {
     case home
-    case explore
     case profile
 }
 
