@@ -126,6 +126,42 @@ struct ScrapItTests {
         let decodedPresence = try JSONDecoder().decode(CollaboratorPresence.self, from: presenceData)
         #expect(decodedPresence.name == "Fikri")
         #expect(decodedPresence.currentPageIndex == 2)
+
+        let washiPayload = ScrapbookItemPayload(
+            id: UUID(),
+            centerX: 0.5,
+            centerY: 0.5,
+            width: 0.3,
+            rotation: 0.1,
+            zIndex: 2,
+            letterID: "A",
+            text: "Aloha",
+            textColor: "#112233",
+            washiID: "washi-1",
+            washiLength: 0.4,
+            tearSeed: 42,
+            drawingData: Data("ink".utf8)
+        )
+        let richEvent = ScrapbookEvent(
+            type: .itemCutUndone,
+            pageIndex: 1,
+            senderID: "user-123",
+            loopEnabled: false,
+            restoredItem: washiPayload,
+            removedPieceIDs: [UUID(), UUID()],
+            text: "Aloha",
+            textColor: "#112233",
+            stickerSetID: "travel"
+        )
+        let richData = try JSONEncoder().encode(richEvent)
+        let decodedRich = try JSONDecoder().decode(ScrapbookEvent.self, from: richData)
+        #expect(decodedRich.type == .itemCutUndone)
+        #expect(decodedRich.loopEnabled == false)
+        #expect(decodedRich.restoredItem?.washiID == "washi-1")
+        #expect(decodedRich.restoredItem?.tearSeed == 42)
+        #expect(decodedRich.restoredItem?.drawingData == Data("ink".utf8))
+        #expect(decodedRich.removedPieceIDs?.count == 2)
+        #expect(decodedRich.stickerSetID == "travel")
     }
 
     @Test func scrapbookViewModelAppliesRemoteRealtimeEvents() async throws {

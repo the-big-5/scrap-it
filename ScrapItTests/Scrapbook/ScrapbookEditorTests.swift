@@ -103,15 +103,16 @@ struct ScrapbookEditorTests {
 
     @Test func aPageHoldsAtMostFortyItems() throws {
         let vm = makeEditor()
+        let letter = try #require(LetterCatalog.letters.first)
         #expect(ScrapbookPage.maxItems == 40)
         for _ in 0..<ScrapbookPage.maxItems {
-            vm.addPhoto(stillPhoto.id)
+            vm.addLetter(letter)
         }
         #expect(vm.currentPage?.allItems.count == ScrapbookPage.maxItems)
         #expect(vm.remainingSlots == 0)
 
         #expect(!vm.addPhoto(livePhoto.id))
-        #expect(!vm.addLetter(try #require(LetterCatalog.letters.first)))
+        #expect(!vm.addLetter(letter))
         #expect(vm.currentPage?.allItems.count == ScrapbookPage.maxItems)
         #expect(vm.toastMessage == ScrapbookViewModel.pageFullMessage)
     }
@@ -426,7 +427,7 @@ struct ScrapbookEditorTests {
         #expect(vm.viewerPhoto == nil)
     }
 
-    @Test func onlyPhotosAndTravelStickersAreSharedWithFriends() async throws {
+    @Test func allToolbarToolsAreSharedWithFriends() async throws {
         let realtime = MockScrapbookRealtimeService()
         let vm = ScrapbookViewModel(modelContext: context, sessionStore: SessionStore(modelContext: context),
                                     scrapbookID: scrapbook.id, realtimeService: realtime)
@@ -444,6 +445,7 @@ struct ScrapbookEditorTests {
         _ = vm.placeSticker(try #require(StickerCatalog.fun.stickers.first), center: CGPoint(x: 100, y: 100),
                             width: 60, rotation: 0, pageFrame: pageFrame)
         vm.selectTrayTool(.pencil)
+        let drawingID = try #require(vm.activeDrawingID)
         vm.updateActiveDrawing(Data("strokes".utf8))
         vm.selectTrayTool(.pencil)
         for item in vm.currentPage?.allItems ?? [] {
@@ -452,11 +454,265 @@ struct ScrapbookEditorTests {
         try await Task.sleep(for: .milliseconds(100))
 
         let placed = realtime.broadcastedEvents.filter { $0.type == .itemPlaced }.compactMap(\.item)
-        #expect(placed.count == 2)
+        #expect(placed.count == 7)
         #expect(placed.contains { $0.photoID == stillPhoto.id })
+        #expect(placed.contains { $0.letterID == LetterCatalog.letters.first?.id })
+        #expect(placed.contains { $0.text == "Hi" })
+        #expect(placed.contains { $0.washiID == WashiCatalog.styles.first?.id })
         #expect(placed.contains { $0.stickerID == StickerCatalog.travel.stickers.first?.id })
-        #expect(realtime.broadcastedEvents.filter { $0.type == .itemTransformed }.count == 2)
-        #expect(!realtime.broadcastedEvents.contains { $0.type == .drawingUpdated })
+        #expect(placed.contains { $0.stickerID == StickerCatalog.fun.stickers.first?.id })
+        #expect(placed.contains { $0.id == drawingID })
+        #expect(realtime.broadcastedEvents.filter { $0.type == .itemTransformed }.count == 7)
+        let drawingUpdate = realtime.broadcastedEvents.last { $0.type == .drawingUpdated }
+        #expect(drawingUpdate?.itemID == drawingID)
+        #expect(drawingUpdate?.drawingData == Data("strokes".utf8))
+    }
+
+    @Test func photoTrayHidesPlacedPhotosAcrossPagesUntilAllPiecesAreDeleted() throws {
+        let emptyBook = Scrapbook(title: "Empty", sourceSessionID: UUID())
+        context.insert(emptyBook)
+        let emptyVM = ScrapbookViewModel(
+            modelContext: context,
+            navigator: navigator,
+            sessionStore: SessionStore(modelContext: context),
+            scrapbookID: emptyBook.id
+        )
+        #expect(emptyVM.emptyPhotoTrayMessage == "Photos from this roll appear here.")
+
+        let vm = makeEditor()
+        #expect(vm.trayPhotos.map(\.id) == [livePhoto.id, stillPhoto.id])
+
+        #expect(vm.addPhoto(stillPhoto.id))
+        #expect(vm.trayPhotos.map(\.id) == [livePhoto.id])
+        #expect(!vm.addPhoto(stillPhoto.id))
+
+        #expect(vm.addPhoto(livePhoto.id, at: CGPoint(x: 0.15, y: 0.15)))
+        #expect(vm.trayPhotos.isEmpty)
+        #expect(vm.emptyPhotoTrayMessage == "All photos from this roll are on the scrapbook.")
+
+        // Single-use slot applies across all pages in the scrapbook.
+        let firstPage = try #require(vm.pages.first)
+        vm.addPage()
+        #expect(vm.trayPhotos.isEmpty)
+        vm.currentPageID = firstPage.id
+
+        let placedStill = try #require(vm.currentPage?.allItems.first { $0.photoID == stillPhoto.id })
+        placedStill.centerX = 0.5
+        placedStill.centerY = 0.5
+        placedStill.rotation = 0
+        let pageSize = CGSize(width: 300, height: 400)
+        #expect(vm.cut(along: [CGPoint(x: 0, y: 200), CGPoint(x: 150, y: 201), CGPoint(x: 300, y: 200)], pageSize: pageSize))
+        let pieces = vm.currentPage?.allItems.filter { $0.photoID == stillPhoto.id } ?? []
+        #expect(pieces.count == 2)
+
+        vm.removeItem(pieces[0].id)
+        #expect(!vm.trayPhotos.contains { $0.id == stillPhoto.id })
+
+        vm.removeItem(pieces[1].id)
+        #expect(vm.trayPhotos.map(\.id) == [stillPhoto.id])
+    }
+
+    @Test func stickerSheetSlotsLockAndResetAcrossCollaborators() async throws {
+        let realtime = MockScrapbookRealtimeService()
+        let vm = ScrapbookViewModel(modelContext: context, sessionStore: SessionStore(modelContext: context),
+                                    scrapbookID: scrapbook.id, realtimeService: realtime)
+        await vm.connectRealtime()
+        let travelSticker = try #require(StickerCatalog.travel.stickers.first)
+        let funSticker = try #require(StickerCatalog.fun.stickers.first)
+
+        let remoteTravel = ScrapbookItemPayload(
+            id: UUID(), stickerID: travelSticker.id,
+            centerX: 0.5, centerY: 0.5, width: 0.2, rotation: 0, zIndex: 1
+        )
+        realtime.simulateIncomingEvent(ScrapbookEvent(
+            type: .itemPlaced, pageIndex: 0, senderID: "peer", item: remoteTravel
+        ))
+
+        vm.toggleStickerSheet(StickerCatalog.travel)
+        #expect(vm.existingSheet(for: StickerCatalog.travel)?.usedStickerIDs.contains(travelSticker.id) == true)
+        #expect(!vm.placeSticker(travelSticker, center: CGPoint(x: 150, y: 200),
+                                 width: 60, rotation: 0, pageFrame: CGRect(x: 0, y: 0, width: 300, height: 400)))
+
+        vm.takeNewStickerSheet()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(vm.existingSheet(for: StickerCatalog.travel)?.usedStickerIDs.isEmpty == true)
+        let resetBroadcast = realtime.broadcastedEvents.last { $0.type == .stickerSheetReset }
+        #expect(resetBroadcast?.stickerSetID == StickerCatalog.travel.id)
+
+        vm.toggleStickerSheet(StickerCatalog.fun)
+        _ = vm.placeSticker(funSticker, center: CGPoint(x: 150, y: 200),
+                            width: 60, rotation: 0, pageFrame: CGRect(x: 0, y: 0, width: 300, height: 400))
+        #expect(vm.existingSheet(for: StickerCatalog.fun)?.usedStickerIDs == [funSticker.id])
+
+        realtime.simulateIncomingEvent(ScrapbookEvent(
+            type: .stickerSheetReset, pageIndex: 0, senderID: "peer", stickerSetID: StickerCatalog.fun.id
+        ))
+        #expect(vm.existingSheet(for: StickerCatalog.fun)?.usedStickerIDs.isEmpty == true)
+    }
+
+    @Test func textEditsDrawingLayersMotionAndCutUndoSyncRemotely() async throws {
+        let realtime = MockScrapbookRealtimeService()
+        let vm = ScrapbookViewModel(modelContext: context, sessionStore: SessionStore(modelContext: context),
+                                    scrapbookID: scrapbook.id, realtimeService: realtime)
+        await vm.connectRealtime()
+
+        // Text edit and clear-to-delete
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "First"
+        vm.commitTextEditor()
+        let textItem = try #require(vm.currentPage?.allItems.first { $0.kind == .text })
+
+        vm.editText(textItem.id)
+        vm.textEditor?.draft = "Second"
+        vm.commitTextEditor()
+        try await Task.sleep(for: .milliseconds(50))
+        let textUpdated = realtime.broadcastedEvents.last { $0.type == .itemTextUpdated }
+        #expect(textUpdated?.itemID == textItem.id)
+        #expect(textUpdated?.text == "Second")
+
+        realtime.simulateIncomingEvent(ScrapbookEvent(
+            type: .itemTextUpdated, pageIndex: 0, senderID: "peer",
+            itemID: textItem.id, text: "Peer Edit", textColor: "#112233"
+        ))
+        #expect(textItem.text == "Peer Edit")
+        #expect(textItem.textColor == "#112233")
+
+        vm.editText(textItem.id)
+        vm.textEditor?.draft = "   "
+        vm.commitTextEditor()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(realtime.broadcastedEvents.contains { $0.type == .itemRemoved && $0.itemID == textItem.id })
+
+        // Active Pencil layer remote LWW update bumps remoteDrawingRevision; empty close removes layer remotely
+        vm.selectTrayTool(.pencil)
+        let activeLayerID = try #require(vm.activeDrawingID)
+        let beforeRevision = vm.remoteDrawingRevision
+        realtime.simulateIncomingEvent(ScrapbookEvent(
+            type: .drawingUpdated, pageIndex: 0, senderID: "peer",
+            itemID: activeLayerID, drawingData: Data("remote-ink".utf8)
+        ))
+        #expect(vm.remoteDrawingRevision == beforeRevision + 1)
+        #expect(vm.activeDrawingData == Data("remote-ink".utf8))
+        vm.updateActiveDrawing(nil)
+        vm.selectTrayTool(.pencil)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(realtime.broadcastedEvents.contains { $0.type == .itemRemoved && $0.itemID == activeLayerID })
+
+        // Live photo loop toggle
+        vm.addPhoto(livePhoto.id)
+        let liveItem = try #require(vm.currentPage?.allItems.first { $0.photoID == livePhoto.id })
+        vm.toggleMotion(liveItem.id)
+        try await Task.sleep(for: .milliseconds(50))
+        let motionBroadcast = realtime.broadcastedEvents.last { $0.type == .itemTransformed }
+        #expect(motionBroadcast?.itemID == liveItem.id)
+        #expect(motionBroadcast?.loopEnabled == false)
+        realtime.simulateIncomingEvent(ScrapbookEvent(
+            type: .itemTransformed, pageIndex: 0, senderID: "peer",
+            itemID: liveItem.id, loopEnabled: true
+        ))
+        #expect(liveItem.loopEnabled == true)
+
+        // Cut + undoLastCut broadcast & peer apply
+        liveItem.centerX = 0.5
+        liveItem.centerY = 0.5
+        liveItem.rotation = 0
+        let pageSize = CGSize(width: 300, height: 400)
+        #expect(vm.cut(along: [CGPoint(x: 0, y: 200), CGPoint(x: 150, y: 201), CGPoint(x: 300, y: 200)], pageSize: pageSize))
+        vm.undoLastCut()
+        try await Task.sleep(for: .milliseconds(50))
+        let cutUndo = try #require(realtime.broadcastedEvents.last { $0.type == .itemCutUndone })
+        #expect(cutUndo.restoredItem?.id == liveItem.id)
+        #expect(cutUndo.removedPieceIDs?.count == 1)
+
+        // Simulate peer state where pieces exist and original is absent, then apply itemCutUndone
+        let restoredID = UUID()
+        let pieceA = ScrapbookItemPayload(id: UUID(), photoID: stillPhoto.id, centerX: 0.4, centerY: 0.4, width: 0.4, rotation: 0, zIndex: 5)
+        let pieceB = ScrapbookItemPayload(id: UUID(), photoID: stillPhoto.id, centerX: 0.6, centerY: 0.6, width: 0.4, rotation: 0, zIndex: 6)
+        realtime.simulateIncomingEvent(ScrapbookEvent(type: .itemPlaced, pageIndex: 0, senderID: "peer", item: pieceA))
+        realtime.simulateIncomingEvent(ScrapbookEvent(type: .itemPlaced, pageIndex: 0, senderID: "peer", item: pieceB))
+        let original = ScrapbookItemPayload(id: restoredID, photoID: stillPhoto.id, centerX: 0.5, centerY: 0.5, width: 0.45, rotation: 0, zIndex: 5)
+        realtime.simulateIncomingEvent(ScrapbookEvent(
+            type: .itemCutUndone, pageIndex: 0, senderID: "peer",
+            restoredItem: original, removedPieceIDs: [pieceA.id, pieceB.id]
+        ))
+        #expect(vm.currentPage?.allItems.contains { $0.id == restoredID } == true)
+        #expect(vm.currentPage?.allItems.contains { $0.id == pieceA.id || $0.id == pieceB.id } == false)
+    }
+
+    @Test func dragToTrashRemovesCutPiecesStickersAndCancelsSafely() async throws {
+        let realtime = MockScrapbookRealtimeService()
+        let vm = ScrapbookViewModel(modelContext: context, sessionStore: SessionStore(modelContext: context),
+                                    scrapbookID: scrapbook.id, realtimeService: realtime)
+        await vm.connectRealtime()
+        vm.pageGlobalFrame = CGRect(x: 20, y: 100, width: 300, height: 400)
+        vm.trashDropFrame = CGRect(x: 150, y: 600, width: 64, height: 64)
+
+        // Cut a photo into two pieces
+        vm.addPhoto(stillPhoto.id, at: CGPoint(x: 0.5, y: 0.5))
+        let photoItem = try #require(vm.currentPage?.allItems.first)
+        photoItem.rotation = 0
+        #expect(vm.cut(along: [CGPoint(x: 0, y: 200), CGPoint(x: 150, y: 201), CGPoint(x: 300, y: 200)],
+                       pageSize: CGSize(width: 300, height: 400)))
+        let pieces = vm.currentPage?.allItems.filter { $0.photoID == stillPhoto.id } ?? []
+        #expect(pieces.count == 2)
+
+        // Dragging outside trash keeps piece
+        vm.updateItemDrag(itemID: pieces[0].id, pageLocation: CGPoint(x: 100, y: 200))
+        #expect(vm.draggedItemID == pieces[0].id)
+        #expect(!vm.isTrashTargeted)
+        #expect(!vm.endItemDrag(itemID: pieces[0].id))
+        #expect(vm.draggedItemID == nil)
+        #expect(vm.currentPage?.allItems.count == 2)
+
+        // Dragging into trash zone deletes leftover piece immediately and broadcasts removal
+        // Global target center is (182, 632) -> page location (162, 532)
+        vm.updateItemDrag(itemID: pieces[0].id, pageLocation: CGPoint(x: 162, y: 532))
+        #expect(vm.isTrashTargeted)
+        #expect(vm.endItemDrag(itemID: pieces[0].id))
+        #expect(vm.trashedItemCount == 1)
+        #expect(vm.currentPage?.allItems.map(\.id) == [pieces[1].id])
+        #expect(!vm.trayPhotos.contains { $0.id == stillPhoto.id })
+
+        // Trashing the last piece returns photo to PhotoTray
+        vm.updateItemDrag(itemID: pieces[1].id, pageLocation: CGPoint(x: 162, y: 532))
+        #expect(vm.endItemDrag(itemID: pieces[1].id))
+        #expect(vm.trashedItemCount == 2)
+        #expect(vm.currentPage?.allItems.isEmpty == true)
+        #expect(vm.trayPhotos.map(\.id) == [livePhoto.id, stillPhoto.id])
+
+        // Stickers return to their sticker sheet slot on trash/remove and can be placed again
+        let sticker = try #require(StickerCatalog.travel.stickers.first)
+        #expect(vm.placeSticker(sticker, center: CGPoint(x: 150, y: 200), width: 60, rotation: 0,
+                                pageFrame: CGRect(x: 0, y: 0, width: 300, height: 400)))
+        #expect(vm.existingSheet(for: StickerCatalog.travel)?.usedStickerIDs.contains(sticker.id) == true)
+        let stickerItem = try #require(vm.currentPage?.allItems.first)
+        vm.updateItemDrag(itemID: stickerItem.id, pageLocation: CGPoint(x: 162, y: 532))
+        #expect(vm.endItemDrag(itemID: stickerItem.id))
+        #expect(vm.currentPage?.allItems.isEmpty == true)
+        #expect(vm.existingSheet(for: StickerCatalog.travel)?.usedStickerIDs.contains(sticker.id) == false)
+        #expect(vm.placeSticker(sticker, center: CGPoint(x: 150, y: 200), width: 60, rotation: 0,
+                                pageFrame: CGRect(x: 0, y: 0, width: 300, height: 400)))
+        let rePlacedSticker = try #require(vm.currentPage?.allItems.first)
+        realtime.simulateIncomingEvent(ScrapbookEvent(
+            type: .itemRemoved, pageIndex: 0, senderID: "peer", itemID: rePlacedSticker.id
+        ))
+        #expect(vm.existingSheet(for: StickerCatalog.travel)?.usedStickerIDs.contains(sticker.id) == false)
+
+        try await Task.sleep(for: .milliseconds(50))
+        let removedIDs = Set(realtime.broadcastedEvents.filter { $0.type == .itemRemoved }.compactMap(\.itemID))
+        #expect(removedIDs.isSuperset(of: [pieces[0].id, pieces[1].id, stickerItem.id]))
+
+        // Remote deletion while dragging clears active drag state safely
+        let letter = try #require(LetterCatalog.letters.first)
+        #expect(vm.addLetter(letter))
+        let letterItem = try #require(vm.currentPage?.allItems.first)
+        vm.updateItemDrag(itemID: letterItem.id, pageLocation: CGPoint(x: 162, y: 532))
+        #expect(vm.draggedItemID == letterItem.id)
+        realtime.simulateIncomingEvent(ScrapbookEvent(
+            type: .itemRemoved, pageIndex: 0, senderID: "peer", itemID: letterItem.id
+        ))
+        #expect(vm.draggedItemID == nil)
+        #expect(!vm.isTrashTargeted)
     }
 
     // MARK: - Pencil

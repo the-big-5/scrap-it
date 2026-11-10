@@ -32,12 +32,13 @@ struct PhotoTray: View {
     let photos: [ScrapPhoto]
     let aspectRatio: (ScrapPhoto) -> CGFloat
     let controller: TrayDragController
+    var emptyMessage: String = "Photos from this roll appear here."
     let onAdd: (UUID) -> Void
 
     var body: some View {
         if photos.isEmpty {
             SubTrayScroll {
-                Text("Photos from this roll appear here.")
+                Text(emptyMessage)
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.white.opacity(0.85))
             }

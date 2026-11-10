@@ -15,6 +15,8 @@ struct ScrapbookItemView: View {
     let actions: ScrapbookItemActions?
     /// The drawing layer being drawn is hidden; the live canvas replaces it.
     var isHidden = false
+    /// Shrinks and dims the element while hovering over the trash drop zone.
+    var isOverTrash = false
 
     @State private var image: UIImage?
     @State private var movieURL: URL?
@@ -22,7 +24,6 @@ struct ScrapbookItemView: View {
     @State private var scaleFactor: CGFloat = 1
     @State private var rotationDelta: Angle = .zero
     @State private var isInteracting = false
-    @State private var isStickerRemoveConfirmationPresented = false
 
     private var isEditable: Bool { actions != nil }
     private var isLive: Bool { photo?.livePhotoMovieData != nil }
@@ -90,9 +91,13 @@ struct ScrapbookItemView: View {
             .onTapGesture(count: 2) { actions?.doubleTap(item.id) }
             .onTapGesture { actions?.select(item.id) }
             .gesture(editGesture, including: isEditable ? .all : .none)
+            .scaleEffect(isOverTrash ? 0.62 : 1)
+            .opacity(isOverTrash ? 0.72 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isOverTrash)
             .rotationEffect(Angle(radians: item.rotation) + rotationDelta)
             .position(x: item.centerX * pageSize.width + dragOffset.width,
                       y: item.centerY * pageSize.height + dragOffset.height)
+            .onDisappear { actions?.cancelDrag(item.id) }
             .task(id: "\(item.photoID?.uuidString ?? "-")-\(pixelSize)") {
                 guard let photo else { return }
                 if let cached = ScrapbookImageLoader.shared.cachedImage(for: photo.id, pixelSize: pixelSize) {
@@ -103,11 +108,6 @@ struct ScrapbookItemView: View {
                 if let movie = photo.livePhotoMovieData, movieURL == nil {
                     movieURL = LiveMovieFileCache.url(for: photo.id, data: movie)
                 }
-            }
-            .confirmationDialog("Remove this sticker?", isPresented: $isStickerRemoveConfirmationPresented, titleVisibility: .visible) {
-                Button("Remove Sticker", role: .destructive) { actions?.remove(item.id) }
-            } message: {
-                Text("A removed sticker can't be used again.")
             }
     }
 
@@ -212,16 +212,8 @@ struct ScrapbookItemView: View {
                 Label("Edit Text", systemImage: "character.cursor.ibeam")
             }
         }
-        if item.stickerID != nil {
-            Button(role: .destructive) {
-                isStickerRemoveConfirmationPresented = true
-            } label: {
-                Label("Remove Sticker", systemImage: "trash")
-            }
-        } else {
-            Button(role: .destructive) { actions?.remove(item.id) } label: {
-                Label("Remove from Page", systemImage: "trash")
-            }
+        Button(role: .destructive) { actions?.remove(item.id) } label: {
+            Label("Remove from Page", systemImage: "trash")
         }
     }
 
@@ -233,6 +225,7 @@ struct ScrapbookItemView: View {
             .onChanged { value in
                 beginInteraction()
                 dragOffset = value.translation
+                actions?.dragChanged(item.id, value.location)
             }
         let magnify = MagnifyGesture()
             .onChanged { value in
@@ -293,7 +286,10 @@ struct ScrapbookItemView: View {
     }
 
     private func commitInteraction() {
-        actions?.commitTransform(item.id, dragOffset, scaleFactor, rotationDelta.radians, pageSize)
+        let didDelete = actions?.endDrag(item.id) ?? false
+        if !didDelete {
+            actions?.commitTransform(item.id, dragOffset, scaleFactor, rotationDelta.radians, pageSize)
+        }
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {

@@ -13,6 +13,9 @@ struct ScrapbookItemActions {
     /// Double tap: full-screen photo, or edit a text (change 022).
     var doubleTap: (UUID) -> Void = { _ in }
     var editText: (UUID) -> Void = { _ in }
+    var dragChanged: (UUID, CGPoint) -> Void = { _, _ in }
+    var endDrag: (UUID) -> Bool = { _ in false }
+    var cancelDrag: (UUID) -> Void = { _ in }
 }
 
 /// A 3:4 scrapbook page: background, then its items back to front (change 013, POC look).
@@ -31,6 +34,9 @@ struct ScrapbookPageView: View {
     var onSwipePage: ((Int) -> Void)?
     /// The drawing layer being drawn (hidden; the canvas replaces it).
     var activeDrawingID: UUID?
+    /// Active dragged item and trash hover state (unclips the dragged item over page bounds).
+    var draggedItemID: UUID?
+    var isTrashTargeted = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -48,7 +54,8 @@ struct ScrapbookPageView: View {
                         isSelected: selectedItemID == item.id,
                         shouldPlay: { shouldPlay(item, $0) },
                         actions: actions,
-                        isHidden: item.id == activeDrawingID
+                        isHidden: item.id == activeDrawingID,
+                        isOverTrash: isTrashTargeted && draggedItemID == item.id
                     )
                 }
 
@@ -59,7 +66,7 @@ struct ScrapbookPageView: View {
             .coordinateSpace(name: Self.coordinateSpace)
         }
         .aspectRatio(3 / 4, contentMode: .fit)
-        .clipped()
+        .clipShape(Rectangle().inset(by: draggedItemID != nil ? -2000 : 0))
     }
 
     private var swipe: some Gesture {

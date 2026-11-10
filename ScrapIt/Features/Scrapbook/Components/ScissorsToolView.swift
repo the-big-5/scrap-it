@@ -28,6 +28,9 @@ struct ScissorsToolView: View {
     let onFinishMove: (UUID) -> Void
     /// Returns `true` when a photo was cut.
     let onCut: ([CGPoint], CGSize) -> Bool
+    var onDragMoved: (UUID, CGPoint) -> Void = { _, _ in }
+    var onDropInTrash: (UUID) -> Bool = { _ in false }
+    var onCancelDrag: () -> Void = {}
 
     private enum Mode {
         case pending, cutting, moving, transforming
@@ -88,6 +91,10 @@ struct ScissorsToolView: View {
         .sensoryFeedback(.impact(weight: .light, intensity: 0.6), trigger: snipCount)
         .sensoryFeedback(.impact(weight: .medium), trigger: cutCount)
         .sensoryFeedback(.impact(weight: .light), trigger: liftCount)
+        .onDisappear {
+            holdTask?.cancel()
+            onCancelDrag()
+        }
     }
 
     private func scissors(at tip: CGPoint) -> some View {
@@ -120,6 +127,7 @@ struct ScissorsToolView: View {
                 guard !Task.isCancelled, mode == .pending, let id = itemAt(touchStart, size) else { return }
                 beginManipulating(id)
                 mode = .moving
+                onDragMoved(id, touchStart)
                 liftCount += 1
             }
         }
@@ -141,6 +149,7 @@ struct ScissorsToolView: View {
             onMove(id, (base.centerX + value.translation.width / size.width,
                         base.centerY + value.translation.height / size.height,
                         base.width, base.rotation))
+            onDragMoved(id, value.location)
         case .transforming, nil:
             break
         }
@@ -158,7 +167,12 @@ struct ScissorsToolView: View {
         case .cutting:
             finishCut(size: size)
         case .moving:
-            commitManipulation()
+            if let id = manipulated, onDropInTrash(id) {
+                manipulated = nil
+                base = nil
+            } else {
+                commitManipulation()
+            }
         default:
             break
         }
@@ -169,7 +183,10 @@ struct ScissorsToolView: View {
     private func transformChanged(_ value: SimultaneousGesture<MagnifyGesture, RotateGesture>.Value, size: CGSize) {
         if mode != .transforming {
             holdTask?.cancel()
-            if mode == .moving { commitManipulation() }
+            if mode == .moving {
+                onCancelDrag()
+                commitManipulation()
+            }
             // A stroke already started is dropped, so nothing gets cut by accident.
             path = []
             ignoresDragUntilRelease = true
