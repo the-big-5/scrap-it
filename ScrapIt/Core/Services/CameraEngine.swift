@@ -50,6 +50,8 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
     private var currentDisplayZoom: CGFloat = 1
     private var hasCameraControl = false
     private var rotationAngle: CGFloat = 0
+    private var photoRotationAngle: CGFloat = 0
+    private var currentDeviceOrientation: RollCameraOrientation.DeviceOrientation = .landscapeLeft
     private var baseRotationAngle: CGFloat = 0
     private var simulatedLandscapeDelta: CGFloat = 0
     /// `AVCaptureSlider` "Zoom" (iOS 18+).
@@ -388,6 +390,15 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
                         .appending(path: "\(UUID().uuidString).mov")
                 }
 
+                if let photoConnection = self.photoOutput.connection(with: .video) {
+                    let captureAngle = self.photoRotationAngle != 0 || self.currentDeviceOrientation.isPortrait
+                        ? self.photoRotationAngle
+                        : self.rotationAngle
+                    if photoConnection.isVideoRotationAngleSupported(captureAngle) {
+                        photoConnection.videoRotationAngle = captureAngle
+                    }
+                }
+
                 let id = settings.uniqueID
                 let delegate = PhotoCaptureDelegate(
                     willCapture: {
@@ -523,16 +534,17 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
     func setSimulatedLandscapeSide(
         _ side: RollCameraOrientation.LandscapeSide,
         isPortrait: Bool,
-        windowOrientation: UIInterfaceOrientation = .unknown
+        windowOrientation: UIInterfaceOrientation = .unknown,
+        deviceOrientation: RollCameraOrientation.DeviceOrientation = .landscapeLeft
     ) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            self.currentDeviceOrientation = deviceOrientation
             let newDelta = RollCameraOrientation.cameraRotationDelta(
                 isPortraitWindow: isPortrait,
                 windowInterfaceOrientation: windowOrientation,
                 physicalSide: side
             )
-            guard newDelta != self.simulatedLandscapeDelta else { return }
             self.simulatedLandscapeDelta = newDelta
             if let device = self.videoInput?.device {
                 let effective = RollCameraOrientation.effectiveCameraAngle(
@@ -548,19 +560,34 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
         // Ignore an angle from the previous camera if it was flipped again.
         guard videoInput?.device == device else { return }
         rotationAngle = angle
+        photoRotationAngle = RollCameraOrientation.photoCaptureAngle(
+            deviceOrientation: currentDeviceOrientation,
+            landscapeAngle: angle
+        )
         updateConnections(for: device.position)
     }
 
     /// Rotates preview and photo with the screen; the front camera is mirrored like the system camera.
     private func updateConnections(for position: AVCaptureDevice.Position) {
-        let connections = [videoOutput.connection(with: .video), photoOutput.connection(with: .video)]
-        for connection in connections.compactMap({ $0 }) {
-            if connection.isVideoRotationAngleSupported(rotationAngle) {
-                connection.videoRotationAngle = rotationAngle
+        if let videoConnection = videoOutput.connection(with: .video) {
+            if videoConnection.isVideoRotationAngleSupported(rotationAngle) {
+                videoConnection.videoRotationAngle = rotationAngle
             }
-            if connection.isVideoMirroringSupported {
-                connection.automaticallyAdjustsVideoMirroring = false
-                connection.isVideoMirrored = position == .front
+            if videoConnection.isVideoMirroringSupported {
+                videoConnection.automaticallyAdjustsVideoMirroring = false
+                videoConnection.isVideoMirrored = position == .front
+            }
+        }
+        if let photoConnection = photoOutput.connection(with: .video) {
+            let captureAngle = photoRotationAngle != 0 || currentDeviceOrientation.isPortrait
+                ? photoRotationAngle
+                : rotationAngle
+            if photoConnection.isVideoRotationAngleSupported(captureAngle) {
+                photoConnection.videoRotationAngle = captureAngle
+            }
+            if photoConnection.isVideoMirroringSupported {
+                photoConnection.automaticallyAdjustsVideoMirroring = false
+                photoConnection.isVideoMirrored = position == .front
             }
         }
     }
