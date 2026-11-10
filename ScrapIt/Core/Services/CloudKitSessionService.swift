@@ -39,6 +39,7 @@ final class CloudKitSessionService {
                 self.isOnline = online
                 if online && wasOffline {
                     self.lastSyncStatus = "Back online — syncing queued shots"
+                    await self.syncPendingOfflinePhotos()
                 } else if !online {
                     self.lastSyncStatus = "Offline — shots queued locally"
                 }
@@ -202,10 +203,38 @@ final class CloudKitSessionService {
         return nextHostID
     }
 
-    // MARK: - Offline Queue & CloudKit Shot Upload
+    // MARK: - CloudKit Shot Upload (change 020: right after capture, long-lived)
 
+    /// Shots being uploaded right now, shared by every service instance so a shot is never sent twice at once.
+    private static var uploadingShotIDs: Set<UUID> = []
+    /// Shots whose upload was picked up again after a relaunch: the parts (`RollShot`, `RollShotRef`) already saved
+    /// and how many reattached operations are still running.
+    private static var resumedShots: [UUID: (savedParts: Set<String>, runningOperations: Int)] = [:]
+
+    private static let shotPart = "shot"
+    private static let refPart = "ref"
+
+    /// Uploads one shot in the background (change 020). Skipped while offline or when it is already being sent;
+    /// the launch / reconnect retry picks it up later.
     @discardableResult
-    func uploadPendingPhotos(for session: CaptureSession) async -> Int {
+    func uploadShot(_ photo: ScrapPhoto) async -> Bool {
+        guard isOnline, !photo.isDeleted, !photo.isSyncedToCloud,
+              !Self.uploadingShotIDs.contains(photo.id) else { return false }
+        let shotID = photo.id
+        Self.uploadingShotIDs.insert(shotID)
+        let ok = await uploadPhotoRecord(photo: photo)
+        Self.uploadingShotIDs.remove(shotID)
+        guard ok, !photo.isDeleted else { return false }
+        photo.isSyncedToCloud = true
+        try? modelContext.save()
+        updateQueuedCount()
+        return true
+    }
+
+    /// End Roll: uploads the shots that are still on this phone only, except `excluding`
+    /// (claim not confirmed yet or Live Photo movie still encoding; those upload when ready).
+    @discardableResult
+    func uploadPendingPhotos(for session: CaptureSession, excluding: Set<UUID> = []) async -> Int {
         guard isOnline else {
             print("⚠️ [CloudKitSessionService] uploadPendingPhotos skipped: offline")
             return 0
@@ -214,24 +243,16 @@ final class CloudKitSessionService {
         let descriptor = FetchDescriptor<ScrapPhoto>(
             predicate: #Predicate { $0.sourceSessionID == targetSessionID && !$0.isSyncedToCloud }
         )
-        guard let pending = try? modelContext.fetch(descriptor), !pending.isEmpty else {
-            print("ℹ️ [CloudKitSessionService] uploadPendingPhotos: no unsynced photos found for session \(session.id)")
-            return 0
+        let pending = ((try? modelContext.fetch(descriptor)) ?? []).filter { !excluding.contains($0.id) }
+        guard !pending.isEmpty else { return 0 }
+        guard session.ckRecordName != nil else {
+            // Not a CloudKit room (no iCloud, Simulator): nothing to upload.
+            pending.forEach { $0.isSyncedToCloud = true }
+            try? modelContext.save()
+            return pending.count
         }
-
         print("🚀 [CloudKitSessionService] uploadPendingPhotos: uploading \(pending.count) photos for session \(session.rollCode)...")
-        var uploadedCount = 0
-        for photo in pending {
-            let ok = await uploadPhotoRecord(photo: photo)
-            if ok {
-                photo.isSyncedToCloud = true
-                uploadedCount += 1
-            }
-        }
-        try? modelContext.save()
-        updateQueuedCount()
-        print("✅ [CloudKitSessionService] uploadPendingPhotos: finished (\(uploadedCount)/\(pending.count) uploaded)")
-        return uploadedCount
+        return await uploadAll(pending)
     }
 
     func enqueueOrUploadPhoto(
@@ -252,32 +273,49 @@ final class CloudKitSessionService {
         updateQueuedCount()
     }
 
+    /// Launch and back online (change 020): uploads every shot not in CloudKit yet, from live and ended rolls.
     func syncPendingOfflinePhotos() async {
         guard isOnline else { return }
-        let sessionDesc = FetchDescriptor<CaptureSession>(
-            predicate: #Predicate { $0.statusRaw == "ended" }
-        )
-        guard let endedSessions = try? modelContext.fetch(sessionDesc), !endedSessions.isEmpty else {
-            queuedOfflineCount = 0
-            return
-        }
-        let endedIDs = Set(endedSessions.map(\.id))
         let descriptor = FetchDescriptor<ScrapPhoto>(
             predicate: #Predicate { !$0.isSyncedToCloud }
         )
-        guard let pending = try? modelContext.fetch(descriptor), !pending.isEmpty else {
-            queuedOfflineCount = 0
-            return
-        }
+        let pending = (try? modelContext.fetch(descriptor)) ?? []
+        await uploadAll(pending)
+        updateQueuedCount()
+    }
 
-        for photo in pending where endedIDs.contains(photo.sourceSessionID) {
-            let ok = await uploadPhotoRecord(photo: photo)
-            if ok {
-                photo.isSyncedToCloud = true
+    /// On launch: picks up long-lived uploads that kept running while the app was closed (change 020),
+    /// then uploads whatever is still missing.
+    func resumeShotUploads() async {
+        let container = CKContainer.app
+        let operationIDs: [CKOperation.ID] = await withCheckedContinuation { continuation in
+            container.fetchAllLongLivedOperationIDs { ids, _ in
+                continuation.resume(returning: ids ?? [])
             }
         }
-        try? modelContext.save()
-        updateQueuedCount()
+        for id in operationIDs {
+            let operation: CKOperation? = await withCheckedContinuation { continuation in
+                container.fetchLongLivedOperation(withID: id) { operation, _ in
+                    continuation.resume(returning: operation)
+                }
+            }
+            guard let modify = operation as? CKModifyRecordsOperation,
+                  let shotID = Self.shotID(of: modify) else { continue }
+            Self.uploadingShotIDs.insert(shotID)
+            var resumed = Self.resumedShots[shotID] ?? (savedParts: [], runningOperations: 0)
+            resumed.runningOperations += 1
+            Self.resumedShots[shotID] = resumed
+            let part = Self.part(of: modify)
+            // Holds the service until the operation finishes (the launch instance is not kept anywhere else).
+            modify.modifyRecordsResultBlock = { result in
+                let saved = (try? result.get()) != nil
+                Task { @MainActor in
+                    self.resumedOperationFinished(shotID: shotID, part: part, saved: saved)
+                }
+            }
+            container.add(modify)
+        }
+        await syncPendingOfflinePhotos()
     }
 
     func updateQueuedCount() {
@@ -306,8 +344,74 @@ final class CloudKitSessionService {
         return record
     }
 
+    /// Where the encrypted payload waits until its long-lived save finishes (kept across app launches).
+    nonisolated static func pendingPayloadURL(shotID: UUID) -> URL {
+        URL.applicationSupportDirectory
+            .appending(path: "PendingShots", directoryHint: .isDirectory)
+            .appending(path: "\(shotID.uuidString).bin")
+    }
+
+    /// Uploads the shots at the same time; returns how many were uploaded.
+    @discardableResult
+    private func uploadAll(_ photos: [ScrapPhoto]) async -> Int {
+        await withTaskGroup(of: Bool.self) { group in
+            for photo in photos {
+                group.addTask { @MainActor in
+                    await self.uploadShot(photo)
+                }
+            }
+            var uploaded = 0
+            for await ok in group where ok {
+                uploaded += 1
+            }
+            return uploaded
+        }
+    }
+
+    private func resumedOperationFinished(shotID: UUID, part: String?, saved: Bool) {
+        guard var resumed = Self.resumedShots[shotID] else { return }
+        resumed.runningOperations -= 1
+        if saved, let part {
+            resumed.savedParts.insert(part)
+            if part == Self.shotPart {
+                try? FileManager.default.removeItem(at: Self.pendingPayloadURL(shotID: shotID))
+            }
+        }
+        guard resumed.runningOperations <= 0 else {
+            Self.resumedShots[shotID] = resumed
+            return
+        }
+        Self.resumedShots[shotID] = nil
+        Self.uploadingShotIDs.remove(shotID)
+        let descriptor = FetchDescriptor<ScrapPhoto>(predicate: #Predicate { $0.id == shotID })
+        guard let photo = try? modelContext.fetch(descriptor).first else { return }
+        if resumed.savedParts == [Self.shotPart, Self.refPart] {
+            photo.isSyncedToCloud = true
+            try? modelContext.save()
+            updateQueuedCount()
+        } else {
+            // A part was not saved while the app was closed: send the shot again (same record names).
+            Task { await uploadShot(photo) }
+        }
+    }
+
+    /// Shot ID of a `RollShot` (record name = shot ID) or `RollShotRef` (`ShotRef-<shot ID>`) save.
+    private static func shotID(of operation: CKModifyRecordsOperation) -> UUID? {
+        guard let name = operation.recordsToSave?.first?.recordID.recordName else { return nil }
+        return UUID(uuidString: name.hasPrefix("ShotRef-") ? String(name.dropFirst("ShotRef-".count)) : name)
+    }
+
+    private static func part(of operation: CKModifyRecordsOperation) -> String? {
+        switch operation.recordsToSave?.first?.recordType {
+        case "RollShot": shotPart
+        case "RollShotRef": refPart
+        default: nil
+        }
+    }
+
     /// Change 012: the shot goes to the public database as one encrypted blob with a random name
     /// (`RollShot`, field `payload`), and a `RollShotRef` goes into the members-only room zone as its index.
+    /// Change 020: both saves are long-lived, so the system finishes them even when the app is closed.
     private func uploadPhotoRecord(photo: ScrapPhoto) async -> Bool {
         let sessionID = photo.sourceSessionID
         let descriptor = FetchDescriptor<CaptureSession>(predicate: #Predicate { $0.id == sessionID })
@@ -315,7 +419,6 @@ final class CloudKitSessionService {
               session.ckRecordName != nil,
               let key = session.rollKey else {
             // Not a CloudKit room (no iCloud, Simulator): nothing to upload.
-            print("ℹ️ [CloudKitSessionService] uploadPhotoRecord: not a CloudKit session or missing key (ckRecordName=\(String(describing: (try? modelContext.fetch(descriptor).first)?.ckRecordName)))")
             return true
         }
         let payload = RollShotPayload(
@@ -328,29 +431,55 @@ final class CloudKitSessionService {
             photo: photo.imageData,
             livePhotoMovie: photo.livePhotoMovieData
         )
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).bin")
-        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let fileURL = Self.pendingPayloadURL(shotID: photo.id)
         do {
-            try RollShotCrypto.seal(payload, key: key).write(to: fileURL)
-
-            let shot = Self.publicShotRecord(shotID: photo.id, payloadURL: fileURL)
-            _ = try await CKContainer.app.publicCloudDatabase
-                .modifyRecords(saving: [shot], deleting: [], savePolicy: .allKeys)
-
-            let location = roomLocation(for: session)
-            let ref = CKRecord(
-                recordType: "RollShotRef",
-                recordID: CKRecord.ID(recordName: "ShotRef-\(photo.id.uuidString)", zoneID: location.zoneID)
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
             )
-            ref["shotRecordName"] = photo.id.uuidString
-            ref["authorID"] = photo.authorID
-            _ = try await location.database(in: CKContainer.app)
-                .modifyRecords(saving: [ref], deleting: [], savePolicy: .allKeys)
-            print("📸 [CloudKitSessionService] Uploaded shot \(photo.id.uuidString) to public DB and zone ref to \(location.zoneID.zoneName)")
-            return true
+            try RollShotCrypto.seal(payload, key: key).write(to: fileURL)
         } catch {
-            print("🚨 [CloudKitSessionService] uploadPhotoRecord failed for shot \(photo.id.uuidString): \(error)")
+            print("🚨 [CloudKitSessionService] uploadPhotoRecord could not write payload for \(photo.id.uuidString): \(error)")
             return false
+        }
+
+        let shot = Self.publicShotRecord(shotID: photo.id, payloadURL: fileURL)
+        let location = roomLocation(for: session)
+        let ref = CKRecord(
+            recordType: "RollShotRef",
+            recordID: CKRecord.ID(recordName: "ShotRef-\(photo.id.uuidString)", zoneID: location.zoneID)
+        )
+        ref["shotRecordName"] = photo.id.uuidString
+        ref["authorID"] = photo.authorID
+
+        async let shotSaved = Self.saveLongLived(shot, in: CKContainer.app.publicCloudDatabase)
+        async let refSaved = Self.saveLongLived(ref, in: location.database(in: CKContainer.app))
+        let (shotOK, refOK) = await (shotSaved, refSaved)
+        if shotOK {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        if shotOK && refOK {
+            print("📸 [CloudKitSessionService] Uploaded shot \(photo.id.uuidString) to public DB and zone ref to \(location.zoneID.zoneName)")
+        } else {
+            print("🚨 [CloudKitSessionService] uploadPhotoRecord failed for shot \(photo.id.uuidString): shot=\(shotOK) ref=\(refOK)")
+        }
+        return shotOK && refOK
+    }
+
+    /// One long-lived save (keeps running in the system after the app is closed or suspended).
+    private static func saveLongLived(_ record: CKRecord, in database: CKDatabase) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let operation = CKModifyRecordsOperation(recordsToSave: [record], recordIDsToDelete: nil)
+            operation.savePolicy = .allKeys
+            operation.configuration.isLongLived = true
+            operation.qualityOfService = .utility
+            operation.modifyRecordsResultBlock = { result in
+                if case .failure(let error) = result {
+                    print("🚨 [CloudKitSessionService] long-lived save \(record.recordID.recordName) failed: \(error)")
+                }
+                continuation.resume(returning: (try? result.get()) != nil)
+            }
+            database.add(operation)
         }
     }
 

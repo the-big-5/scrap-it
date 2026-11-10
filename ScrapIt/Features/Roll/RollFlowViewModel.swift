@@ -85,6 +85,9 @@ final class RollFlowViewModel {
     @ObservationIgnored private lazy var archiveSync = ScrapbookArchiveSync(modelContext: modelContext, roomService: roomService)
     @ObservationIgnored private var lobbyRefreshTask: Task<Void, Never>?
     @ObservationIgnored var lastSlotClaimTask: Task<Void, Never>?
+    /// Change 020: a shot uploads only when its slot claim is confirmed and its Live Photo movie is saved.
+    @ObservationIgnored private var shotsAwaitingClaim: Set<UUID> = []
+    @ObservationIgnored private var shotsAwaitingMovie: Set<UUID> = []
     @ObservationIgnored private var roomChangeObserver: NSObjectProtocol?
 
     /// How often the lobby re-reads the room when no push arrives.
@@ -701,30 +704,38 @@ final class RollFlowViewModel {
         await MainActor.run {
             triggerShutterAnimation()
         }
-        let shot = await camera.captureShot(
-            filter: activeSession?.filter ?? .colorPrint200,
-            rollName: activeSession?.name ?? "Roll"
-        )
-        let photo = await recordCapturedShot(
-            imageData: shot.imageData,
-            currentUser: currentUser
-        )
-        guard let photo, let movieTask = shot.livePhotoMovie else { return }
-        // The still is saved first; the filtered Live Photo movie follows when ready.
-        if let movieData = await movieTask.value {
-            guard photo.modelContext != nil else { return }
-            photo.livePhotoMovieData = movieData
-            try? modelContext.save()
-            // If the roll already ended while movie was encoding, ensure this photo gets uploaded with movie (change 015).
-            if let session = activeSession, session.status == .ended {
-                photo.isSyncedToCloud = false
+        // Change 020: from the shutter on (photo processing, slot, movie, upload start), the shot finishes
+        // even if the user leaves the app right away.
+        await BackgroundTime.keepAlive("RollShot") {
+            let shot = await camera.captureShot(
+                filter: activeSession?.filter ?? .colorPrint200,
+                rollName: activeSession?.name ?? "Roll"
+            )
+            let photo = await recordCapturedShot(
+                imageData: shot.imageData,
+                currentUser: currentUser,
+                expectsLiveMovie: shot.livePhotoMovie != nil
+            )
+            guard let photo, let movieTask = shot.livePhotoMovie else { return }
+            // The still is saved first; the filtered Live Photo movie follows when ready.
+            let movieData = await movieTask.value
+            shotsAwaitingMovie.remove(photo.id)
+            guard !photo.isDeleted, photo.modelContext != nil else { return }
+            if let movieData {
+                photo.livePhotoMovieData = movieData
                 try? modelContext.save()
-                let cloud = self.cloudService
-                Task {
-                    await cloud.uploadPendingPhotos(for: session)
-                }
             }
+            await uploadShotIfReady(photo)
         }
+    }
+
+    /// Change 020: uploads the shot once its claim is confirmed and its movie is saved. Called from the
+    /// background claim / movie tasks, never from the shutter itself.
+    func uploadShotIfReady(_ photo: ScrapPhoto) async {
+        guard !photo.isDeleted,
+              !shotsAwaitingClaim.contains(photo.id),
+              !shotsAwaitingMovie.contains(photo.id) else { return }
+        await cloudService.uploadShot(photo)
     }
 
     /// Camera Control click / volume down: photo on phones with Camera Control, flip otherwise.
@@ -739,6 +750,7 @@ final class RollFlowViewModel {
         imageData: Data,
         livePhotoMovieData: Data? = nil,
         currentUser: UserProfile,
+        expectsLiveMovie: Bool = false,
         simulateLastSlotConflict: Bool = false
     ) async -> ScrapPhoto? {
         guard let session = activeSession else { return nil }
@@ -762,6 +774,10 @@ final class RollFlowViewModel {
             isSyncedToCloud: false
         )
         modelContext.insert(photo)
+        shotsAwaitingClaim.insert(photo.id)
+        if expectsLiveMovie {
+            shotsAwaitingMovie.insert(photo.id)
+        }
 
         // 2. Optimistic local increment & immediate Supabase broadcast
         session.slotsUsed += 1
@@ -775,7 +791,9 @@ final class RollFlowViewModel {
 
         let realtimeService = self.realtimeService
         Task {
-            await realtimeService.broadcastSlotCount(optimisticCount)
+            await BackgroundTime.keepAlive("RollSlotBroadcast") {
+                await realtimeService.broadcastSlotCount(optimisticCount)
+            }
         }
 
         #if DEBUG
@@ -784,12 +802,15 @@ final class RollFlowViewModel {
 
         // 3. Background authoritative claim with CloudKit retry loop (Spec F3)
         let claimTask = Task(priority: .userInitiated) { @MainActor [weak self] in
-            guard let self else { return }
-            await self.resolveSlotClaim(
-                photo: photo,
-                session: session,
-                simulateLastSlotConflict: simulateLastSlotConflict
-            )
+            // Change 020: the claim, its broadcast and the upload start finish even if the app goes to the background.
+            await BackgroundTime.keepAlive("RollSlotClaim") {
+                guard let self else { return }
+                await self.resolveSlotClaim(
+                    photo: photo,
+                    session: session,
+                    simulateLastSlotConflict: simulateLastSlotConflict
+                )
+            }
         }
         self.lastSlotClaimTask = claimTask
 
@@ -806,6 +827,7 @@ final class RollFlowViewModel {
             simulateRaceOnLastSlot: simulateLastSlotConflict
         )
 
+        shotsAwaitingClaim.remove(photo.id)
         switch result {
         case .claimed(let authoritativeSlots, let rollFinished):
             session.slotsUsed = authoritativeSlots
@@ -817,15 +839,19 @@ final class RollFlowViewModel {
 
             let realtime = self.realtimeService
             Task {
-                await realtime.broadcastSlotCount(authoritativeSlots)
-                if rollFinished {
-                    await realtime.broadcastRollEnded()
+                await BackgroundTime.keepAlive("RollSlotBroadcast") {
+                    await realtime.broadcastSlotCount(authoritativeSlots)
+                    if rollFinished {
+                        await realtime.broadcastRollEnded()
+                    }
                 }
             }
 
             if rollFinished {
                 finalizeSessionAndOpenScrapbook()
             }
+            // Change 020: confirmed, so the shot uploads now (after End Roll has started, never before it).
+            await uploadShotIfReady(photo)
 
         case .rollAlreadyFinished:
             // First write wins (Spec F3): this user lost the last-slot race; drop photo and notify
@@ -895,18 +921,51 @@ final class RollFlowViewModel {
         }
     }
 
+    nonisolated static let friendsShotsSyncInterval: TimeInterval = 3
+    nonisolated static let friendsShotsSyncLimit: TimeInterval = 120
+
+    /// End Roll sync goes on while some of the roll's shots are missing here, for up to 2 minutes (change 020).
+    nonisolated static func shouldKeepSyncingFriendsShots(localCount: Int, shotsUsed: Int, elapsed: TimeInterval) -> Bool {
+        localCount < shotsUsed && elapsed < friendsShotsSyncLimit
+    }
+
+    /// One End Roll sync round; true while shots are still missing and time is left.
+    private func syncFriendsShotsOnce(for session: CaptureSession, since start: Date) async -> Bool {
+        guard session.modelContext != nil else { return false }
+        _ = await syncScrapbookArchive(for: session)
+        guard session.modelContext != nil else { return false }
+        return Self.shouldKeepSyncingFriendsShots(
+            localCount: localShotCount(for: session),
+            shotsUsed: session.slotsUsed,
+            elapsed: Date.now.timeIntervalSince(start)
+        )
+    }
+
+    private func localShotCount(for session: CaptureSession) -> Int {
+        let sessionID = session.id
+        let descriptor = FetchDescriptor<ScrapPhoto>(predicate: #Predicate { $0.sourceSessionID == sessionID })
+        return (try? modelContext.fetchCount(descriptor)) ?? 0
+    }
+
     func finalizeSessionAndOpenScrapbook() {
         if let session = activeSession {
             let cloud = self.cloudService
+            let notReady = shotsAwaitingClaim.union(shotsAwaitingMovie)
+            let isCloudRoom = session.ckRecordName != nil
             Task {
+                guard session.modelContext != nil else { return }
                 await cloud.publishSessionToCloudKit(session: session)
-                await cloud.uploadPendingPhotos(for: session)
-                _ = await self.syncScrapbookArchive(for: session)
-                // Targeted sync polling over a window so friends' incoming shots are pulled automatically
-                for delay in [2, 3, 5] {
-                    try? await Task.sleep(for: .seconds(delay))
-                    guard !Task.isCancelled, session.modelContext != nil else { return }
+                await cloud.uploadPendingPhotos(for: session, excluding: notReady)
+                // A local roll (no iCloud, Simulator) has no friends' shots to wait for: one sync, as before.
+                guard isCloudRoom else {
                     _ = await self.syncScrapbookArchive(for: session)
+                    return
+                }
+                // Change 020: keep fetching friends' shots until all of the roll's shots are here (max 2 minutes).
+                // Keeps running after the roll screens close (the reveal screen shows the photos as they arrive).
+                let start = Date.now
+                while !Task.isCancelled, await self.syncFriendsShotsOnce(for: session, since: start) {
+                    try? await Task.sleep(for: .seconds(Self.friendsShotsSyncInterval))
                 }
             }
         } else {
@@ -921,9 +980,9 @@ final class RollFlowViewModel {
             return
         }
         let id = scrapbook.id
-        // Straight into the scrapbook editor (change 013).
-        if navigator?.path.last != .scrapbook(id) {
-            navigator?.setStack([.scrapbook(id)])
+        // The photo reveal first (change 021); its "Start Scrapbook" opens the editor.
+        if navigator?.path.last != .rollReveal(id) {
+            navigator?.setStack([.rollReveal(id)])
         }
     }
 }

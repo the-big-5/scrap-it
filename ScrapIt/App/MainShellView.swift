@@ -71,6 +71,11 @@ struct MainShellView: View {
         .task {
             await archiveSync.run()
         }
+        // Shots not in CloudKit yet: pick up uploads that ran while the app was closed, retry the rest (change 020).
+        .task {
+            await CloudKitSessionService(modelContext: modelContext, enableNetworkMonitoring: false)
+                .resumeShotUploads()
+        }
         // iCloud roll invite opened by tap or AirDrop (change 011). Runs in its own Task: emptying the
         // inbox must not cancel the CloudKit calls (a `.task(id:)` on `pending` did, "Operation Cancelled").
         .onChange(of: IncomingShareInbox.shared.pending, initial: true) { _, pending in
@@ -134,6 +139,12 @@ struct MainShellView: View {
                 sessionStore: sessionStore,
                 scrapbookID: scrapbookID,
                 currentUser: currentUser
+            ))
+        case .rollReveal(let scrapbookID):
+            RollRevealView(viewModel: RollRevealViewModel(
+                modelContext: modelContext,
+                navigator: router,
+                scrapbookID: scrapbookID
             ))
         }
     }
