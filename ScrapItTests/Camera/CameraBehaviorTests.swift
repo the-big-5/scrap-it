@@ -245,6 +245,13 @@ struct CameraBehaviorTests {
         #expect(OrientationLock.mask(isCaptureSessionVisible: false) == .portrait)
     }
 
+    @Test func resetToPortraitSetsMaskToPortrait() {
+        OrientationLock.set(.landscape)
+        #expect(OrientationLock.mask == .landscape)
+        OrientationLock.resetToPortrait()
+        #expect(OrientationLock.mask == .portrait)
+    }
+
     // MARK: - Shots counter (taken / total)
 
     @Test func shotsCounterCountsUp() {

@@ -9,6 +9,11 @@ enum OrientationLock {
         isCaptureSessionVisible ? .landscape : .portrait
     }
 
+    /// Resets orientation to portrait for screens outside the capture session.
+    static func resetToPortrait() {
+        set(.portrait)
+    }
+
     /// Changes the allowed orientations and rotates the screen right away if needed.
     static func set(_ newMask: UIInterfaceOrientationMask) {
         guard newMask != mask else { return }

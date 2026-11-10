@@ -506,6 +506,7 @@ final class RollFlowViewModel {
 
     /// X: back to the Workbench. The roll keeps existing (reopening it is [Open]).
     func closeLobby() {
+        OrientationLock.resetToPortrait()
         lobbyDidDisappear()
         isInviteSheetPresented = false
         isShareSheetPresented = false
@@ -516,6 +517,7 @@ final class RollFlowViewModel {
 
     /// Back button on CaptureSessionView (change 041): returns to Homepage.
     func returnToHomepage() {
+        OrientationLock.resetToPortrait()
         isInviteSheetPresented = false
         isShareSheetPresented = false
         navigator?.popToRoot()
@@ -896,6 +898,7 @@ final class RollFlowViewModel {
     }
 
     func finalizeSessionAndOpenScrapbook() {
+        OrientationLock.resetToPortrait()
         if let session = activeSession {
             let cloud = self.cloudService
             Task {
