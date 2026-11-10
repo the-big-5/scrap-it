@@ -75,6 +75,7 @@ Figma 768:1623, from the lobby's "⋯" → Share Room (host and participant): Ai
 Figma node 1187:9697 (change 019)
 - Back button, title "Join Roll", `InviteHandshake` illustration, "Turn on AirDrop to accept the invite", divider, "Enter code" with 6 boxes (49×58) left-aligned with the label, "Join" pill. No header decoration
 - One hidden text field holds the code; the boxes display it, the next box is outlined while typing; tapping a box opens the keyboard
+- Joining overlay (change 024): full screen on `Paper.light`; `FilterCanisterColor` / `FilterCanisterBW` (switching every 2.4 s cycle) bobs and pulls `FilmStripAmber` out of its slit and back; status text 17 pt semibold `Brand.primary` [Draft text]: "Finding the roll…" (0 s), "Loading the film…" (3 s), "Almost there…" (8 s); "Cancel" (`Brand.tertiary`) at the bottom. Also for invite links. Reduce Motion: canister still, film strip fades
 - Messages under the boxes, short only [Draft]: "Enter all 6 characters of the code", "No roll found for this code", "This roll has ended", "You're offline. Connect to the internet to join.", "Couldn't join. Make sure you're signed in to iCloud and try again." Cleared when the code changes
 
 ## Screen: Capture session [Locked]
@@ -103,7 +104,7 @@ Figma nodes 1302:47935 (back camera) and 1300:33796 (front camera) (landscape de
 
 ## Screen: Roll Reveal [Draft] (change 021; Figma 1323:41568, 1323:41482, 793:3352 grid only, 1444:23620)
 Shown once after End Roll. No back button, no tab bar.
-- Envelope: cutting mat (teal mat for every stage; Figma's olive mat on 1323:41482 not used [Open]), closed kraft envelope rotated −3°, paper label: roll name (Architects Daughter 28) and "1 photo" / "N photos" (Architects Daughter 16; the photos on this phone, no "/24"), updating as photos arrive (can lag a little behind friends' uploads [Open], see tech.md End Roll sync)
+- Envelope: cutting mat (teal mat for every stage; Figma's olive mat on 1323:41482 not used [Open]), closed kraft envelope rotated −3°, paper label: roll name (Architects Daughter 28) and "1 photo" / "N photos" (Architects Daughter 16; the photos on this phone, no "/24"), updating as photos arrive (can lag a little behind friends' uploads [Open], see tech.md End Roll sync); while photos are missing (photos on this phone < the roll's shots used, first 10 s): "Printing your photos…" under the envelope (Architects Daughter 16, `Paper.light` with a soft shadow), the tear strip only gives a little and springs back, each new photo bounces the envelope and rolls the count up (numeric text); when all are in: "Your photos are ready!" for 2.5 s [Draft text] (change 024). Reduce Motion: no bounce, no rolling
 - Tear: swipe across the top flap strip (about 110 pt or a fast swipe); the strip follows the finger and flies off, heavy haptic; the photos fly out to the mat one after another and the envelope fades
 - Scattered: photos with a 1.5 pt white border, long side 150 pt, ±14° rotation, overlapping; drag moves a photo and brings it to the front; photos arriving later land on the mat
 - "Tidy Up" (top right, 44 pt pill) → 2-column grid on Kraft light-active, 175 × 233 cells, 18 pt corners, capture time badge ("16:45"), scrolls; the button then reads "Scatter"
@@ -188,6 +189,7 @@ All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, tr
 - Flow headers: CreateRollHeaderDecoration, ShareRoomHeaderDecoration
 - FilterCanisterBW (725:6301), FilterCanisterColor (725:6480): Choose filter
 - Roll Reveal (folder `Reveal/`, change 021): RevealCuttingMat (@3x PNG, export of 1323:41569) and the envelope as SVG layers (EnvelopeBody, EnvelopeTextureA/B, EnvelopeFlap, EnvelopeFlapLine, EnvelopeLeftEdge, EnvelopeBottomFold); the body's SVG shadow is not drawn by iOS and is clipped in Figma anyway
+- Loading (folder `Loading/`, change 024): FilmStripAmber (SVG, preserves vector, MID-Fi "Vintage Amber Film Strip" 1235:20885, Figma background rect removed); reuses FilterCanisterBW / FilterCanisterColor
 - Scrapbook tool tray (change 022, copied from the camera POC): `Tray/` (tray-tool-*, tray-pencil-*, tray-washi-1…4, tray-pen-size-1…5), `Letters/` (letter-A…Z, letter-0…9, SVG), `Scrapbook/` sticker-fun-* (27) and sticker-sheet-fun
 
 Note: designs are still in progress, so treat Figma-derived details as [Draft] until marked Locked.

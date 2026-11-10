@@ -5,9 +5,14 @@ struct RevealEnvelopeView: View {
     let title: String
     let subtitle: String
     let isTorn: Bool
+    /// `false` while photos are still developing: the strip only gives a little and springs back (change 024).
+    var canTear = true
+    /// Changes when new photos arrive: the envelope bounces and the count rolls up.
+    var arrivalCount = 0
     let onTear: () -> Void
 
     @State private var stripDrag: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Envelope frame in Figma, before its −3° rotation.
     static let size = CGSize(width: 260, height: 340)
@@ -33,10 +38,16 @@ struct RevealEnvelopeView: View {
                 .accessibilityElement()
                 .accessibilityLabel("Tear open the envelope")
                 .accessibilityAddTraits(.isButton)
-                .accessibilityAction { tear(direction: 1) }
+                .accessibilityAction { if canTear { tear(direction: 1) } }
         }
         .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
         .rotationEffect(.degrees(-3))
+        .keyframeAnimator(initialValue: CGFloat(1), trigger: reduceMotion ? 0 : arrivalCount) { content, scale in
+            content.scaleEffect(scale)
+        } keyframes: { _ in
+            SpringKeyframe(1.05, duration: 0.14)
+            SpringKeyframe(1, duration: 0.35, spring: .bouncy)
+        }
         .sensoryFeedback(.impact(weight: .heavy), trigger: isTorn)
     }
 
@@ -58,10 +69,14 @@ struct RevealEnvelopeView: View {
         DragGesture(minimumDistance: 4)
             .onChanged { value in
                 guard !isTorn else { return }
-                stripDrag = value.translation.width
+                stripDrag = value.translation.width * (canTear ? 1 : 0.2)
             }
             .onEnded { value in
                 guard !isTorn else { return }
+                guard canTear else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { stripDrag = 0 }
+                    return
+                }
                 let travel = value.predictedEndTranslation.width
                 if abs(value.translation.width) > Self.tearDistance || abs(travel) > Self.tearDistance * 2 {
                     tear(direction: travel >= 0 ? 1 : -1)
@@ -86,6 +101,7 @@ struct RevealEnvelopeView: View {
 private struct RevealEnvelopeArt: View {
     let title: String
     let subtitle: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -125,6 +141,9 @@ private struct RevealEnvelopeArt: View {
             Text(subtitle)
                 .dsTypography(DSTypography.Handwritten.normalRegular)
                 .foregroundStyle(DSColor.Component.textSecondary.color)
+                // The count rolls up like an odometer as photos arrive (change 024).
+                .contentTransition(reduceMotion ? .identity : .numericText())
+                .animation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.8), value: subtitle)
         }
         .padding(.horizontal, 22)
         .padding(.top, 8)

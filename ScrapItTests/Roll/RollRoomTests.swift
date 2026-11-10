@@ -39,7 +39,11 @@ private final class FakeRoomService: RollRoomServicing {
         return snapshot
     }
 
+    /// Keeps a join waiting, like a slow CloudKit answer (change 024).
+    var joinDelay: Duration?
+
     func joinRoom(code: String, as user: RoomParticipant) async throws -> RoomSnapshot {
+        if let joinDelay { try? await Task.sleep(for: joinDelay) }
         if let joinError { throw joinError }
         guard var room = rooms[code] else { throw RoomError.notFound }
         if room.hostUserID == user.userID {
@@ -221,6 +225,85 @@ struct RollRoomTests {
     }
 
     // MARK: - Join
+
+    // MARK: - Joining overlay (change 024)
+
+    @Test func joinStatusTextChangesWithTheWait() {
+        #expect(RollFlowViewModel.joinStatusText(elapsed: 0) == "Finding the roll…")
+        #expect(RollFlowViewModel.joinStatusText(elapsed: 2.9) == "Finding the roll…")
+        #expect(RollFlowViewModel.joinStatusText(elapsed: 3) == "Loading the film…")
+        #expect(RollFlowViewModel.joinStatusText(elapsed: 8) == "Almost there…")
+        #expect(RollFlowViewModel.joinStatusText(elapsed: 60) == "Almost there…")
+    }
+
+    @Test func joiningShowsTheOverlayUntilTheLobbyOpens() async {
+        hostRoom()
+        rooms.joinDelay = .milliseconds(200)
+        let vm = makeViewModel()
+        navigator.path = [.joinRoll]
+
+        let join = Task { await vm.joinRollWithCode(code: "N4B13L", currentUser: guest) }
+        await waitUntil { vm.isJoining }
+        #expect(vm.isJoining)
+        await join.value
+
+        #expect(!vm.isJoining)
+        #expect(navigator.path == [.createRollLobby])
+    }
+
+    @Test func cancelLeavesTheRoomWhenTheJoinFinishesLater() async {
+        hostRoom()
+        rooms.joinDelay = .milliseconds(200)
+        let vm = makeViewModel()
+        navigator.path = [.joinRoll]
+
+        let join = Task { await vm.joinRollWithCode(code: "N4B13L", currentUser: guest) }
+        await waitUntil { vm.isJoining }
+        vm.cancelJoin()
+        #expect(!vm.isJoining)
+        await join.value
+
+        #expect(navigator.path == [.joinRoll])
+        #expect(vm.activeSession == nil)
+        #expect(rooms.left.map(\.userID) == [guest.appleUserID])
+        #expect(rooms.left.first?.owner == "_hostOwner")
+    }
+
+    @Test func cancelIgnoresALateFailure() async {
+        hostRoom()
+        rooms.joinDelay = .milliseconds(200)
+        rooms.joinError = .unavailable
+        let vm = makeViewModel()
+        navigator.path = [.joinRoll]
+
+        let join = Task { await vm.joinRollWithCode(code: "N4B13L", currentUser: guest) }
+        await waitUntil { vm.isJoining }
+        vm.cancelJoin()
+        await join.value
+
+        #expect(vm.joinErrorMessage == nil)
+        #expect(rooms.left.isEmpty)
+    }
+
+    @Test func cancelledJoinAsTheHostLeavesNothing() async {
+        hostRoom()
+        rooms.joinDelay = .milliseconds(200)
+        let vm = makeViewModel()
+
+        let join = Task { await vm.joinRollWithCode(code: "N4B13L", currentUser: host) }
+        await waitUntil { vm.isJoining }
+        vm.cancelJoin()
+        await join.value
+
+        #expect(rooms.left.isEmpty)
+    }
+
+    @Test func aFailedJoinClosesTheOverlayWithTheMessage() async {
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "ZZZZZZ", currentUser: guest)
+        #expect(!vm.isJoining)
+        #expect(vm.joinErrorMessage == RollFlowViewModel.joinNotFoundMessage)
+    }
 
     @Test func joinByCodeOpensTheParticipantLobby() async {
         hostRoom()

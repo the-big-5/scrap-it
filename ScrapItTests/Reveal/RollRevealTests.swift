@@ -60,6 +60,69 @@ struct RollRevealTests {
         RollRevealViewModel(modelContext: context, navigator: navigator, scrapbookID: scrapbook.id, photoSaver: saver)
     }
 
+    private func addSession(shotsUsed: Int) {
+        let session = CaptureSession(id: sessionID, name: "Bali '27", hostUserID: "host-1", participantIDs: [],
+                                     participantNames: [], slotsUsed: shotsUsed, status: .ended)
+        context.insert(session)
+        try? context.save()
+    }
+
+    // MARK: - Developing envelope (change 024)
+
+    @Test func envelopeStaysClosedUntilEveryPhotoIsIn() {
+        addSession(shotsUsed: 3)
+        addPhoto(at: 1)
+        let viewModel = makeViewModel()
+        viewModel.setMatSize(screen)
+        #expect(viewModel.isDeveloping)
+        #expect(!viewModel.canTear)
+
+        viewModel.tear()
+        #expect(viewModel.stage == .envelope)
+
+        addPhoto(at: 2)
+        addPhoto(at: 3)
+        viewModel.refresh()
+        #expect(viewModel.arrivalCount == 1)
+        #expect(!viewModel.isDeveloping)
+        #expect(viewModel.showsReadyText)
+        viewModel.hideReadyText()
+        #expect(!viewModel.showsReadyText)
+        viewModel.tear()
+        #expect(viewModel.stage == .scattered)
+    }
+
+    @Test func envelopeOpensAfterTenSecondsEvenWithPhotosMissing() async {
+        addSession(shotsUsed: 5)
+        addPhoto(at: 1)
+        let waited = RollRevealViewModel(modelContext: context, navigator: navigator, scrapbookID: scrapbook.id,
+                                         photoSaver: saver, openedAt: .now.addingTimeInterval(-11))
+        #expect(!waited.isDeveloping)
+        #expect(waited.canTear)
+        #expect(!waited.showsReadyText)
+
+        let almost = RollRevealViewModel(modelContext: context, navigator: navigator, scrapbookID: scrapbook.id,
+                                         photoSaver: saver, openedAt: .now.addingTimeInterval(-9.9))
+        #expect(almost.isDeveloping)
+        await almost.waitForTearUnlock()
+        #expect(almost.canTear)
+    }
+
+    @Test func photosArrivingAfterTheTearStillLandOnTheMat() throws {
+        addSession(shotsUsed: 2)
+        addPhoto(at: 1)
+        let viewModel = RollRevealViewModel(modelContext: context, navigator: navigator, scrapbookID: scrapbook.id,
+                                            photoSaver: saver, openedAt: .now.addingTimeInterval(-11))
+        viewModel.setMatSize(screen)
+        viewModel.tear()
+        #expect(!viewModel.isDeveloping)
+
+        let late = addPhoto(at: 2)
+        viewModel.refresh()
+        #expect(viewModel.placements[late.id] != nil)
+        #expect(viewModel.gridPhotos.map(\.id).contains(late.id))
+    }
+
     @Test func labelShowsTheRollNameAndPhotoCount() {
         addPhoto(at: 1)
         let viewModel = makeViewModel()

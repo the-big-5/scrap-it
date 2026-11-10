@@ -33,11 +33,23 @@ struct RollRevealView: View {
                     title: viewModel.rollName,
                     subtitle: viewModel.labelText,
                     isTorn: viewModel.isTorn,
+                    canTear: viewModel.canTear,
+                    arrivalCount: viewModel.arrivalCount,
                     onTear: viewModel.tear
                 )
                 .opacity(hasSpilled ? 0 : 1)
                 .offset(y: hasSpilled ? 60 : 0)
                 .position(envelopeCenter)
+
+                if let text = envelopeText {
+                    Text(text)
+                        .dsTypography(DSTypography.Handwritten.normalRegular)
+                        .foregroundStyle(DSColor.Paper.light.color)
+                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                        .position(x: envelopeCenter.x, y: envelopeCenter.y + RevealEnvelopeView.size.height / 2 + 34)
+                        .transition(.opacity)
+                        .id(text)
+                }
 
                 if viewModel.isTorn && viewModel.stage != .tidy {
                     scatteredPhotos(from: envelopeCenter)
@@ -112,6 +124,20 @@ struct RollRevealView: View {
             }
         }
         .task { await viewModel.observePhotos() }
+        .task { await viewModel.waitForTearUnlock() }
+        .animation(.easeInOut(duration: 0.3), value: envelopeText)
+        .task(id: viewModel.showsReadyText) {
+            guard viewModel.showsReadyText else { return }
+            try? await Task.sleep(for: RollRevealViewModel.readyTextDuration)
+            viewModel.hideReadyText()
+        }
+    }
+
+    /// "Printing your photos…" while photos arrive, then "Your photos are ready!" for a moment (change 024).
+    private var envelopeText: String? {
+        if viewModel.isDeveloping { return RollRevealViewModel.printingText }
+        if viewModel.showsReadyText && !viewModel.isTorn { return RollRevealViewModel.readyText }
+        return nil
     }
 
     /// Photos fly from the envelope to their spot on the mat, one after another.
