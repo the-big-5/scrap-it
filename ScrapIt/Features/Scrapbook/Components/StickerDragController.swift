@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 
 /// Peel-and-drag animation state for one sticker going from the sheet to the page (change 013, POC).
+/// Since change 022 the sheet opens over the page: a sticker dropped outside the sheet sticks.
 /// Presentation only: whether the sticker is placed is decided by the editor ViewModel through `onPlace`.
 /// Per-frame values (finger position, tilt) are read only by `StickerDragLayer`.
 @Observable
@@ -29,14 +30,14 @@ final class StickerDragController {
 
     @ObservationIgnored var pageFrame: CGRect = .zero
     @ObservationIgnored var sheetFrame: CGRect = .zero
-    @ObservationIgnored var panelTop: CGFloat = .infinity
     /// Sticker dropped on the page (center, width, rotation in radians). `false` = back to the sheet.
     @ObservationIgnored var onPlace: ((StickerDefinition, CGPoint, CGFloat, Double) -> Bool)?
 
     @ObservationIgnored private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     @ObservationIgnored private let softHaptic = UIImpactFeedbackGenerator(style: .soft)
     @ObservationIgnored private var isFinishing = false
-    @ObservationIgnored private var dropThresholdY: CGFloat = .infinity
+    /// The sheet frame when the drag began; kept for the whole drag.
+    @ObservationIgnored private var homeSheetFrame: CGRect = .zero
 
     var activeStickerID: String? { session?.sticker.id }
 
@@ -75,7 +76,7 @@ final class StickerDragController {
                           homeWidth: sticker.frame.width * scale,
                           grabOffset: CGSize(width: finger.x - home.x, height: finger.y - home.y),
                           start: finger)
-        dropThresholdY = panelTop - 20
+        homeSheetFrame = sheetFrame
         location = finger
         displayWidth = sticker.frame.width * scale
         lift = 0
@@ -94,7 +95,7 @@ final class StickerDragController {
             location = finger
             tilt = Double(max(-8, min(8, velocity.width / 140)))
         }
-        let overPage = finger.y < dropThresholdY
+        let overPage = !homeSheetFrame.insetBy(dx: -8, dy: -8).contains(finger)
         if overPage != isOverPage {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                 isOverPage = overPage
@@ -177,7 +178,7 @@ final class StickerDragController {
     }
 }
 
-/// The sticker being dragged, drawn above the page and the panel.
+/// The sticker being dragged, drawn above the page and the sheet.
 struct StickerDragLayer: View {
     let controller: StickerDragController
 

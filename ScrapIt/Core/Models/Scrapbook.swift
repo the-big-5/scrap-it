@@ -17,6 +17,8 @@ final class Scrapbook {
     var pages: [ScrapbookPage]? = []
     @Relationship(deleteRule: .cascade, inverse: \StickerSheet.scrapbook)
     var stickerSheets: [StickerSheet]? = []
+    /// Tools whose hint was already shown in this scrapbook (`ScrapbookTool.rawValue`, change 022).
+    var shownToolHints: [String] = []
 
     init(
         id: UUID = UUID(),

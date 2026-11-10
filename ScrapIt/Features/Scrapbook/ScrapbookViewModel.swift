@@ -3,20 +3,60 @@ import Foundation
 import Observation
 import SwiftData
 
-/// Editor tools (change 013). `arrange` = move / resize / rotate items.
-enum ScrapbookTool: Equatable {
-    case arrange
-    case scissors
-    case pencil
-    case stickers
+/// Main tray tools, left to right as in Figma (change 022).
+enum ScrapbookTool: String, CaseIterable, Identifiable {
+    case scissors, pencil, sticker, photo, washi, letters, text
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .scissors: "Scissors"
+        case .pencil: "Pencil"
+        case .sticker: "Stickers"
+        case .photo: "Photos"
+        case .washi: "Washi"
+        case .letters: "Letters"
+        case .text: "Text"
+        }
+    }
+
+    /// Scissors turn cut mode on / off and Text opens the typing screen; the others open a second tray.
+    var hasSubTray: Bool { self != .text && self != .scissors }
+
+    /// Shown only the first time the tool is turned on in a scrapbook [Draft text]. Apple Pencil is only
+    /// mentioned on iPad (iPhones don't support it).
+    func hint(isPad: Bool) -> String? {
+        switch self {
+        case .scissors: "Drag across a photo to cut. Long press to move."
+        case .pencil: isPad ? "Draw with your finger or Apple Pencil." : "Draw with your finger."
+        case .washi: "Put your finger on the page and pull to stick washi tape"
+        default: nil
+        }
+    }
 }
 
-/// Scrapbook editor (change 013, behavior ported from the camera POC). Edit mode only for now;
-/// the view mode comes with the design team's flow. Pages, items and drawings stay on this device.
+/// Plain text being typed (change 022). `itemID == nil` = new text.
+struct TextEditorState: Equatable {
+    var itemID: UUID?
+    var draft = ""
+    var color: TextItemColor = .black
+}
+
+/// What was dragged from a tray onto the page (change 022).
+enum TrayDropPayload {
+    case photo(UUID)
+    case letter(LetterDefinition)
+}
+
+/// Scrapbook editor (change 013, behavior ported from the camera POC). Pages are always editable (change 022):
+/// the tool tray replaces the toolbar and edit mode.
 @Observable
 final class ScrapbookViewModel {
     static let pageFullMessage = "This page is full"
     static let maxUndoSteps = 20
+    /// Taps on letters within this time line up to the right (change 022).
+    static let letterRunInterval: TimeInterval = 3
 
     private let modelContext: ModelContext
     @ObservationIgnored private weak var navigator: (any Navigator)?
@@ -30,12 +70,25 @@ final class ScrapbookViewModel {
     private(set) var scrapbook: Scrapbook?
     var currentPageID: UUID?
     var selectedItemID: UUID?
-    private(set) var tool: ScrapbookTool = .arrange
-    var isPhotoPickerPresented = false
     var isBackgroundPickerPresented = false
     var isDeletePageConfirmationPresented = false
-    var isStickerPanelCollapsed = false
     var isSaveErrorPresented = false
+    // Tool tray (change 022)
+    private(set) var isTrayOpen = false
+    /// The tool whose second tray is open.
+    private(set) var activeTool: ScrapbookTool?
+    private(set) var isCutting = false
+    private(set) var washiStyleID: String?
+    private(set) var stickerSetID = StickerCatalog.travel.id
+    private(set) var isStickerSheetOpen = false
+    /// The drawing layer being drawn while Pencil is on.
+    private(set) var activeDrawingID: UUID?
+    var textEditor: TextEditorState?
+    private(set) var viewerPhotoID: UUID?
+    /// The tool whose one-time hint is showing.
+    private(set) var hintTool: ScrapbookTool?
+    @ObservationIgnored private var lastLetter: (id: UUID, time: Date)?
+    @ObservationIgnored private var drawingSaveTask: Task<Void, Never>?
     private(set) var toastMessage: String?
     /// Editor on screen; Live Photos only play while it is.
     var isVisible = false
@@ -83,6 +136,9 @@ final class ScrapbookViewModel {
             page.scrapbook = scrapbook
             save()
         }
+        if migratePageDrawings() {
+            save()
+        }
         if currentPageID == nil || !pages.contains(where: { $0.id == currentPageID }) {
             currentPageID = pages.first?.id
         }
@@ -111,9 +167,24 @@ final class ScrapbookViewModel {
 
     func selectPage(at index: Int) {
         guard pages.indices.contains(index) else { return }
-        selectedItemID = nil
-        currentPageID = pages[index].id
+        showPage(pages[index].id)
         updatePresence()
+    }
+
+    /// Swipe on an empty area of the page: -1 previous, +1 next.
+    func swipePage(by delta: Int) {
+        guard allowsPageSwipe else { return }
+        selectPage(at: currentIndex + delta)
+    }
+
+    /// Pencil keeps drawing on the new page, in that page's own layer.
+    private func showPage(_ id: UUID) {
+        let isDrawing = activeDrawingID != nil
+        endDrawing()
+        selectedItemID = nil
+        lastLetter = nil
+        currentPageID = id
+        if isDrawing { beginDrawing() }
     }
 
     func goToPreviousPage() { selectPage(at: currentIndex - 1) }
@@ -126,8 +197,7 @@ final class ScrapbookViewModel {
         modelContext.insert(page)
         page.scrapbook = scrapbook
         save()
-        selectedItemID = nil
-        currentPageID = page.id
+        showPage(page.id)
         broadcast(ScrapbookEvent(type: .pageAdded, pageIndex: newOrder, senderID: senderID, background: page.background))
         updatePresence()
     }
@@ -145,6 +215,7 @@ final class ScrapbookViewModel {
 
     func deleteCurrentPage() {
         guard canDeletePage, let page = currentPage else { return }
+        setActiveTool(nil)
         let deletedIndex = currentIndex
         let remaining = pages.filter { $0.id != page.id }
         let neighbor = remaining[max(currentIndex - 1, 0)]
@@ -188,43 +259,32 @@ final class ScrapbookViewModel {
         Dictionary(rollPhotos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    func presentPhotoPicker() {
-        guard !isCurrentPageFull else {
-            showToast(Self.pageFullMessage)
-            return
-        }
-        isPhotoPickerPresented = true
+    /// Photos tray: newest first.
+    var trayPhotos: [ScrapPhoto] { rollPhotos.reversed() }
+
+    /// A photo tapped in the tray (`point == nil`: around the middle, slightly scattered as if glued by hand)
+    /// or dropped at `point` (normalized to the page). Ignores photos not in this roll.
+    @discardableResult
+    func addPhoto(_ id: UUID, at point: CGPoint? = nil, reduceMotion: Bool = false) -> Bool {
+        guard photosByID[id] != nil, let page = currentPage, hasRoom() else { return false }
+        let item = ScrapbookItem(
+            photoID: id,
+            centerX: point.map { Double($0.x) } ?? min(max(0.5 + .random(in: -0.08...0.08), 0.1), 0.9),
+            centerY: point.map { Double($0.y) } ?? min(max(0.5 + .random(in: -0.08...0.08), 0.1), 0.9),
+            width: 0.45,
+            rotation: .random(in: -6...6) * .pi / 180,
+            zIndex: page.maxZIndex + 1,
+            loopEnabled: !reduceMotion
+        )
+        modelContext.insert(item)
+        item.page = page
+        guard save() else { return false }
+        broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
+        return true
     }
 
-    /// Placed slightly scattered and overlapping, as if glued by hand (POC). Ignores ids not in this roll.
-    func addPhotos(_ ids: [UUID], reduceMotion: Bool = false) {
-        guard let page = currentPage else { return }
-        let known = photosByID
-        let ids = Array(ids.filter { known[$0] != nil }.prefix(remainingSlots))
-        guard !ids.isEmpty else { return }
-        var zIndex = page.maxZIndex
-        let spread = Double(ids.count - 1) * 0.02
-        var addedItems: [ScrapbookItem] = []
-        for (index, id) in ids.enumerated() {
-            zIndex += 1
-            let step = Double(index) * 0.04 - spread
-            let item = ScrapbookItem(
-                photoID: id,
-                centerX: min(max(0.5 + step + .random(in: -0.08...0.08), 0.1), 0.9),
-                centerY: min(max(0.5 + step + .random(in: -0.08...0.08), 0.1), 0.9),
-                width: 0.45,
-                rotation: .random(in: -6...6) * .pi / 180,
-                zIndex: zIndex,
-                loopEnabled: !reduceMotion
-            )
-            modelContext.insert(item)
-            item.page = page
-            addedItems.append(item)
-        }
-        save()
-        for item in addedItems {
-            broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
-        }
+    func aspectRatio(of photo: ScrapPhoto) -> CGFloat {
+        imageLoader.aspectRatio(for: photo.id, data: photo.imageData) ?? 3 / 4
     }
 
     func photoAspect(for item: ScrapbookItem) -> CGFloat? {
@@ -258,12 +318,12 @@ final class ScrapbookViewModel {
         }
     }
 
-    /// End of a drag / pinch / rotate in arrange mode. `translation` in page points.
+    /// End of a drag / pinch / rotate. `translation` in page points.
     func commitTransform(itemID: UUID, translation: CGSize, scale: CGFloat, rotationDelta: Double, pageSize: CGSize) {
         guard let item = item(itemID), pageSize.width > 0, pageSize.height > 0 else { return }
         item.centerX = min(max(item.centerX + translation.width / pageSize.width, 0), 1)
         item.centerY = min(max(item.centerY + translation.height / pageSize.height, 0), 1)
-        item.width = min(max(item.width * scale, ScrapbookItem.minWidth), ScrapbookItem.maxWidth)
+        item.width = min(max(item.width * scale, item.widthRange.lowerBound), item.widthRange.upperBound)
         item.rotation = ScrapbookItemLayout.snappedRotation(item.rotation + rotationDelta)
         save()
         broadcastItemTransformed(item)
@@ -274,7 +334,7 @@ final class ScrapbookViewModel {
         guard let item = item(itemID) else { return }
         item.centerX = centerX
         item.centerY = centerY
-        item.width = min(max(width, ScrapbookItem.minWidth), ScrapbookItem.maxWidth)
+        item.width = min(max(width, item.widthRange.lowerBound), item.widthRange.upperBound)
         item.rotation = rotation
     }
 
@@ -310,13 +370,43 @@ final class ScrapbookViewModel {
 
     func removeItem(_ itemID: UUID) {
         guard let item = item(itemID) else { return }
+        let shared = isShared(item)
         if selectedItemID == itemID { selectedItemID = nil }
         modelContext.delete(item)
         save()
-        broadcast(ScrapbookEvent(type: .itemRemoved, pageIndex: currentIndex, senderID: senderID, itemID: itemID))
+        if shared {
+            broadcast(ScrapbookEvent(type: .itemRemoved, pageIndex: currentIndex, senderID: senderID, itemID: itemID))
+        }
+    }
+
+    /// Double tap: a photo opens full screen, a text opens for editing.
+    func doubleTapItem(_ itemID: UUID) {
+        guard let item = item(itemID) else { return }
+        switch item.kind {
+        case .photo: viewerPhotoID = item.photoID
+        case .text: editText(itemID)
+        default: break
+        }
+    }
+
+    var viewerPhoto: ScrapPhoto? { viewerPhotoID.flatMap { photosByID[$0] } }
+
+    func closePhotoViewer() {
+        viewerPhotoID = nil
+    }
+
+    /// Change 022: letters, text, washi, drawing layers and Fun stickers stay on this device for now; only photos
+    /// and Travel stickers go to friends (the Supabase side comes in a later change).
+    private func isShared(_ item: ScrapbookItem) -> Bool {
+        switch item.kind {
+        case .photo: true
+        case .sticker: item.stickerID.flatMap { StickerCatalog.sticker(withID: $0)?.set.id } == StickerCatalog.travel.id
+        case .letter, .text, .washi, .drawing: false
+        }
     }
 
     private func broadcastItemTransformed(_ item: ScrapbookItem) {
+        guard isShared(item) else { return }
         broadcast(ScrapbookEvent(
             type: .itemTransformed,
             pageIndex: currentIndex,
@@ -330,38 +420,241 @@ final class ScrapbookViewModel {
         ))
     }
 
-    // MARK: - Tools
+    // MARK: - Tool tray
 
-    func selectTool(_ newTool: ScrapbookTool) {
-        selectedItemID = nil
-        if newTool == .stickers {
-            isStickerPanelCollapsed = false
-            _ = currentStickerSheet
-            save()
-        }
-        tool = newTool
+    /// The raised tool in the main tray (the scissors while cutting).
+    var raisedTool: ScrapbookTool? { isCutting ? .scissors : activeTool }
+
+    /// Page swipes and item moves only while no tool uses touches on the page.
+    var allowsPageSwipe: Bool {
+        !isCutting && activeDrawingID == nil && washiStyleID == nil && !isStickerSheetOpen
     }
 
-    func finishTool() {
-        tool = .arrange
+    func openTray() {
+        isTrayOpen = true
+    }
+
+    /// Swipe down on the main tray: it folds back and the active tool turns off.
+    func closeTray() {
+        setActiveTool(nil)
+        setCutting(false)
+        isTrayOpen = false
+    }
+
+    func selectTrayTool(_ tool: ScrapbookTool) {
         selectedItemID = nil
+        switch tool {
+        case .scissors:
+            setActiveTool(nil)
+            setCutting(!isCutting)
+        case .text:
+            setCutting(false)
+            setActiveTool(nil)
+            textEditor = TextEditorState()
+        default:
+            setCutting(false)
+            setActiveTool(activeTool == tool ? nil : tool)
+        }
+    }
+
+    /// Tap on an empty spot of the page: deselect and close the second tray.
+    func tapEmptyPage() {
+        selectedItemID = nil
+        setActiveTool(nil)
+    }
+
+    private func setActiveTool(_ tool: ScrapbookTool?) {
+        guard tool != activeTool else { return }
+        switch activeTool {
+        case .pencil: endDrawing()
+        case .washi: setWashi(nil)
+        case .sticker: isStickerSheetOpen = false
+        default: break
+        }
+        activeTool = tool
+        if tool == .pencil, !beginDrawing() {
+            activeTool = nil
+        }
+    }
+
+    private func setCutting(_ isOn: Bool) {
+        guard isOn != isCutting else { return }
+        isCutting = isOn
+        if isOn {
+            showHintOnce(.scissors)
+        } else if hintTool == .scissors {
+            hintTool = nil
+        }
+    }
+
+    /// The tool's hint shows only the first time it's turned on in this scrapbook.
+    private func showHintOnce(_ tool: ScrapbookTool) {
+        guard let scrapbook, !scrapbook.shownToolHints.contains(tool.rawValue) else { return }
+        scrapbook.shownToolHints.append(tool.rawValue)
+        save()
+        hintTool = tool
+    }
+
+    private func hasRoom() -> Bool {
+        guard !isCurrentPageFull else {
+            showToast(Self.pageFullMessage)
+            return false
+        }
+        return true
+    }
+
+    /// A polaroid or letter dropped from the tray. `point` normalized to the page.
+    func dropFromTray(_ payload: TrayDropPayload, at point: CGPoint, reduceMotion: Bool = false) -> Bool {
+        switch payload {
+        case .photo(let id): addPhoto(id, at: point, reduceMotion: reduceMotion)
+        case .letter(let letter): addLetter(letter, at: point)
+        }
+    }
+
+    // MARK: - Letters
+
+    /// A cut-out letter. Taps within 3 s line up to the right and wrap at the page edge; a drag drops it at `point`.
+    @discardableResult
+    func addLetter(_ letter: LetterDefinition, at point: CGPoint? = nil, now: Date = .now) -> Bool {
+        guard let page = currentPage, hasRoom() else { return false }
+        let width = Double(LetterCatalog.placedHeight * letter.aspectRatio)
+        // Letter height in page heights (the page is 3:4), plus line spacing.
+        let lineHeight = Double(LetterCatalog.placedHeight) * 3 / 4 * 1.2
+        let center: CGPoint
+        if let point {
+            center = point
+        } else if let last = lastLetter, now.timeIntervalSince(last.time) < Self.letterRunInterval,
+                  let previous = page.allItems.first(where: { $0.id == last.id }) {
+            var x = previous.centerX + previous.width / 2 + width / 2 + 0.005
+            var y = previous.centerY
+            if x + width / 2 > 0.97 {
+                x = 0.05 + width / 2
+                y += lineHeight
+            }
+            center = CGPoint(x: x, y: min(y, 0.95))
+        } else {
+            center = CGPoint(x: 0.12 + width / 2, y: 0.35)
+        }
+        let item = ScrapbookItem(centerX: center.x, centerY: center.y, width: width,
+                                 rotation: .random(in: -8...8) * .pi / 180, zIndex: page.maxZIndex + 1)
+        item.letterID = letter.id
+        modelContext.insert(item)
+        item.page = page
+        lastLetter = point == nil ? (item.id, now) : nil
+        return save()
+    }
+
+    // MARK: - Washi
+
+    func selectWashi(_ style: WashiStyle) {
+        setWashi(washiStyleID == style.id ? nil : style.id)
+    }
+
+    private func setWashi(_ id: String?) {
+        washiStyleID = id
+        if id != nil {
+            showHintOnce(.washi)
+        } else if hintTool == .washi {
+            hintTool = nil
+        }
+    }
+
+    /// A torn washi piece from `start` to `end` (page points), in front of everything. Pulls shorter than the
+    /// minimum length are cancelled.
+    func addWashi(from start: CGPoint, to end: CGPoint, seed: Int, pageSize: CGSize) -> Bool {
+        guard let styleID = washiStyleID, let page = currentPage, pageSize.width > 0, pageSize.height > 0 else { return false }
+        let length = Double(hypot(end.x - start.x, end.y - start.y) / pageSize.width)
+        guard length >= WashiCatalog.minimumLength, hasRoom() else { return false }
+        let item = ScrapbookItem(
+            centerX: Double((start.x + end.x) / 2 / pageSize.width),
+            centerY: Double((start.y + end.y) / 2 / pageSize.height),
+            width: length,
+            rotation: Double(atan2(end.y - start.y, end.x - start.x)),
+            zIndex: page.maxZIndex + 1
+        )
+        item.washiID = styleID
+        item.washiLength = length
+        item.tearSeed = seed
+        modelContext.insert(item)
+        item.page = page
+        return save()
+    }
+
+    // MARK: - Text
+
+    func editText(_ itemID: UUID) {
+        guard let item = item(itemID), item.kind == .text else { return }
+        textEditor = TextEditorState(itemID: itemID, draft: item.text ?? "", color: TextItemColor.from(item.textColor))
+    }
+
+    /// Done or a tap outside: a new text goes to the middle (y 40%). Empty text isn't added; clearing an existing
+    /// text removes it.
+    func commitTextEditor() {
+        guard let state = textEditor else { return }
+        textEditor = nil
+        guard let page = currentPage else { return }
+        let text = state.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let id = state.itemID, let item = item(id) {
+            if text.isEmpty {
+                if selectedItemID == id { selectedItemID = nil }
+                modelContext.delete(item)
+            } else {
+                item.text = text
+                item.textColor = state.color.rawValue
+            }
+            save()
+        } else if !text.isEmpty, hasRoom() {
+            let item = ScrapbookItem(centerX: 0.5, centerY: 0.4, width: TextItemStyle.defaultSize,
+                                     rotation: 0, zIndex: page.maxZIndex + 1)
+            item.text = text
+            item.textColor = state.color.rawValue
+            modelContext.insert(item)
+            item.page = page
+            save()
+        }
     }
 
     // MARK: - Stickers
 
-    let stickerSet = StickerCatalog.travel
+    var stickerSet: StickerSet { StickerCatalog.set(withID: stickerSetID) ?? StickerCatalog.travel }
 
-    /// The newest sheet for the set; a full new one is created when there is none.
-    var currentStickerSheet: StickerSheet? {
+    /// The newest sheet of a set, without creating one (tray thumbnails).
+    func existingSheet(for set: StickerSet) -> StickerSheet? {
+        (scrapbook?.stickerSheets ?? []).filter { $0.setID == set.id }.max { $0.createdAt < $1.createdAt }
+    }
+
+    var stickerTraySheets: [(set: StickerSet, sheet: StickerSheet?)] {
+        StickerCatalog.sets.map { ($0, existingSheet(for: $0)) }
+    }
+
+    /// The newest sheet for the open set; a full new one is created when there is none.
+    var currentStickerSheet: StickerSheet? { sheet(for: stickerSet) }
+
+    private func sheet(for set: StickerSet) -> StickerSheet? {
         guard let scrapbook else { return nil }
-        let sheets = (scrapbook.stickerSheets ?? []).filter { $0.setID == stickerSet.id }
-        if let sheet = sheets.max(by: { $0.createdAt < $1.createdAt }) {
+        if let sheet = existingSheet(for: set) {
             return sheet
         }
-        let sheet = StickerSheet(setID: stickerSet.id)
+        let sheet = StickerSheet(setID: set.id)
         modelContext.insert(sheet)
         sheet.scrapbook = scrapbook
         return sheet
+    }
+
+    /// Tapping a sheet in the tray opens it on the page; the same sheet again puts it back.
+    func toggleStickerSheet(_ set: StickerSet) {
+        if isStickerSheetOpen && stickerSetID == set.id {
+            isStickerSheetOpen = false
+        } else {
+            stickerSetID = set.id
+            _ = currentStickerSheet
+            save()
+            isStickerSheetOpen = true
+        }
+    }
+
+    func closeStickerSheet() {
+        isStickerSheetOpen = false
     }
 
     func takeNewStickerSheet() {
@@ -372,7 +665,8 @@ final class ScrapbookViewModel {
     /// A sticker dropped on the page. `center` and `width` in the same space as `pageFrame`.
     /// Returns `false` when it must go back to the sheet.
     func placeSticker(_ sticker: StickerDefinition, center: CGPoint, width: CGFloat, rotation: Double, pageFrame: CGRect) -> Bool {
-        guard let page = currentPage, let sheet = currentStickerSheet, pageFrame.width > 0, pageFrame.height > 0 else {
+        guard let page = currentPage, let set = StickerCatalog.sticker(withID: sticker.id)?.set,
+              let sheet = sheet(for: set), pageFrame.width > 0, pageFrame.height > 0 else {
             return false
         }
         guard !sheet.isUsed(sticker) else { return false }
@@ -392,7 +686,7 @@ final class ScrapbookViewModel {
         item.page = page
         sheet.usedStickerIDs.append(sticker.id)
         let saved = save()
-        if saved {
+        if saved, isShared(item) {
             broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
         }
         return saved
@@ -402,11 +696,16 @@ final class ScrapbookViewModel {
 
     var canUndoCut: Bool { !cutHistory.isEmpty }
 
-    /// Topmost item whose shape contains the page point. Stickers can't be cut (`photosOnly`).
+    /// Topmost item whose shape contains the page point. Only photos can be cut (`photosOnly`); drawing layers
+    /// and text are skipped.
     func itemID(at point: CGPoint, pageSize: CGSize, photosOnly: Bool) -> UUID? {
         guard let page = currentPage else { return nil }
         return page.sortedItems.reversed().first { item in
-            if photosOnly && item.stickerID != nil { return false }
+            switch item.kind {
+            case .photo: break
+            case .drawing, .text: return false
+            case .sticker, .letter, .washi: if photosOnly { return false }
+            }
             let box = ScrapbookItemLayout.boxSize(of: item, photoAspect: photoAspect(for: item), pageSize: pageSize)
             let local = ScrapbookItemLayout.normalizedPoint(point, in: item, box: box, pageSize: pageSize)
             return CutGeometry.contains(item.maskPolygon ?? CutGeometry.unitSquare, local)
@@ -430,7 +729,7 @@ final class ScrapbookViewModel {
         }
         let path = CutGeometry.simplify(pagePath, tolerance: 1.5)
 
-        for item in page.sortedItems.reversed() where item.stickerID == nil {
+        for item in page.sortedItems.reversed() where item.kind == .photo {
             let box = ScrapbookItemLayout.boxSize(of: item, photoAspect: photoAspect(for: item), pageSize: pageSize)
             let localPath = path.map { ScrapbookItemLayout.normalizedPoint($0, in: item, box: box, pageSize: pageSize) }
             guard let pieces = CutGeometry.splitAll(item.maskPolygon ?? CutGeometry.unitSquare, by: localPath,
@@ -502,16 +801,79 @@ final class ScrapbookViewModel {
         save()
     }
 
-    // MARK: - Pencil
+    // MARK: - Pencil (drawing layers, change 022)
 
-    func drawingData(for page: ScrapbookPage) -> Data? { page.drawingData }
+    /// Strokes go into the frontmost item if it's a drawing layer; otherwise a new layer is created in front, so
+    /// drawings stack with photos in the order they were added. `false` when the page is full.
+    @discardableResult
+    func beginDrawing() -> Bool {
+        guard let page = currentPage else { return false }
+        if let top = page.sortedItems.last, top.kind == .drawing {
+            activeDrawingID = top.id
+        } else {
+            guard hasRoom() else { return false }
+            let item = ScrapbookItem(centerX: 0.5, centerY: 0.5, width: 1, rotation: 0, zIndex: page.maxZIndex + 1)
+            item.drawingData = Data()
+            modelContext.insert(item)
+            item.page = page
+            save()
+            activeDrawingID = item.id
+        }
+        showHintOnce(.pencil)
+        return true
+    }
 
-    func updateDrawing(_ data: Data?, pageID: UUID) {
-        guard let page = pages.first(where: { $0.id == pageID }), page.drawingData != data else { return }
-        page.drawingData = data
+    var activeDrawingData: Data? {
+        guard let id = activeDrawingID else { return nil }
+        return currentPage?.allItems.first { $0.id == id }?.drawingData
+    }
+
+    /// After each stroke or undo (`nil` = no strokes left). Saved 0.5 s after the last change.
+    func updateActiveDrawing(_ data: Data?) {
+        guard let id = activeDrawingID, let item = currentPage?.allItems.first(where: { $0.id == id }) else { return }
+        item.drawingData = data ?? Data()
+        drawingSaveTask?.cancel()
+        drawingSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.save()
+        }
+    }
+
+    /// Leaving Pencil: saves, and removes the layer if it has no strokes.
+    func endDrawing() {
+        guard let id = activeDrawingID else { return }
+        drawingSaveTask?.cancel()
+        activeDrawingID = nil
+        if hintTool == .pencil { hintTool = nil }
+        for page in pages {
+            guard let item = page.allItems.first(where: { $0.id == id }) else { continue }
+            if item.drawingData?.isEmpty != false {
+                modelContext.delete(item)
+            }
+        }
         save()
-        let pageIdx = pages.firstIndex(where: { $0.id == pageID }) ?? currentIndex
-        broadcast(ScrapbookEvent(type: .drawingUpdated, pageIndex: pageIdx, senderID: senderID, drawingData: data))
+    }
+
+    /// Before change 022 a page had one drawing; it becomes one drawing layer at the back. Same 600 × 800 space,
+    /// so it doesn't move. `true` if a page changed.
+    private func migratePageDrawings() -> Bool {
+        var changed = false
+        for page in pages {
+            guard let data = page.drawingData else { continue }
+            let item = ScrapbookItem(centerX: 0.5, centerY: 0.5, width: 1, rotation: 0, zIndex: page.minZIndex - 1)
+            item.drawingData = data
+            modelContext.insert(item)
+            item.page = page
+            page.drawingData = nil
+            changed = true
+        }
+        return changed
+    }
+
+    /// The editor left the screen: an open drawing is saved.
+    func editorDidDisappear() {
+        endDrawing()
     }
 
     // MARK: - Realtime Collaboration

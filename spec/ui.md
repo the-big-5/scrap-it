@@ -126,14 +126,18 @@ Figma node 1300:36781 (change 044)
 
 ## Screen: Scrapbook editor [Open] (design in progress)
 Temporary look from the camera POC (change 013). Stickers, backgrounds and scissors may change with the design.
-- Header: back button, title, collaborator presence avatar stack (`26` pt circular profile photo thumbnails or colored initials, change 044), Undo (cuts), "Done" while scissors / pencil are on
-- 3:4 page with shadow, page indicator "n / N" with arrows, "Live Photos paused in Low Power Mode"
-- Toolbar: Photos (+), Background, Stickers, Scissors, Pencil, Pages menu (Add Page, Move Left / Right, Delete Page with confirmation)
-- Items: white print frame; tap selects and brings to front; drag / pinch / rotate (snaps to 0° within ±3°); long-press menu: Bring to Front, Send to Back, Turn Off / On Motion (Live), Remove (stickers with confirmation)
-- Photo picker: only this roll's photos, Live marked, numbered selection, max 20 items per page
-- Stickers: POC "Travel" sheet panel at the bottom, drag a sticker onto the page, each used once, "Take a New Sheet"
-- Scissors: as the POC (drag to cut, long press to move, two fingers to pinch / rotate, scissors image, haptics)
-- Pencil: PencilKit layer over the page, system tool picker with all iOS 18 tools except the reed pen, finger drawing allowed
+- Header: back button, title, collaborator presence avatar stack (`26` pt circular profile photo thumbnails or colored initials, change 044); right: Undo (only while Scissors or Pencil is on) and `ellipsis.circle` menu (Background, Add Page, Move Left / Right, Delete Page with confirmation). No "Done": pages are always editable (change 022)
+- 3:4 page with shadow, width = min(screen width − 16, (height − 220 − 36) × 3/4) so the open trays never cover it; page indicator "n / N" with arrows; swipe left / right on an empty area changes page (off while Scissors, Pencil, Washi or a sticker sheet is open); "Live Photos paused in Low Power Mode"; the keyboard doesn't shrink the page
+- Tool tray (change 022, Figma 1306:48941 / 1306:48947): round red leather button (96 pt) at the bottom left → full-width main tray (106 pt, stitching inset 8 pt) with Scissors, Pencil, Stickers, Photos, Washi, Letters, Text; a tool opens a second tray overlapping 18 pt above; tapping the same tool or an empty spot closes it; swipe down on the main tray folds it back and turns the tool off; light haptic per tool
+- Items: photos (white print frame), stickers, letters, text, washi, drawing layers; tap selects and brings to front; drag / pinch / rotate (snaps to 0° within ±3°); a selected item (not drawing layers) has a bottom-right corner handle to resize / rotate with one finger; double tap: photo full screen, text edit; long-press menu: Bring to Front, Send to Back, Turn Off / On Motion (Live), Edit Text (text), Remove (stickers with confirmation); max 40 items per page, drawing layers included
+- Photos tray (1306:49859): this roll's photos as small polaroids keeping their own ratio (long side 52 pt, ±6°, newest left, Live badge); tap adds, drag up drops; empty: "Photos from this roll appear here."
+- Stickers tray (1306:50103 / 1306:54411): Travel and Fun (27) sheets; the sheet opens in the middle of the page (83% width) over a dimmed page; peel–drag–stick, drop outside the sheet sticks, the sheet fades to 40% while dragging; single use per sheet, "Take a New Sheet"
+- Scissors: first in the main tray; as the POC (drag to cut, long press to move, two fingers to pinch / rotate, scissors image, haptics); only photos are cut
+- Pencil (1306:50774, 1144:25595): Pen, Brush, Marker, Crayon, Fountain pen, Eraser (erases only where the finger passes, `.bitmap`), Pick color; tapping the active tool opens 5 sizes + opacity 10–100%; finger and Apple Pencil; no reed pen; Undo for the last stroke, no redo
+- Washi (1306:49648 / 1306:56097): 4 rolls; pull on the page, straight tape with torn ends, haptic ticks, lift to tear; width 16% of the page, minimum 10%, opacity 0.88
+- Letters (1306:49157): A–Z, 0–9, reusable; taps within 3 s line up to the right and wrap; drag up drops; height 12% of the page width
+- Text: typing screen over the dimmed page, 7 colors, Done; system serif semibold; empty text isn't added
+- Hints, once per scrapbook (first time the tool is on) [Draft text]: Scissors "Drag across a photo to cut. Long press to move.", Pencil "Draw with your finger." (iPhone) / "Draw with your finger or Apple Pencil." (iPad), Washi "Put your finger on the page and pull to stick washi tape"
 - Toast "This page is full"
 
 ## Design system [Locked]
@@ -184,5 +188,6 @@ All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, tr
 - Flow headers: CreateRollHeaderDecoration, ShareRoomHeaderDecoration
 - FilterCanisterBW (725:6301), FilterCanisterColor (725:6480): Choose filter
 - Roll Reveal (folder `Reveal/`, change 021): RevealCuttingMat (@3x PNG, export of 1323:41569) and the envelope as SVG layers (EnvelopeBody, EnvelopeTextureA/B, EnvelopeFlap, EnvelopeFlapLine, EnvelopeLeftEdge, EnvelopeBottomFold); the body's SVG shadow is not drawn by iOS and is clipped in Figma anyway
+- Scrapbook tool tray (change 022, copied from the camera POC): `Tray/` (tray-tool-*, tray-pencil-*, tray-washi-1…4, tray-pen-size-1…5), `Letters/` (letter-A…Z, letter-0…9, SVG), `Scrapbook/` sticker-fun-* (27) and sticker-sheet-fun
 
 Note: designs are still in progress, so treat Figma-derived details as [Draft] until marked Locked.
