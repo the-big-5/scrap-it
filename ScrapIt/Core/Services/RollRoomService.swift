@@ -113,9 +113,13 @@ nonisolated struct RollRoomLocation: Equatable, Sendable {
 ///   (anyone with the link can read and write), plus a public `RollCode-<code>` record (code → link)
 /// - participant: accepts the share, then writes their own `RollParticipant` record in the shared zone
 extension CKContainer {
-    /// The canonical CloudKit container for ScrapIt (`iCloud.lepin.scrapit`).
+    /// The CloudKit container for this app build: `iCloud.lepin.scrapit` for the team build,
+    /// otherwise the default `iCloud.<bundle ID>` so other developers' builds use their own container.
     static var app: CKContainer {
-        CKContainer(identifier: "iCloud.lepin.scrapit")
+        if Bundle.main.bundleIdentifier == "com.lepin.ScrapIt" {
+            return CKContainer(identifier: "iCloud.lepin.scrapit")
+        }
+        return .default()
     }
 }
 
