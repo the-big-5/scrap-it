@@ -73,7 +73,7 @@ Figma nodes 1302:47935 (back camera) and 1300:33796 (front camera) (landscape de
   - Top plate: circular Back button on leading edge returning to Homepage, knurled zoom wheel with "ZOOM" factor label (back camera only; omitted on front camera), circular Info button on trailing edge presenting the invite friend / roll code sheet
   - Viewfinder screen: live preview with real-time film filter, participant presence count badge (`person.2.fill` + count, plus queued count if offline) positioned at top-left of the preview HUD; grid overlay and button removed; host "END ROLL" button and debug actions preserved
   - Bottom controls shelf: Flash toggle (Off / On / Auto), LIVE toggle, and FLIP camera button equally spaced across the bottom shelf under the viewfinder
-  - Lower right deck: circular analog shots-left dial (mechanical odometer drum with independent scrolling digit tumblers rolling upward on decrement and light settling haptic; changes 041, 055) beside the recessed metallic shutter button with mechanical pressed animation and analog shutter haptic (change 040)
+  - Lower right deck: circular analog shots-left dial (mechanical odometer drum with independent scrolling digit tumblers rolling upward on decrement, light settling haptic, and blank slot above roll capacity; changes 041, 055, 059) beside the recessed metallic shutter button with mechanical pressed animation and analog shutter haptic (change 040)
 - Live preview shows the roll's filter in real time (Cinematic 400 B&W = Noir, 200 Color Print = Digicam, change 016); no filter switching on this screen
 - Knurled zoom wheel (172×44, look from 007):
   - Back camera range: 0.5× (phones with ultra wide) or 1× up to 4× (or the device maximum if lower), in 0.1 steps
