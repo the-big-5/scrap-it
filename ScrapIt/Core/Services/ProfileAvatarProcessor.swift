@@ -7,7 +7,11 @@ enum ProfileAvatarProcessor {
     static let maxPixelSize = 512
     static let compressionQuality: CGFloat = 0.8
 
-    nonisolated static func process(_ rawData: Data, maxPixelSize: Int = maxPixelSize) -> Data? {
+    nonisolated static func process(
+        _ rawData: Data,
+        maxPixelSize: Int = maxPixelSize,
+        compressionQuality: CGFloat = compressionQuality
+    ) -> Data? {
         guard let source = CGImageSourceCreateWithData(rawData as CFData, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -18,5 +22,14 @@ enum ProfileAvatarProcessor {
             return nil
         }
         return UIImage(cgImage: cgImage).jpegData(compressionQuality: compressionQuality)
+    }
+
+    nonisolated static func thumbnail(
+        from rawData: Data?,
+        maxPixelSize: Int,
+        compressionQuality: CGFloat
+    ) -> Data? {
+        guard let rawData else { return nil }
+        return process(rawData, maxPixelSize: maxPixelSize, compressionQuality: compressionQuality)
     }
 }

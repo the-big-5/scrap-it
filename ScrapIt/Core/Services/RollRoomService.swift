@@ -6,6 +6,7 @@ import OSLog
 struct RoomParticipant: Equatable, Identifiable, Sendable {
     let userID: String
     let name: String
+    var avatarData: Data? = nil
 
     var id: String { userID }
 }
@@ -63,6 +64,7 @@ protocol RollRoomServicing: AnyObject {
     func joinRoom(code: String, as user: RoomParticipant) async throws -> RoomSnapshot
     func acceptShare(_ metadata: CKShare.Metadata, as user: RoomParticipant) async throws -> RoomSnapshot
     func fetchRoom(code: String, zoneOwnerName: String?) async throws -> RoomSnapshot
+    func updateParticipant(_ user: RoomParticipant, inRoom code: String, zoneOwnerName: String?) async throws
     func removeParticipant(userID: String, fromRoom code: String) async throws
     func leaveRoom(code: String, zoneOwnerName: String, userID: String) async throws
     func deleteRoom(code: String) async throws
@@ -70,6 +72,10 @@ protocol RollRoomServicing: AnyObject {
     func listRooms() async throws -> [RoomSnapshot]
     /// Encrypted payload of one public `RollShot`.
     func downloadShotPayload(recordName: String) async throws -> Data
+}
+
+extension RollRoomServicing {
+    func updateParticipant(_ user: RoomParticipant, inRoom code: String, zoneOwnerName: String?) async throws {}
 }
 
 extension Notification.Name {
@@ -253,7 +259,7 @@ final class CloudKitRollRoomService: RollRoomServicing {
 
     func joinRoom(code: String, as user: RoomParticipant) async throws -> RoomSnapshot {
         if let own = await ownRoom(code: code) {
-            return own
+            return await syncParticipantIfNeeded(user, in: own)
         }
         do {
             let codeRecord = try await container.publicCloudDatabase.record(for: RollRoomLocation.codeRecordID(rollCode: code))
@@ -272,7 +278,7 @@ final class CloudKitRollRoomService: RollRoomServicing {
     func acceptShare(_ metadata: CKShare.Metadata, as user: RoomParticipant) async throws -> RoomSnapshot {
         let code = String(metadata.share.recordID.zoneID.zoneName.dropFirst("Roll-".count))
         if let own = await ownRoom(code: code) {
-            return own
+            return await syncParticipantIfNeeded(user, in: own)
         }
         do {
             let zoneID = metadata.share.recordID.zoneID
@@ -287,14 +293,17 @@ final class CloudKitRollRoomService: RollRoomServicing {
             if snapshot.statusRaw == SessionStatus.ended.rawValue || snapshot.slotsUsed >= snapshot.rollSize {
                 throw RoomError.ended
             }
-            if !snapshot.participants.contains(where: { $0.userID == user.userID }) {
-                _ = try await location.database(in: container).save(participantRecord(user, location: location))
-            }
-            await saveSubscriptionsIfNeeded()
             var joined = snapshot
-            if !joined.participants.contains(where: { $0.userID == user.userID }) {
+            if let index = joined.participants.firstIndex(where: { $0.userID == user.userID }) {
+                if joined.participants[index].name != user.name || joined.participants[index].avatarData != user.avatarData {
+                    try? await updateParticipant(user, inRoom: rollCode, zoneOwnerName: location.isOwner ? nil : zoneID.ownerName)
+                    joined.participants[index] = user
+                }
+            } else {
+                _ = try await location.database(in: container).save(participantRecord(user, location: location))
                 joined.participants.append(user)
             }
+            await saveSubscriptionsIfNeeded()
             return joined
         } catch {
             log.error("acceptShare failed: \(String(describing: error), privacy: .public)")
@@ -330,7 +339,11 @@ final class CloudKitRollRoomService: RollRoomServicing {
                 .sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
                 .compactMap { record -> RoomParticipant? in
                     guard let id = record["userID"] as? String else { return nil }
-                    return RoomParticipant(userID: id, name: (record["name"] as? String) ?? "Friend")
+                    return RoomParticipant(
+                        userID: id,
+                        name: (record["name"] as? String) ?? "Friend",
+                        avatarData: record["avatarData"] as? Data
+                    )
                 }
             let share = records.first { $0 is CKShare } as? CKShare
             let shotRecordNames = records
@@ -417,10 +430,33 @@ final class CloudKitRollRoomService: RollRoomServicing {
         }
     }
 
+    func updateParticipant(_ user: RoomParticipant, inRoom code: String, zoneOwnerName: String?) async throws {
+        let location = RollRoomLocation(rollCode: code, zoneOwnerName: zoneOwnerName)
+        let database = location.database(in: container)
+        let record = participantRecord(user, location: location)
+        let results = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
+        if case .failure(let error)? = results.saveResults[record.recordID] {
+            throw error
+        }
+    }
+
+    private func syncParticipantIfNeeded(_ user: RoomParticipant, in snapshot: RoomSnapshot) async -> RoomSnapshot {
+        var updated = snapshot
+        if let index = updated.participants.firstIndex(where: { $0.userID == user.userID }) {
+            let existing = updated.participants[index]
+            if existing.name != user.name || existing.avatarData != user.avatarData {
+                try? await updateParticipant(user, inRoom: snapshot.rollCode, zoneOwnerName: snapshot.zoneOwnerName)
+                updated.participants[index] = user
+            }
+        }
+        return updated
+    }
+
     private func participantRecord(_ user: RoomParticipant, location: RollRoomLocation) -> CKRecord {
         let record = CKRecord(recordType: "RollParticipant", recordID: location.participantRecordID(userID: user.userID))
         record["userID"] = user.userID
         record["name"] = user.name
+        record["avatarData"] = user.avatarData
         return record
     }
 

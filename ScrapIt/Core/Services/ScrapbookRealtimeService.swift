@@ -46,19 +46,22 @@ struct CollaboratorPresence: Codable, Sendable, Equatable, Identifiable {
     let colorHex: String
     var currentPageIndex: Int
     var lastActive: Date
+    var avatarData: Data?
 
     init(
         id: String,
         name: String,
         colorHex: String,
         currentPageIndex: Int,
-        lastActive: Date = .now
+        lastActive: Date = .now,
+        avatarData: Data? = nil
     ) {
         self.id = id
         self.name = name
         self.colorHex = colorHex
         self.currentPageIndex = currentPageIndex
         self.lastActive = lastActive
+        self.avatarData = avatarData
     }
 }
 
