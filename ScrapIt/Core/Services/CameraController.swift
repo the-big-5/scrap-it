@@ -44,6 +44,7 @@ final class CameraController {
     private(set) var isRecordingLive: Bool = false
     private(set) var hasCameraControl: Bool = false
     private(set) var isCapturing: Bool = false
+    private(set) var isSwitchingCamera: Bool = false
     var shutterFlashOpacity: Double = 0.0
     /// "Turn On Camera Adjustments" alert.
     var showsCameraAdjustmentsPrompt: Bool = false
@@ -143,13 +144,19 @@ final class CameraController {
     }
 
     func toggleCameraPosition() {
-        guard isSessionRunning, !isCapturing else { return }
+        guard isSessionRunning, !isCapturing, !isSwitchingCamera else { return }
+        isSwitchingCamera = true
         Task {
+            defer { isSwitchingCamera = false }
+            // Lead time for mechanical iris closure to cover the preview before sensor disconnect
+            try? await Task.sleep(nanoseconds: 180_000_000)
             guard let position = await engine.switchCamera() else { return }
             isUsingFrontCamera = position == .front
             isLiveSupported = await engine.isLivePhotoAvailable()
             zoomCapabilities = await engine.resetZoom()
             zoomFactor = 1
+            // Settle time for the first video frame to render before mechanical iris dilates open
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 
