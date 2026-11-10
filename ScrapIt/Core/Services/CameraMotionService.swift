@@ -14,16 +14,17 @@ final class CameraMotionService {
         return q
     }()
 
+    private var onOrientationChanged: ((RollCameraOrientation.DeviceOrientation) -> Void)?
     private var onSideChanged: ((RollCameraOrientation.LandscapeSide) -> Void)?
     private var notificationObserver: (any NSObjectProtocol)?
 
-    func start(onSideChanged: @escaping (RollCameraOrientation.LandscapeSide) -> Void) {
+    func start(onOrientationChanged: @escaping (RollCameraOrientation.DeviceOrientation) -> Void) {
         stop()
-        self.onSideChanged = onSideChanged
+        self.onOrientationChanged = onOrientationChanged
 
         // Immediate initial check if device orientation is already known
-        if let initialSide = RollCameraOrientation.landscapeSide(for: UIDevice.current.orientation) {
-            onSideChanged(initialSide)
+        if let initial = RollCameraOrientation.deviceOrientation(for: UIDevice.current.orientation) {
+            onOrientationChanged(initial)
         }
 
         // 1. CoreMotion Device Motion (sensor-fused gravity vector, resistant to jitter).
@@ -32,13 +33,16 @@ final class CameraMotionService {
             motionManager.deviceMotionUpdateInterval = 0.1
             motionManager.startDeviceMotionUpdates(to: queue) { [weak self] motion, _ in
                 guard let motion else { return }
-                if let side = RollCameraOrientation.landscapeSide(
+                if let orientation = RollCameraOrientation.deviceOrientation(
                     accelerationX: motion.gravity.x,
                     accelerationY: motion.gravity.y,
                     accelerationZ: motion.gravity.z
                 ) {
                     Task { @MainActor [weak self] in
-                        self?.onSideChanged?(side)
+                        self?.onOrientationChanged?(orientation)
+                        if let side = orientation.landscapeSide {
+                            self?.onSideChanged?(side)
+                        }
                     }
                 }
             }
@@ -47,13 +51,16 @@ final class CameraMotionService {
             motionManager.accelerometerUpdateInterval = 0.1
             motionManager.startAccelerometerUpdates(to: queue) { [weak self] data, _ in
                 guard let data else { return }
-                if let side = RollCameraOrientation.landscapeSide(
+                if let orientation = RollCameraOrientation.deviceOrientation(
                     accelerationX: data.acceleration.x,
                     accelerationY: data.acceleration.y,
                     accelerationZ: data.acceleration.z
                 ) {
                     Task { @MainActor [weak self] in
-                        self?.onSideChanged?(side)
+                        self?.onOrientationChanged?(orientation)
+                        if let side = orientation.landscapeSide {
+                            self?.onSideChanged?(side)
+                        }
                     }
                 }
             }
@@ -66,10 +73,23 @@ final class CameraMotionService {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            if let side = RollCameraOrientation.landscapeSide(for: UIDevice.current.orientation) {
+            if let orientation = RollCameraOrientation.deviceOrientation(for: UIDevice.current.orientation) {
+                self?.onOrientationChanged?(orientation)
+                if let side = orientation.landscapeSide {
+                    self?.onSideChanged?(side)
+                }
+            }
+        }
+    }
+
+    func start(onSideChanged: @escaping (RollCameraOrientation.LandscapeSide) -> Void) {
+        self.onSideChanged = onSideChanged
+        start { [weak self] orientation in
+            if let side = orientation.landscapeSide {
                 self?.onSideChanged?(side)
             }
         }
+        self.onSideChanged = onSideChanged
     }
 
     func stop() {
@@ -84,6 +104,7 @@ final class CameraMotionService {
             self.notificationObserver = nil
         }
         UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        onOrientationChanged = nil
         onSideChanged = nil
     }
 
