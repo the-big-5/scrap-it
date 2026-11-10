@@ -153,7 +153,10 @@ struct CaptureSessionView: View {
                 .position(x: 567 + 107 / 2, y: 164 + 107 / 2)
 
             // 5. Circular Analog Shots-Left Dial (1302:47951)
-            ShotsLeftDialView(shotsRemaining: flowViewModel.shotsRemaining)
+            ShotsLeftDialView(
+                shotsRemaining: flowViewModel.shotsRemaining,
+                totalShots: flowViewModel.activeSession?.rollSize ?? 36
+            )
                 .frame(width: 83, height: 83)
                 .position(x: 697 + 83 / 2, y: 271 + 83 / 2)
 

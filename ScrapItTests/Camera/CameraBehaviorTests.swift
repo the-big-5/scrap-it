@@ -322,25 +322,54 @@ struct CameraBehaviorTests {
     }
 
     @Test func shotsLeftDialViewDigitsAndClamping() {
-        let dial36 = ShotsLeftDialView(shotsRemaining: 36)
+        let dial36 = ShotsLeftDialView(shotsRemaining: 36, totalShots: 36)
         #expect(dial36.safeShots == 36)
         #expect(dial36.tensDigit == 3)
         #expect(dial36.onesDigit == 6)
+        #expect(dial36.isTensBlankAbove)
+        #expect(dial36.isOnesBlankAbove)
 
-        let dial9 = ShotsLeftDialView(shotsRemaining: 9)
+        let dial35 = ShotsLeftDialView(shotsRemaining: 35, totalShots: 36)
+        #expect(dial35.safeShots == 35)
+        #expect(dial35.tensDigit == 3)
+        #expect(dial35.onesDigit == 5)
+        #expect(dial35.isTensBlankAbove)
+        #expect(!dial35.isOnesBlankAbove)
+
+        let dial29 = ShotsLeftDialView(shotsRemaining: 29, totalShots: 36)
+        #expect(dial29.safeShots == 29)
+        #expect(dial29.tensDigit == 2)
+        #expect(dial29.onesDigit == 9)
+        #expect(!dial29.isTensBlankAbove)
+        #expect(!dial29.isOnesBlankAbove)
+
+        let dial9 = ShotsLeftDialView(shotsRemaining: 9, totalShots: 36)
         #expect(dial9.safeShots == 9)
         #expect(dial9.tensDigit == 0)
         #expect(dial9.onesDigit == 9)
+        #expect(!dial9.isTensBlankAbove)
+        #expect(!dial9.isOnesBlankAbove)
 
-        let dial0 = ShotsLeftDialView(shotsRemaining: 0)
+        let dial0 = ShotsLeftDialView(shotsRemaining: 0, totalShots: 36)
         #expect(dial0.safeShots == 0)
         #expect(dial0.tensDigit == 0)
         #expect(dial0.onesDigit == 0)
+        #expect(!dial0.isTensBlankAbove)
+        #expect(!dial0.isOnesBlankAbove)
 
-        let dialNegative = ShotsLeftDialView(shotsRemaining: -5)
+        let dialNegative = ShotsLeftDialView(shotsRemaining: -5, totalShots: 36)
         #expect(dialNegative.safeShots == 0)
         #expect(dialNegative.tensDigit == 0)
         #expect(dialNegative.onesDigit == 0)
+        #expect(!dialNegative.isTensBlankAbove)
+        #expect(!dialNegative.isOnesBlankAbove)
+
+        let dial24 = ShotsLeftDialView(shotsRemaining: 24, totalShots: 24)
+        #expect(dial24.safeShots == 24)
+        #expect(dial24.tensDigit == 2)
+        #expect(dial24.onesDigit == 4)
+        #expect(dial24.isTensBlankAbove)
+        #expect(dial24.isOnesBlankAbove)
     }
 
     // MARK: - Filter pipeline

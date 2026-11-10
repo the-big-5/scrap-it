@@ -1,10 +1,11 @@
 import SwiftUI
 import UIKit
 
-/// Circular analog shots-left dial element (change 041, change 055) matching Figma nodes 1302:47951 / 1300:33812.
+/// Circular analog shots-left dial element (change 041, change 055, change 059) matching Figma nodes 1302:47951 / 1300:33812.
 /// Displays remaining shots count as an analogue odometer drum with independent scrolling digit tumblers.
 struct ShotsLeftDialView: View {
     let shotsRemaining: Int
+    var totalShots: Int = 36
 
     private static let creamText = Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255)
 
@@ -21,6 +22,14 @@ struct ShotsLeftDialView: View {
 
     var onesDigit: Int {
         safeShots % 10
+    }
+
+    var isTensBlankAbove: Bool {
+        tensDigit >= max(0, totalShots / 10)
+    }
+
+    var isOnesBlankAbove: Bool {
+        safeShots >= totalShots
     }
 
     var body: some View {
@@ -40,8 +49,8 @@ struct ShotsLeftDialView: View {
 
                 // Mechanical odometer tumbler wheels
                 HStack(spacing: 1) {
-                    OdometerDigitWheelView(digit: tensDigit)
-                    OdometerDigitWheelView(digit: onesDigit)
+                    OdometerDigitWheelView(digit: tensDigit, blankAbove: isTensBlankAbove)
+                    OdometerDigitWheelView(digit: onesDigit, blankAbove: isOnesBlankAbove)
                 }
                 .frame(width: 50, height: 50)
                 .clipped()
@@ -77,20 +86,22 @@ struct ShotsLeftDialView: View {
 
 private struct OdometerDigitWheelView: View {
     let digit: Int
+    var blankAbove: Bool = false
 
     @State private var position: Double
     @State private var previousDigit: Int
 
     private static let slotHeight: CGFloat = 19
 
-    init(digit: Int) {
+    init(digit: Int, blankAbove: Bool = false) {
         self.digit = digit
+        self.blankAbove = blankAbove
         _position = State(initialValue: Double(digit))
         _previousDigit = State(initialValue: digit)
     }
 
     var body: some View {
-        OdometerDrumWheel(position: position, slotHeight: Self.slotHeight)
+        OdometerDrumWheel(position: position, slotHeight: Self.slotHeight, blankAbove: blankAbove)
             .onChange(of: digit) { _, newDigit in
                 let oldDigit = previousDigit
                 previousDigit = newDigit
@@ -116,6 +127,7 @@ private struct OdometerDigitWheelView: View {
 private struct OdometerDrumWheel: View, Animatable {
     var position: Double
     let slotHeight: CGFloat
+    var blankAbove: Bool = false
 
     private static let creamText = Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255)
 
@@ -130,20 +142,23 @@ private struct OdometerDrumWheel: View, Animatable {
                 let y = yOffset(for: i, scrollPosition: position)
                 let distance = abs(y)
                 if distance <= slotHeight * 2.2 {
-                    let normalized = distance / slotHeight
-                    let scale = max(0.75, 1.0 - (0.25 * min(1.0, normalized)))
-                    let opacity: Double = if normalized <= 1.0 {
-                        1.0 - (0.65 * normalized)
-                    } else {
-                        max(0.0, 0.35 * (2.0 - normalized))
-                    }
+                    let isAboveSlot = y < -slotHeight * 0.5
+                    if !(blankAbove && isAboveSlot) {
+                        let normalized = distance / slotHeight
+                        let scale = max(0.75, 1.0 - (0.25 * min(1.0, normalized)))
+                        let opacity: Double = if normalized <= 1.0 {
+                            1.0 - (0.65 * normalized)
+                        } else {
+                            max(0.0, 0.35 * (2.0 - normalized))
+                        }
 
-                    Text("\(i)")
-                        .font(.system(size: 20, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(Self.creamText)
-                        .scaleEffect(scale)
-                        .opacity(opacity)
-                        .offset(y: y)
+                        Text("\(i)")
+                            .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Self.creamText)
+                            .scaleEffect(scale)
+                            .opacity(opacity)
+                            .offset(y: y)
+                    }
                 }
             }
         }
@@ -161,10 +176,11 @@ private struct OdometerDrumWheel: View, Animatable {
 #Preview {
     struct PreviewWrapper: View {
         @State private var shots = 24
+        private let totalShots = 36
 
         var body: some View {
             VStack(spacing: 24) {
-                ShotsLeftDialView(shotsRemaining: shots)
+                ShotsLeftDialView(shotsRemaining: shots, totalShots: totalShots)
 
                 HStack(spacing: 16) {
                     Button("Capture (-1)") {
