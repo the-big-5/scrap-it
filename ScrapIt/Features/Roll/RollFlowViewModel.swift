@@ -4,6 +4,7 @@ import Foundation
 import Observation
 import OSLog
 import SwiftData
+import SwiftUI
 
 /// Single ViewModel for the Roll feature: create, join, capture and end a roll.
 /// A cell in the lobby grid: a person, or the host's "+" invite tile (change 019).
@@ -67,6 +68,11 @@ final class RollFlowViewModel {
     var showLastSlotRaceAlert: Bool = false
     var lastSlotRaceMessage: String = "The roll just finished! Another friend took the final shot first, so your last photo was dropped."
     var hostHandoverBanner: String?
+
+    // End roll & roll complete popups (Figma 1517:25254 & 1512:26505)
+    var showEndRollConfirmation: Bool = false
+    var showRollCompletePopup: Bool = false
+    var isRollEndedEarly: Bool = false
 
     // Shutter animation state
     private(set) var isShutterPressed: Bool = false
@@ -747,7 +753,12 @@ final class RollFlowViewModel {
             session: session
         ) { [weak self] in
             guard let self else { return }
-            self.finalizeSessionAndOpenScrapbook()
+            Task { @MainActor in
+                self.showEndRollConfirmation = false
+                self.isRollEndedEarly = session.slotsUsed < session.rollSize
+                self.startRollFinalizationSync(for: session)
+                self.showRollCompletePopup = true
+            }
         }
     }
 
@@ -766,8 +777,16 @@ final class RollFlowViewModel {
                         self?.applyRemoteSlotCount(incomingSlots)
                     },
                     onRollEnded: { [weak self] in
-                        print("⚡️ [RollFlowViewModel] Received real-time roll_ended event! Finalizing session...")
-                        self?.finalizeSessionAndOpenScrapbook()
+                        print("⚡️ [RollFlowViewModel] Received real-time roll_ended event! Showing roll complete popup...")
+                        guard let self else { return }
+                        Task { @MainActor in
+                            if let session = self.activeSession {
+                                self.isRollEndedEarly = session.slotsUsed < session.rollSize
+                                self.startRollFinalizationSync(for: session)
+                            }
+                            self.showEndRollConfirmation = false
+                            self.showRollCompletePopup = true
+                        }
                     }
                 )
             }
@@ -792,7 +811,10 @@ final class RollFlowViewModel {
             session.status = .ended
             session.endTime = .now
             try? modelContext.save()
-            finalizeSessionAndOpenScrapbook()
+            startRollFinalizationSync(for: session)
+            isRollEndedEarly = false
+            showEndRollConfirmation = false
+            showRollCompletePopup = true
         } else {
             try? modelContext.save()
         }
@@ -973,7 +995,10 @@ final class RollFlowViewModel {
             }
 
             if rollFinished {
-                finalizeSessionAndOpenScrapbook()
+                startRollFinalizationSync(for: session)
+                isRollEndedEarly = false
+                showEndRollConfirmation = false
+                showRollCompletePopup = true
             }
             // Change 020: confirmed, so the shot uploads now (after End Roll has started, never before it).
             await uploadShotIfReady(photo)
@@ -999,8 +1024,37 @@ final class RollFlowViewModel {
 
     // MARK: - End roll / host handover
 
+    private(set) var isTransitioningToReveal: Bool = false
+
+    func presentEndRollConfirmation() {
+        showEndRollConfirmation = true
+    }
+
+    func dismissEndRollConfirmation() {
+        showEndRollConfirmation = false
+    }
+
+    func confirmEndRollByHost(currentUser: UserProfile) {
+        guard let session = activeSession,
+              session.hostUserID == currentUser.appleUserID else { return }
+        // Transition from popup 1 to popup 2 is instant
+        showEndRollConfirmation = false
+        isRollEndedEarly = session.slotsUsed < session.rollSize
+        showRollCompletePopup = true
+        session.status = .ended
+        session.endTime = .now
+        try? modelContext.save()
+        let realtime = self.realtimeService
+        Task {
+            await realtime.broadcastRollEnded()
+            await cloudService.publishSessionToCloudKit(session: session)
+        }
+        startRollFinalizationSync(for: session)
+    }
+
     func endSessionManuallyByHost(
-        currentUser: UserProfile
+        currentUser: UserProfile,
+        showPopup: Bool = false
     ) {
         guard let session = activeSession,
               session.hostUserID == currentUser.appleUserID else { return }
@@ -1012,6 +1066,46 @@ final class RollFlowViewModel {
             await realtime.broadcastRollEnded()
             await cloudService.publishSessionToCloudKit(session: session)
         }
+        if showPopup {
+            showEndRollConfirmation = false
+            isRollEndedEarly = session.slotsUsed < session.rollSize
+            showRollCompletePopup = true
+        } else {
+            showEndRollConfirmation = false
+            isRollEndedEarly = session.slotsUsed < session.rollSize
+            finalizeSessionAndOpenScrapbook()
+        }
+    }
+
+    func transitionToRollReveal() {
+        guard !isTransitioningToReveal else { return }
+        isTransitioningToReveal = true
+        guard let navigator else {
+            proceedToRollReveal()
+            isTransitioningToReveal = false
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            navigator.isFadingToReveal = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            UIView.setAnimationsEnabled(false)
+            self.proceedToRollReveal()
+            DispatchQueue.main.async {
+                UIView.setAnimationsEnabled(true)
+            }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                navigator.isFadingToReveal = false
+            }
+            self.isTransitioningToReveal = false
+        }
+    }
+
+    func proceedToRollReveal() {
+        showEndRollConfirmation = false
+        showRollCompletePopup = false
         finalizeSessionAndOpenScrapbook()
     }
 
@@ -1072,30 +1166,38 @@ final class RollFlowViewModel {
         return (try? modelContext.fetchCount(descriptor)) ?? 0
     }
 
+    func startRollFinalizationSync(for session: CaptureSession) {
+        let cloud = self.cloudService
+        let notReady = shotsAwaitingClaim.union(shotsAwaitingMovie)
+        let isCloudRoom = session.ckRecordName != nil
+        finalizeSessionTask?.cancel()
+        // Holds the ViewModel on purpose: the sync keeps running after the roll screens close (change 020).
+        finalizeSessionTask = Task {
+            guard session.modelContext != nil else { return }
+            await cloud.publishSessionToCloudKit(session: session)
+            await cloud.uploadPendingPhotos(for: session, excluding: notReady)
+            // A local roll (no iCloud, Simulator) has no friends' shots to wait for: one sync, as before.
+            guard isCloudRoom else {
+                _ = await self.syncScrapbookArchive(for: session)
+                return
+            }
+            // Change 020: keep fetching friends' shots until all of the roll's shots are here (max 2 minutes).
+            // Keeps running after the roll screens close (the reveal screen shows the photos as they arrive).
+            let start = Date.now
+            while !Task.isCancelled, await self.syncFriendsShotsOnce(for: session, since: start) {
+                try? await Task.sleep(for: .seconds(Self.friendsShotsSyncInterval))
+            }
+        }
+    }
+
     func finalizeSessionAndOpenScrapbook() {
+        showEndRollConfirmation = false
+        showRollCompletePopup = false
         OrientationLock.resetToPortrait()
         isSyncingShot = false
         if let session = activeSession {
-            let cloud = self.cloudService
-            let notReady = shotsAwaitingClaim.union(shotsAwaitingMovie)
-            let isCloudRoom = session.ckRecordName != nil
-            finalizeSessionTask?.cancel()
-            // Holds the ViewModel on purpose: the sync keeps running after the roll screens close (change 020).
-            finalizeSessionTask = Task {
-                guard session.modelContext != nil else { return }
-                await cloud.publishSessionToCloudKit(session: session)
-                await cloud.uploadPendingPhotos(for: session, excluding: notReady)
-                // A local roll (no iCloud, Simulator) has no friends' shots to wait for: one sync, as before.
-                guard isCloudRoom else {
-                    _ = await self.syncScrapbookArchive(for: session)
-                    return
-                }
-                // Change 020: keep fetching friends' shots until all of the roll's shots are here (max 2 minutes).
-                // Keeps running after the roll screens close (the reveal screen shows the photos as they arrive).
-                let start = Date.now
-                while !Task.isCancelled, await self.syncFriendsShotsOnce(for: session, since: start) {
-                    try? await Task.sleep(for: .seconds(Self.friendsShotsSyncInterval))
-                }
+            if finalizeSessionTask == nil {
+                startRollFinalizationSync(for: session)
             }
         } else {
             finalizeSessionTask?.cancel()

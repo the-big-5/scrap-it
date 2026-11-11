@@ -15,9 +15,14 @@ protocol Navigator: AnyObject {
     var isTabBarHidden: Bool { get set }
     var cameraReturnPhase: CameraReturnPhase { get set }
     var cameraReturnAngle: Double { get set }
+    var isFadingToReveal: Bool { get set }
 }
 
 extension Navigator {
+    var isFadingToReveal: Bool {
+        get { false }
+        set { }
+    }
     func push(_ route: AppRoute) {
         path.append(route)
     }
