@@ -6,7 +6,7 @@ enum OrientationLock {
     private(set) static var mask: UIInterfaceOrientationMask = .portrait
 
     static func mask(isCaptureSessionVisible: Bool) -> UIInterfaceOrientationMask {
-        isCaptureSessionVisible ? .landscape : .portrait
+        .portrait
     }
 
     /// Resets orientation to portrait for screens outside the capture session.

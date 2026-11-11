@@ -52,6 +52,9 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
     private var rotationAngle: CGFloat = 0
     private var photoRotationAngle: CGFloat = 0
     private var currentDeviceOrientation: RollCameraOrientation.DeviceOrientation = .landscapeLeft
+    private var isPortraitWindow: Bool = true
+    private var currentWindowOrientation: UIInterfaceOrientation = .unknown
+    private var currentLandscapeSide: RollCameraOrientation.LandscapeSide = .left
     private var baseRotationAngle: CGFloat = 0
     private var simulatedLandscapeDelta: CGFloat = 0
     /// `AVCaptureSlider` "Zoom" (iOS 18+).
@@ -362,6 +365,19 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
         // Without this the image can fall back to the sensor orientation after a flip.
         updateConnections(for: position)
         updateMaxPhotoDimensions(for: device)
+        // Recompute rotation delta for new camera position (front vs back in portrait mode)
+        let newDelta = RollCameraOrientation.cameraRotationDelta(
+            isPortraitWindow: self.isPortraitWindow,
+            windowInterfaceOrientation: self.currentWindowOrientation,
+            physicalSide: self.currentLandscapeSide,
+            cameraPosition: position
+        )
+        self.simulatedLandscapeDelta = newDelta
+        let effective = RollCameraOrientation.effectiveCameraAngle(
+            baseAngle: self.baseRotationAngle,
+            delta: newDelta
+        )
+        self.applyRotation(effective, for: device)
         // Each sensor has its own base orientation: recompute the angle.
         makeRotationCoordinator(for: device)
         return position
@@ -391,9 +407,7 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
                 }
 
                 if let photoConnection = self.photoOutput.connection(with: .video) {
-                    let captureAngle = self.photoRotationAngle != 0 || self.currentDeviceOrientation.isPortrait
-                        ? self.photoRotationAngle
-                        : self.rotationAngle
+                    let captureAngle = self.photoRotationAngle
                     if photoConnection.isVideoRotationAngleSupported(captureAngle) {
                         photoConnection.videoRotationAngle = captureAngle
                     }
@@ -540,11 +554,16 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
     ) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            self.currentLandscapeSide = side
+            self.isPortraitWindow = isPortrait
+            self.currentWindowOrientation = windowOrientation
             self.currentDeviceOrientation = deviceOrientation
+            let position = self.videoInput?.device.position ?? .back
             let newDelta = RollCameraOrientation.cameraRotationDelta(
                 isPortraitWindow: isPortrait,
                 windowInterfaceOrientation: windowOrientation,
-                physicalSide: side
+                physicalSide: side,
+                cameraPosition: position
             )
             self.simulatedLandscapeDelta = newDelta
             if let device = self.videoInput?.device {
@@ -563,7 +582,8 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
         rotationAngle = angle
         photoRotationAngle = RollCameraOrientation.photoCaptureAngle(
             deviceOrientation: currentDeviceOrientation,
-            landscapeAngle: angle
+            landscapeAngle: angle,
+            cameraPosition: device.position
         )
         updateConnections(for: device.position)
     }
@@ -580,9 +600,7 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
             }
         }
         if let photoConnection = photoOutput.connection(with: .video) {
-            let captureAngle = photoRotationAngle != 0 || currentDeviceOrientation.isPortrait
-                ? photoRotationAngle
-                : rotationAngle
+            let captureAngle = photoRotationAngle
             if photoConnection.isVideoRotationAngleSupported(captureAngle) {
                 photoConnection.videoRotationAngle = captureAngle
             }

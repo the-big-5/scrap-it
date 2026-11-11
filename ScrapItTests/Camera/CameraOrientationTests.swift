@@ -1,3 +1,4 @@
+import AVFoundation
 import Testing
 import UIKit
 @testable import ScrapIt
@@ -62,9 +63,9 @@ import UIKit
         #expect(neutral == nil)
     }
 
-    @Test func viewRotationInPortraitRotatesForLeftAndRight() {
+    @Test func viewRotationInPortraitAnchorsToReferenceLandscape() {
         #expect(RollCameraOrientation.viewRotationDegrees(isPortraitWindow: true, physicalSide: .left) == 90.0)
-        #expect(RollCameraOrientation.viewRotationDegrees(isPortraitWindow: true, physicalSide: .right) == -90.0)
+        #expect(RollCameraOrientation.viewRotationDegrees(isPortraitWindow: true, physicalSide: .right) == 90.0)
     }
 
     @Test func viewRotationInLandscapeFollowsNativeWhenAligned() {
@@ -75,27 +76,29 @@ import UIKit
         ) == 0.0)
         #expect(RollCameraOrientation.viewRotationDegrees(
             isPortraitWindow: false,
-            windowInterfaceOrientation: .landscapeLeft,
+            windowInterfaceOrientation: .landscapeRight,
             physicalSide: .right
         ) == 0.0)
     }
 
-    @Test func viewRotationInLandscapeFlips180WhenOrientationIsLockedOpposite() {
-        #expect(RollCameraOrientation.viewRotationDegrees(
-            isPortraitWindow: false,
-            windowInterfaceOrientation: .landscapeRight,
-            physicalSide: .right
-        ) == 180.0)
+    @Test func viewRotationInLandscapeFlips180WhenWindowIsLandscapeLeft() {
         #expect(RollCameraOrientation.viewRotationDegrees(
             isPortraitWindow: false,
             windowInterfaceOrientation: .landscapeLeft,
             physicalSide: .left
         ) == 180.0)
+        #expect(RollCameraOrientation.viewRotationDegrees(
+            isPortraitWindow: false,
+            windowInterfaceOrientation: .landscapeLeft,
+            physicalSide: .right
+        ) == 180.0)
     }
 
-    @Test func cameraRotationDeltaInPortraitOffsetsRightBy180() {
-        #expect(RollCameraOrientation.cameraRotationDelta(isPortraitWindow: true, physicalSide: .left) == 0.0)
-        #expect(RollCameraOrientation.cameraRotationDelta(isPortraitWindow: true, physicalSide: .right) == 180.0)
+    @Test func cameraRotationDeltaInPortraitAnchorsToReferenceLandscape() {
+        #expect(RollCameraOrientation.cameraRotationDelta(isPortraitWindow: true, physicalSide: .left, cameraPosition: .back) == -90.0)
+        #expect(RollCameraOrientation.cameraRotationDelta(isPortraitWindow: true, physicalSide: .right, cameraPosition: .back) == -90.0)
+        #expect(RollCameraOrientation.cameraRotationDelta(isPortraitWindow: true, physicalSide: .left, cameraPosition: .front) == 90.0)
+        #expect(RollCameraOrientation.cameraRotationDelta(isPortraitWindow: true, physicalSide: .right, cameraPosition: .front) == 90.0)
     }
 
     @Test func cameraRotationDeltaInLandscapeFollowsNativeWhenAligned() {
@@ -106,21 +109,21 @@ import UIKit
         ) == 0.0)
         #expect(RollCameraOrientation.cameraRotationDelta(
             isPortraitWindow: false,
-            windowInterfaceOrientation: .landscapeLeft,
+            windowInterfaceOrientation: .landscapeRight,
             physicalSide: .right
         ) == 0.0)
     }
 
-    @Test func cameraRotationDeltaInLandscapeOffsets180WhenOrientationIsLockedOpposite() {
-        #expect(RollCameraOrientation.cameraRotationDelta(
-            isPortraitWindow: false,
-            windowInterfaceOrientation: .landscapeRight,
-            physicalSide: .right
-        ) == 180.0)
+    @Test func cameraRotationDeltaInLandscapeOffsets180WhenWindowIsLandscapeLeft() {
         #expect(RollCameraOrientation.cameraRotationDelta(
             isPortraitWindow: false,
             windowInterfaceOrientation: .landscapeLeft,
             physicalSide: .left
+        ) == 180.0)
+        #expect(RollCameraOrientation.cameraRotationDelta(
+            isPortraitWindow: false,
+            windowInterfaceOrientation: .landscapeLeft,
+            physicalSide: .right
         ) == 180.0)
     }
 
@@ -202,17 +205,52 @@ import UIKit
     @Test func photoCaptureAngleUsesLandscapeAngleWhenDeviceIsLandscape() {
         let leftAngle = RollCameraOrientation.photoCaptureAngle(
             deviceOrientation: .landscapeLeft,
-            landscapeAngle: 0.0
+            landscapeAngle: 0.0,
+            cameraPosition: .back
         )
         let rightAngle = RollCameraOrientation.photoCaptureAngle(
             deviceOrientation: .landscapeRight,
-            landscapeAngle: 180.0
+            landscapeAngle: 180.0,
+            cameraPosition: .back
         )
         #expect(leftAngle == 0.0)
         #expect(rightAngle == 180.0)
+
+        let frontLeftAngle = RollCameraOrientation.photoCaptureAngle(
+            deviceOrientation: .landscapeLeft,
+            landscapeAngle: 0.0,
+            cameraPosition: .front
+        )
+        let frontRightAngle = RollCameraOrientation.photoCaptureAngle(
+            deviceOrientation: .landscapeRight,
+            landscapeAngle: 180.0,
+            cameraPosition: .front
+        )
+        #expect(frontLeftAngle == 180.0)
+        #expect(frontRightAngle == 0.0)
+
+        let frontPortraitAngle = RollCameraOrientation.photoCaptureAngle(
+            deviceOrientation: .portrait,
+            landscapeAngle: 0.0,
+            cameraPosition: .front
+        )
+        #expect(frontPortraitAngle == 90.0)
     }
 
-    @Test func hudElementRotationCompensatesForPortraitOnly() {
+    @Test func symbolRotationResolvesAngles() {
+        #expect(RollCameraOrientation.symbolRotationDegrees(for: .landscapeLeft) == 0.0)
+        #expect(RollCameraOrientation.symbolRotationDegrees(for: .portrait) == -90.0)
+        #expect(RollCameraOrientation.symbolRotationDegrees(for: .landscapeRight) == -180.0)
+    }
+
+    @Test func zoomTextRotationFollowsLandscapeSideAndRetainsInPortrait() {
+        #expect(RollCameraOrientation.zoomTextRotationDegrees(for: .landscapeLeft, previousRotation: 0) == 0.0)
+        #expect(RollCameraOrientation.zoomTextRotationDegrees(for: .landscapeRight, previousRotation: 0) == 180.0)
+        #expect(RollCameraOrientation.zoomTextRotationDegrees(for: .portrait, previousRotation: 0.0) == 0.0)
+        #expect(RollCameraOrientation.zoomTextRotationDegrees(for: .portrait, previousRotation: 180.0) == 180.0)
+    }
+
+    @Test func hudElementRotationCompensatesForDeviceOrientation() {
         #expect(RollCameraOrientation.hudElementRotationDegrees(
             deviceOrientation: .portrait,
             simulatedLandscapeSide: .left
@@ -221,7 +259,7 @@ import UIKit
         #expect(RollCameraOrientation.hudElementRotationDegrees(
             deviceOrientation: .portrait,
             simulatedLandscapeSide: .right
-        ) == 90.0)
+        ) == -90.0)
 
         #expect(RollCameraOrientation.hudElementRotationDegrees(
             deviceOrientation: .landscapeLeft,
@@ -231,19 +269,17 @@ import UIKit
         #expect(RollCameraOrientation.hudElementRotationDegrees(
             deviceOrientation: .landscapeRight,
             simulatedLandscapeSide: .right
-        ) == 0.0)
+        ) == -180.0)
     }
 
-    // MARK: - Viewfinder dimensions (change 071)
+    // MARK: - Viewfinder dimensions (change 072)
 
-    @Test func viewfinderDimensionsAreFixedTo4x3LandscapeInCameraBody() {
+    @Test func viewfinderDimensionsMatchFigmaNode145826041() {
         let dims = RollCameraOrientation.viewfinderDimensions
-        #expect(dims.outerHeight == 251.0)
-        #expect(dims.innerHeight == 235.0)
+        #expect(dims.outerHeight == 337.0)
+        #expect(dims.innerHeight == 318.0)
+        #expect(dims.innerWidth == 424.0)
         #expect(abs((dims.innerWidth / dims.innerHeight) - (4.0 / 3.0)) < 0.0001)
-        #expect(dims.outerWidth == dims.innerWidth + 20.0)
-        // When the camera body is physically held in portrait, width and height swap relative to user
-        let userPortraitAspect = dims.innerHeight / dims.innerWidth
-        #expect(abs(userPortraitAspect - (3.0 / 4.0)) < 0.0001)
+        #expect(dims.outerWidth == 444.406)
     }
 }
