@@ -12,8 +12,8 @@ struct ProfileViewModelTests {
 
     init() throws {
         container = try ModelContainer(
-            for: UserProfile.self, Scrapbook.self, ScrapPhoto.self, CaptureSession.self,
-            configurations: ModelConfiguration(UUID().uuidString, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+            for: ScrapIt.schema,
+            configurations: ModelConfiguration(UUID().uuidString, schema: ScrapIt.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         )
     }
 
@@ -158,5 +158,52 @@ struct ProfileViewModelTests {
         let width = props?[kCGImagePropertyPixelWidth] as? Int ?? 0
         let height = props?[kCGImagePropertyPixelHeight] as? Int ?? 0
         #expect(max(width, height) <= ProfileAvatarProcessor.maxPixelSize)
+    }
+
+    @Test func emptyShelfAndCreateRollPushesSetupRoute() {
+        let user = UserProfile(appleUserID: "apple-1", name: "Ana")
+        context.insert(user)
+        let router = AppRouter()
+        let vm = ProfileViewModel(modelContext: context, currentUser: user, navigator: router)
+
+        vm.reload()
+        #expect(vm.shelfRows.isEmpty)
+
+        vm.openCreateRoll()
+        #expect(router.path == [.createRollSetup])
+    }
+
+    @Test func shelfRowsChunkTwelveBooksPerShelfWithDeterministicPalette() throws {
+        let user = UserProfile(appleUserID: "apple-1", name: "Ana")
+        context.insert(user)
+        for index in 0..<14 {
+            let book = Scrapbook(
+                title: "Book \(index)",
+                createdDate: Date(timeIntervalSince1970: TimeInterval(index))
+            )
+            context.insert(book)
+        }
+        try context.save()
+
+        let router = AppRouter()
+        let vm = ProfileViewModel(modelContext: context, currentUser: user, navigator: router)
+        vm.reload()
+
+        #expect(vm.shelfRows.count == 2)
+        #expect(vm.shelfRows[0].count == 12)
+        #expect(vm.shelfRows[1].count == 2)
+        #expect(vm.shelfRows[0].map(\.style) == BookSpineStyle.palette)
+        #expect(vm.shelfRows[1][0].style == BookSpineStyle.palette[0])
+        #expect(vm.shelfRows[1][1].style == BookSpineStyle.palette[1])
+
+        let firstBook = vm.shelfRows[0][0].scrapbook
+        vm.open(firstBook)
+        #expect(router.path == [.scrapbook(firstBook.id)])
+
+        vm.requestDelete(firstBook)
+        vm.confirmDelete()
+        #expect(vm.shelfRows.count == 2)
+        #expect(vm.shelfRows[0].count == 12)
+        #expect(vm.shelfRows[1].count == 1)
     }
 }

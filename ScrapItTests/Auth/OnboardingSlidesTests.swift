@@ -35,6 +35,70 @@ struct OnboardingSlidesTests {
     }
 
     @Test
+    func testOnboardingButtonTitlesAndProgressInterpolation() {
+        #expect(OnboardingSlidesView.buttonTitle(for: 0.0) == "Continue")
+        #expect(OnboardingSlidesView.buttonTitle(for: 0.8) == "Continue")
+        #expect(OnboardingSlidesView.buttonTitle(for: 1.4) == "Continue")
+        #expect(OnboardingSlidesView.buttonTitle(for: 1.5) == "Let's Try It")
+        #expect(OnboardingSlidesView.buttonTitle(for: 2.0) == "Let's Try It")
+    }
+
+    @Test
+    func testEffectiveProgressScrubbingAndClamping() {
+        let width: CGFloat = 400.0
+
+        // Zero offset gives current slide progress
+        let atSlide0 = OnboardingSlidesView.calculateEffectiveProgress(currentSlide: 0, dragOffset: 0, screenWidth: width)
+        #expect(atSlide0 == 0.0)
+
+        // Dragging left (negative offset) advances progress towards next slide
+        let draggingLeft = OnboardingSlidesView.calculateEffectiveProgress(currentSlide: 0, dragOffset: -200, screenWidth: width)
+        #expect(draggingLeft == 0.5)
+
+        // Dragging right (positive offset) moves progress backwards
+        let draggingRight = OnboardingSlidesView.calculateEffectiveProgress(currentSlide: 1, dragOffset: 200, screenWidth: width)
+        #expect(draggingRight == 0.5)
+
+        // Rubberbanding past left boundary (< 0)
+        let pastLeft = OnboardingSlidesView.calculateEffectiveProgress(currentSlide: 0, dragOffset: 100, screenWidth: width)
+        #expect(pastLeft < 0.0)
+        #expect(pastLeft > -0.25)
+
+        // Rubberbanding past right boundary (> 2)
+        let pastRight = OnboardingSlidesView.calculateEffectiveProgress(currentSlide: 2, dragOffset: -100, screenWidth: width)
+        #expect(pastRight > 2.0)
+        #expect(pastRight < 2.25)
+    }
+
+    @Test
+    func testTargetSlideDeterminationFromGestures() {
+        // Below threshold snaps back
+        #expect(OnboardingSlidesView.calculateTargetSlide(currentSlide: 0, translation: -20, velocity: 0) == 0)
+        #expect(OnboardingSlidesView.calculateTargetSlide(currentSlide: 1, translation: 20, velocity: 0) == 1)
+
+        // Exceeding translation threshold advances / retreats
+        #expect(OnboardingSlidesView.calculateTargetSlide(currentSlide: 0, translation: -50, velocity: 0) == 1)
+        #expect(OnboardingSlidesView.calculateTargetSlide(currentSlide: 1, translation: 50, velocity: 0) == 0)
+
+        // High velocity flick advances / retreats even with low translation
+        #expect(OnboardingSlidesView.calculateTargetSlide(currentSlide: 0, translation: -10, velocity: -400) == 1)
+        #expect(OnboardingSlidesView.calculateTargetSlide(currentSlide: 1, translation: 10, velocity: 400) == 0)
+
+        // Clamping to slide bounds
+        #expect(OnboardingSlidesView.calculateTargetSlide(currentSlide: 0, translation: 100, velocity: 500) == 0)
+        #expect(OnboardingSlidesView.calculateTargetSlide(currentSlide: 2, translation: -100, velocity: -500) == 2)
+    }
+
+    @Test
+    func testCustomInitialSlide() {
+        var completed = false
+        let view = OnboardingSlidesView(initialSlide: 2, onComplete: { completed = true })
+        #expect(!completed)
+        view.onComplete()
+        #expect(completed)
+    }
+
+    @Test
     func testRootViewInitializesWithCorrectOnboardingState() {
         let rootViewDefault = RootView()
         #expect(rootViewDefault.isShowingOnboarding == true)

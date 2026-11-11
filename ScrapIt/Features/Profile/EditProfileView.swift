@@ -73,17 +73,17 @@ struct EditProfileView: View {
                     .padding(.bottom, 24)
                 }
 
-                Button("Log out", action: viewModel.requestSignOut)
-                    .buttonStyle(OffsetPillButtonStyle(
-                        backgroundColor: DSColor.Paper.light.color,
-                        foregroundColor: DSColor.Brand.tertiary.color,
-                        shadowOffset: 7,
-                        height: 52,
-                        fontSize: 20,
-                        fontWeight: .heavy
-                    ))
-                    .padding(.horizontal, 22)
-                    .padding(.bottom, 28)
+                Button(action: viewModel.requestSignOut) {
+                    Text("Log Out")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(DSColor.Kraft.light)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Capsule().fill(DSColorToken(0x681111)))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 28)
             }
             .ignoresSafeArea(.keyboard, edges: .bottom)
         }
@@ -116,7 +116,7 @@ struct EditProfileView: View {
 
             Spacer()
 
-            Text("Edit Profile")
+            Text("Profile Settings")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(DSColor.Brand.primary.color)
 
