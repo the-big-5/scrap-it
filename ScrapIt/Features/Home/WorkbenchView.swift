@@ -58,7 +58,7 @@ struct WorkbenchView: View {
                         .onTapGesture { closeCamera() }
                 }
 
-                camera(layout, isActive: isActive)
+                camera(layout, container: proxy.size, isActive: isActive)
 
                 if isActive {
                     actionButtons(layout)
@@ -113,9 +113,13 @@ struct WorkbenchView: View {
 
     // MARK: - Camera
 
-    /// Spring-rotates and moves from its spot on the cutting mat to the center (unchanged behavior).
-    private func camera(_ layout: WorkbenchLayout, isActive: Bool) -> some View {
+    /// Spring-rotates and moves from its spot on the cutting mat to the center (Figma CameraClick).
+    /// Hidden during camera return transition while CameraReturnTransitionOverlay animates back to idle (change 086).
+    private func camera(_ layout: WorkbenchLayout, container: CGSize, isActive: Bool) -> some View {
         let size = WorkbenchLayout.cameraSize
+        let targetPosition = layout.point(isActive ? WorkbenchLayout.cameraActiveCenter : WorkbenchLayout.cameraIdleCenter)
+        let targetRotation = isActive ? WorkbenchLayout.cameraActiveRotation : WorkbenchLayout.cameraIdleRotation
+
         return Button {
             withAnimation(.spring(response: 0.40, dampingFraction: 0.76)) {
                 viewModel.toggleCamera()
@@ -125,7 +129,7 @@ struct WorkbenchView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: layout.length(size.width), height: layout.length(size.height))
-                .rotationEffect(.degrees(isActive ? WorkbenchLayout.cameraActiveRotation : WorkbenchLayout.cameraIdleRotation))
+                .rotationEffect(.degrees(targetRotation))
                 .shadow(
                     color: .black.opacity(isActive ? 0.35 : 0.22),
                     radius: isActive ? 18 : 8,
@@ -136,7 +140,10 @@ struct WorkbenchView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Disposable Camera")
         .accessibilityHint(isActive ? "Camera menu active" : "Tap to open roll menu")
-        .position(layout.point(isActive ? WorkbenchLayout.cameraActiveCenter : WorkbenchLayout.cameraIdleCenter))
+        .disabled(viewModel.isCameraActive || viewModel.cameraReturnPhase != .idle)
+        .opacity(viewModel.cameraReturnPhase == .idle ? 1 : 0)
+        .position(targetPosition)
+        .zIndex(1)
     }
 
     // MARK: - Create Roll / Join a Roll (unchanged look)

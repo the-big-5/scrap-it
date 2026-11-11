@@ -98,7 +98,7 @@ struct CaptureSessionView: View {
                     windowOrientation: windowOrientation,
                     deviceOrientation: deviceOrientation
                 )
-                OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: true))
+                OrientationLock.resetToPortrait()
                 flowViewModel.cameraDidAppear()
             }
             .onDisappear {
@@ -247,8 +247,12 @@ struct CaptureSessionView: View {
 
             // Back Button (Leading aligned with viewfinder: left: 64px, top: 19px)
             Button {
-                OrientationLock.resetToPortrait()
-                flowViewModel.returnToHomepage()
+                guard flowViewModel.cameraReturnPhase == .idle else { return }
+                let returnAngle = RollCameraOrientation.cameraReturnAngle(
+                    deviceOrientation: deviceOrientation,
+                    fallbackSide: simulatedLandscapeSide
+                )
+                flowViewModel.prepareCameraReturn(angle: returnAngle)
             } label: {
                 Circle()
                     .fill(Color.white)
@@ -263,6 +267,7 @@ struct CaptureSessionView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Return to Homepage")
+            .disabled(flowViewModel.cameraReturnPhase != .idle)
             .position(x: viewfinderLeadingOffset + 22, y: 19 + 22)
 
             // Zoom Control (Back camera only: centered at x: 585px, width: 172px, height: 83px)

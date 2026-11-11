@@ -71,6 +71,11 @@ struct MainShellView: View {
                 JoiningOverlayView(flowViewModel: rollViewModel)
             }
         }
+        .overlay {
+            if router.cameraReturnPhase != .idle {
+                CameraReturnTransitionOverlay(router: router)
+            }
+        }
         .animation(.easeInOut(duration: 0.25), value: rollViewModel?.isJoining)
         .onChange(of: router.path) { _, newPath in
             if !newPath.contains(where: \.isRollRoute) {

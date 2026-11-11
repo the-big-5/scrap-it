@@ -8,6 +8,8 @@ private final class RevealNavigator: Navigator {
     var selectedTab: AppTab = .home
     var path: [AppRoute] = []
     var isTabBarHidden = false
+    var cameraReturnPhase: CameraReturnPhase = .idle
+    var cameraReturnAngle: Double = 0.0
 }
 
 private final class FakePhotoSaver: PhotoLibrarySaving {
