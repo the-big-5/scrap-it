@@ -225,7 +225,8 @@ struct CaptureSessionView: View {
             // 9. Right Area: Circular Analog Shots-Left Dial (Figma 1458:26072: left 763, top 287, 83x83)
             ShotsLeftDialView(
                 shotsRemaining: flowViewModel.shotsRemaining,
-                totalShots: flowViewModel.activeSession?.rollSize ?? 36
+                totalShots: flowViewModel.activeSession?.rollSize ?? 36,
+                isSyncing: flowViewModel.isSyncingShot
             )
             .rotationEffect(.degrees(symbolRotation))
             .animation(.easeInOut(duration: 0.3), value: symbolRotation)
