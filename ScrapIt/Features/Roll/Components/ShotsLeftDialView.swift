@@ -94,6 +94,16 @@ struct ShotsLeftDialView: View {
         .accessibilityLabel(isSyncing ? "\(shotsRemaining) shots left, syncing" : "\(shotsRemaining) shots left")
         .onAppear {
             previousShots = safeShots
+            if isSyncing {
+                HapticService.shared.startContinuousHum()
+            }
+        }
+        .onChange(of: isSyncing) { _, syncing in
+            if syncing {
+                HapticService.shared.startContinuousHum()
+            } else {
+                HapticService.shared.stopContinuousHum()
+            }
         }
         .onChange(of: safeShots) { oldVal, newVal in
             hapticTask?.cancel()
@@ -101,15 +111,14 @@ struct ShotsLeftDialView: View {
                 hapticTask = Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 250_000_000)
                     guard !Task.isCancelled else { return }
-                    let feedback = UIImpactFeedbackGenerator(style: .light)
-                    feedback.prepare()
-                    feedback.impactOccurred()
+                    HapticService.shared.playDialDecrement()
                 }
             }
             previousShots = newVal
         }
         .onDisappear {
             hapticTask?.cancel()
+            HapticService.shared.stopContinuousHum()
         }
     }
 }

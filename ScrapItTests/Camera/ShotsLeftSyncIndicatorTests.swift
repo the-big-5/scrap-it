@@ -52,6 +52,14 @@ struct ShotsLeftSyncIndicatorTests {
         #expect(hostingController.view != nil)
     }
 
+    @Test func continuousHumHapticMethodsExecuteSafely() {
+        HapticService.shared.startContinuousHum()
+        HapticService.shared.stopContinuousHum()
+        #expect(!HapticService.shared.isContinuousHumming)
+
+        HapticService.shared.playDialDecrement()
+    }
+
     @Test func syncStateHoldsRemainingCountUntilClaimFinishes() async throws {
         let container = try makeInMemoryContainer()
         let context = container.mainContext
