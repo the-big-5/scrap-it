@@ -83,29 +83,34 @@ private struct IrisBladesCanvas: View, Animatable {
 
             let currentRadius = max(0, maxRadius * (1.0 - progress))
             let bladeCount = 8
+            let angleStep = (CGFloat.pi * 2) / CGFloat(bladeCount)
             let rotationAngle = progress * (CGFloat.pi / 4.5) // ~40 degrees mechanical twist
+            let overlap: CGFloat = 0.005 // Minimal overlap to eliminate subpixel antialiasing gaps
 
-            // Draw 8 overlapping aperture blades
+            // Draw 8 equal aperture blade triangles circularly
             for i in 0..<bladeCount {
-                let baseAngle = (CGFloat(i) * 2 * CGFloat.pi) / CGFloat(bladeCount)
-                let nextAngle = (CGFloat(i + 1) * 2 * CGFloat.pi) / CGFloat(bladeCount)
+                let baseAngle = CGFloat(i) * angleStep
+                let nextAngle = CGFloat(i + 1) * angleStep
+
+                let startAngle = baseAngle + rotationAngle - overlap
+                let endAngle = nextAngle + rotationAngle + overlap
 
                 let innerPoint1 = CGPoint(
-                    x: center.x + currentRadius * cos(baseAngle + rotationAngle),
-                    y: center.y + currentRadius * sin(baseAngle + rotationAngle)
+                    x: center.x + currentRadius * cos(startAngle),
+                    y: center.y + currentRadius * sin(startAngle)
                 )
                 let innerPoint2 = CGPoint(
-                    x: center.x + currentRadius * cos(nextAngle + rotationAngle),
-                    y: center.y + currentRadius * sin(nextAngle + rotationAngle)
+                    x: center.x + currentRadius * cos(endAngle),
+                    y: center.y + currentRadius * sin(endAngle)
                 )
 
                 let outerPoint2 = CGPoint(
-                    x: center.x + outerRadius * cos(nextAngle + rotationAngle + 0.5),
-                    y: center.y + outerRadius * sin(nextAngle + rotationAngle + 0.5)
+                    x: center.x + outerRadius * cos(endAngle),
+                    y: center.y + outerRadius * sin(endAngle)
                 )
                 let outerPoint1 = CGPoint(
-                    x: center.x + outerRadius * cos(baseAngle + rotationAngle - 0.35),
-                    y: center.y + outerRadius * sin(baseAngle + rotationAngle - 0.35)
+                    x: center.x + outerRadius * cos(startAngle),
+                    y: center.y + outerRadius * sin(startAngle)
                 )
 
                 var path = Path()
@@ -129,15 +134,27 @@ private struct IrisBladesCanvas: View, Animatable {
                     )
                 )
 
-                // Leading knife edge highlight of blade
-                var edgePath = Path()
-                edgePath.move(to: innerPoint1)
-                edgePath.addLine(to: innerPoint2)
+                // Radial blade edge separation line
+                var radialEdge = Path()
+                radialEdge.move(to: innerPoint1)
+                radialEdge.addLine(to: outerPoint1)
                 context.stroke(
-                    edgePath,
-                    with: .color(Color(white: 0.28).opacity(0.85)),
-                    lineWidth: 1.2
+                    radialEdge,
+                    with: .color(Color(white: 0.22).opacity(0.6)),
+                    lineWidth: 1.0
                 )
+
+                // Leading knife edge highlight when aperture is open
+                if currentRadius > 1.0 {
+                    var edgePath = Path()
+                    edgePath.move(to: innerPoint1)
+                    edgePath.addLine(to: innerPoint2)
+                    context.stroke(
+                        edgePath,
+                        with: .color(Color(white: 0.28).opacity(0.85)),
+                        lineWidth: 1.2
+                    )
+                }
             }
 
             // Central seal point when fully closed to ensure zero light leakage
