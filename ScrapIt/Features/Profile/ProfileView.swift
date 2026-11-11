@@ -4,8 +4,6 @@ import SwiftUI
 struct ProfileView: View {
     @Bindable var viewModel: ProfileViewModel
 
-    private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
-
     init(viewModel: ProfileViewModel) {
         self.viewModel = viewModel
     }
@@ -25,42 +23,38 @@ struct ProfileView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                ProfileAvatarView(avatarData: viewModel.avatarData, size: 120)
-                    .padding(.top, 56)
+        ZStack(alignment: .topTrailing) {
+            DSColor.Kraft.lightActive.color
+                .ignoresSafeArea()
 
-                HStack(spacing: 8) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    ProfileAvatarView(avatarData: viewModel.avatarData, size: 120)
+                        .padding(.top, 56)
+
                     Text(viewModel.displayName)
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(Color.black)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 12)
 
-                    Button(action: viewModel.openEditProfile) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(DSColor.Brand.primary.color)
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Edit profile")
+                    Text(viewModel.bioText)
+                        .font(.system(size: 13))
+                        .italic(!viewModel.hasBio)
+                        .foregroundStyle(viewModel.hasBio ? DSColor.Brand.primary.color : Color.black)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 6)
+
+                    bookshelfSection
                 }
-                .padding(.top, 12)
-
-                Text(viewModel.bioText)
-                    .font(.system(size: 13))
-                    .italic(!viewModel.hasBio)
-                    .foregroundStyle(viewModel.hasBio ? DSColor.Brand.primary.color : Color.black)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 6)
-
-                scrapbookGrid
-                    .padding(.top, 28)
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 32)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 140)
+
+            moreMenu
+                .padding(.top, 4)
+                .padding(.trailing, 16)
         }
-        .background(DSColor.Kraft.lightActive.color.ignoresSafeArea())
         .onAppear { viewModel.reload() }
         .confirmationDialog(
             "Delete this scrapbook?",
@@ -76,64 +70,57 @@ struct ProfileView: View {
         }
     }
 
-    /// Covers like the camera POC (change 013), not the Figma shelf yet.
-    @ViewBuilder
-    private var scrapbookGrid: some View {
-        if viewModel.scrapbooks.isEmpty {
-            Text(ProfileViewModel.emptyScrapbooksText)
-                .font(.system(size: 15))
-                .foregroundStyle(ScrapTheme.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.top, 24)
-        } else {
-            LazyVGrid(columns: columns, spacing: 20) {
-                ForEach(viewModel.scrapbooks, id: \.id) { scrapbook in
-                    Button {
-                        viewModel.open(scrapbook)
-                    } label: {
-                        cover(scrapbook)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            viewModel.requestDelete(scrapbook)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                }
+    private var moreMenu: some View {
+        Menu {
+            Button(action: viewModel.openEditProfile) {
+                Label("Profile Settings", systemImage: "gear")
             }
+            Button(action: {}) {
+                Label("Share Profile", systemImage: "square.and.arrow.up")
+            }
+            .disabled(true)
+        } label: {
+            CircleIconLabel(systemName: "ellipsis")
         }
+        .accessibilityLabel("Profile options")
     }
 
-    /// First page drawn small (still photos only).
-    private func cover(_ scrapbook: Scrapbook) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Group {
-                if let page = viewModel.coverPage(of: scrapbook) {
-                    ScrapbookPageView(
-                        page: page,
-                        photos: viewModel.photosByID(of: scrapbook),
-                        photoAspect: { viewModel.photoAspect(for: $0, in: scrapbook) },
-                        showsDrawingImage: true
+    @ViewBuilder
+    private var bookshelfSection: some View {
+        if viewModel.shelfRows.isEmpty {
+            VStack(spacing: 0) {
+                Text(ProfileViewModel.emptyBookshelfText)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.black)
+                    .multilineTextAlignment(.center)
+
+                Button(action: viewModel.openCreateRoll) {
+                    Text("Create Roll")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(DSColor.Paper.lightHover)
+                        .frame(width: 217, height: 52)
+                        .background(Capsule().fill(DSColor.Brand.primary))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 14)
+
+                WoodShelfPlank()
+                    .padding(.horizontal, 26)
+                    .frame(maxWidth: 420)
+                    .padding(.top, 19)
+            }
+            .padding(.top, 96)
+        } else {
+            LazyVStack(spacing: 46) {
+                ForEach(Array(viewModel.shelfRows.enumerated()), id: \.offset) { _, row in
+                    BookshelfRowView(
+                        items: row,
+                        onOpen: viewModel.open,
+                        onDelete: viewModel.requestDelete
                     )
-                } else {
-                    PageBackgroundView(background: .cream)
-                        .aspectRatio(3 / 4, contentMode: .fit)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
-            .allowsHitTesting(false)
-
-            Text(scrapbook.title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(ScrapTheme.charcoal)
-                .lineLimit(1)
-            Text(viewModel.pageCountText(for: scrapbook))
-                .font(.caption)
-                .foregroundStyle(ScrapTheme.secondaryText)
+            .padding(.top, 76)
         }
-        .contentShape(Rectangle())
     }
 }

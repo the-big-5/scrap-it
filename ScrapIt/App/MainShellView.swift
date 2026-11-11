@@ -38,28 +38,23 @@ struct MainShellView: View {
         @Bindable var router = router
 
         NavigationStack(path: $router.path) {
-            ZStack(alignment: .bottom) {
-                Group {
-                    switch router.selectedTab {
-                    case .home:
-                        WorkbenchView(
-                            modelContext: modelContext,
-                            navigator: router,
-                            sessionStore: sessionStore
-                        )
-                    case .profile:
-                        ProfileView(viewModel: profileViewModel)
-                    }
+            TabView(selection: $router.selectedTab) {
+                Tab("Craft", systemImage: "camera.fill", value: AppTab.home) {
+                    WorkbenchView(
+                        modelContext: modelContext,
+                        navigator: router,
+                        sessionStore: sessionStore
+                    )
+                    .toolbarVisibility(router.shouldShowTabBar ? .visible : .hidden, for: .tabBar)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if router.shouldShowTabBar {
-                    FloatingTabBarView(selectedTab: $router.selectedTab)
-                        .padding(.bottom, 40)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                Tab("Library", systemImage: "books.vertical.fill", value: AppTab.profile) {
+                    ProfileView(viewModel: profileViewModel)
+                        .toolbarVisibility(router.shouldShowTabBar ? .visible : .hidden, for: .tabBar)
                 }
             }
-            .ignoresSafeArea(.container, edges: .bottom)
+            .tint(DSColor.Kraft.darker.color)
+            .toolbar(.hidden, for: .navigationBar)
             .animation(.spring(response: 0.35, dampingFraction: 0.82), value: router.isTabBarHidden)
             .navigationDestination(for: AppRoute.self) { route in
                 destinationView(for: route)
