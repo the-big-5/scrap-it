@@ -74,6 +74,66 @@ extension WorkbenchLayout {
     static let cameraIdleRotation: Double = -14.77
     static let cameraActiveRotation: Double = 0.77
 
+    /// Visual dimensions and center offset of the physical disposable camera body within its exported asset frame (in design points).
+    static let cameraBodyWidth: CGFloat = 213.5
+    static let cameraBodyHeight: CGFloat = 111.5
+    static let cameraBodyCenterOffset = CGPoint(x: -2.0, y: 10.5)
+
+    /// Target center for the zoomed-in camera during the return transition (change 086).
+    /// Centers the actual physical camera body on screen for portrait and landscape orientations.
+    static func zoomedCameraCenter(container: CGSize, layoutScale: CGFloat, angle: Double, scale: CGFloat) -> CGPoint {
+        let screenCenter = CGPoint(x: container.width / 2, y: container.height / 2)
+        let rad = angle * .pi / 180.0
+        let rx = (cameraBodyCenterOffset.x * cos(rad) - cameraBodyCenterOffset.y * sin(rad)) * scale * layoutScale
+        let ry = (cameraBodyCenterOffset.x * sin(rad) + cameraBodyCenterOffset.y * cos(rad)) * scale * layoutScale
+        return CGPoint(x: screenCenter.x - rx, y: screenCenter.y - ry)
+    }
+
+    /// Scale required for the camera element when zoomed in (change 086).
+    /// For portrait, scales to cover the viewport; for landscape, scales to fit vertically with margin from the screen edges.
+    static func zoomedCameraScale(container: CGSize, layoutScale: CGFloat, angle: Double) -> CGFloat {
+        guard layoutScale > 0 else { return 1.0 }
+        let isLandscapeAngle = abs(abs(angle) - 90.0) < 1.0
+        if isLandscapeAngle {
+            // In landscape, container.width (e.g. 402) is the vertical screen dimension.
+            // Scale so the camera body fits comfortably with ~40pt margin from both edges.
+            let targetVerticalHeight = max(container.width - 80 * layoutScale, 260)
+            return targetVerticalHeight / (cameraBodyHeight * layoutScale)
+        } else {
+            let scaleX = container.width / (cameraSize.width * layoutScale)
+            let scaleY = container.height / (cameraSize.height * layoutScale)
+            return max(scaleX, scaleY) * 1.05
+        }
+    }
+
+    /// Scale for full-bleed camera element covering screen edge-to-edge (change 100).
+    static func fullBleedCameraScale(container: CGSize, layoutScale: CGFloat, angle: Double) -> CGFloat {
+        guard layoutScale > 0 else { return 1.0 }
+        let isLandscapeAngle = abs(abs(angle) - 90.0) < 1.0
+        if isLandscapeAngle {
+            let scaleX = container.height / (cameraSize.width * layoutScale)
+            let scaleY = container.width / (cameraSize.height * layoutScale)
+            return max(scaleX, scaleY) * 1.08
+        } else {
+            let scaleX = container.width / (cameraSize.width * layoutScale)
+            let scaleY = container.height / (cameraSize.height * layoutScale)
+            return max(scaleX, scaleY) * 1.08
+        }
+    }
+
+    /// Scale for floating camera element with margins prior to 3D flip (change 100).
+    static func floatingCameraScale(container: CGSize, layoutScale: CGFloat, angle: Double) -> CGFloat {
+        guard layoutScale > 0 else { return 1.0 }
+        let isLandscapeAngle = abs(abs(angle) - 90.0) < 1.0
+        if isLandscapeAngle {
+            let targetVerticalHeight = max(container.width - 80 * layoutScale, 260)
+            return targetVerticalHeight / (cameraBodyHeight * layoutScale)
+        } else {
+            let targetWidth = max(container.width - 64 * layoutScale, 240)
+            return targetWidth / (cameraSize.width * layoutScale)
+        }
+    }
+
     /// Create Roll / Join a Roll stack center (unchanged from the previous Workbench).
     static let actionButtonsCenter = CGPoint(x: 155, y: 495)
     static let actionButtonSize = CGSize(width: 217, height: 52)

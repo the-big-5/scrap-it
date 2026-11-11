@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import UIKit
 
@@ -117,16 +118,64 @@ enum RollCameraOrientation {
     /// Standard upright portrait photo capture angle in AVFoundation on iOS (90°).
     static let portraitCaptureAngle: CGFloat = 90.0
 
+    /// Determines the camera return angle (in degrees) relative to portrait workbench coordinates (change 086).
+    /// Returns 0° when held upright in portrait, +90° for Landscape Left, and -90° for Landscape Right.
+    static func cameraReturnAngle(
+        deviceOrientation: DeviceOrientation,
+        fallbackSide: LandscapeSide = .left
+    ) -> Double {
+        switch deviceOrientation {
+        case .portrait:
+            return 0.0
+        case .landscapeLeft:
+            return LandscapeSide.left.viewRotationDegrees
+        case .landscapeRight:
+            return LandscapeSide.right.viewRotationDegrees
+        }
+    }
+
+    /// Rotation angle (in degrees) to apply to rotating symbols (flash, back, flip, dial, live)
+    /// to keep them readable relative to the user holding the phone (change 072).
+    static func symbolRotationDegrees(for deviceOrientation: DeviceOrientation) -> Double {
+        switch deviceOrientation {
+        case .landscapeLeft:
+            return 0.0
+        case .portrait:
+            return -90.0
+        case .landscapeRight:
+            return -180.0
+        }
+    }
+
+    /// Zoom text indicator rotation angle: 0° in landscapeLeft (dynamic island on left),
+    /// 180° in landscapeRight (dynamic island on right), and retains previous angle in portrait.
+    static func zoomTextRotationDegrees(
+        for deviceOrientation: DeviceOrientation,
+        previousRotation: Double = 0.0
+    ) -> Double {
+        switch deviceOrientation {
+        case .landscapeLeft:
+            return 0.0
+        case .landscapeRight:
+            return 180.0
+        case .portrait:
+            return previousRotation
+        }
+    }
+
     /// Resolves the photo capture rotation angle based on physical device orientation and landscape fallback.
     static func photoCaptureAngle(
         deviceOrientation: DeviceOrientation,
-        landscapeAngle: CGFloat
+        landscapeAngle: CGFloat = 0.0,
+        cameraPosition: AVCaptureDevice.Position = .back
     ) -> CGFloat {
         switch deviceOrientation {
         case .portrait:
             return portraitCaptureAngle
-        case .landscapeLeft, .landscapeRight:
-            return landscapeAngle
+        case .landscapeLeft:
+            return cameraPosition == .front ? 180.0 : 0.0
+        case .landscapeRight:
+            return cameraPosition == .front ? 0.0 : 180.0
         }
     }
 
@@ -138,11 +187,7 @@ enum RollCameraOrientation {
         windowInterfaceOrientation: UIInterfaceOrientation = .unknown,
         simulatedLandscapeSide: LandscapeSide = .left
     ) -> Double {
-        guard deviceOrientation.isPortrait else { return 0.0 }
-        switch simulatedLandscapeSide {
-        case .left: return -90.0
-        case .right: return 90.0
-        }
+        symbolRotationDegrees(for: deviceOrientation)
     }
 
     /// Checks if a landscape window interface orientation aligns with the physical landscape side.
@@ -161,38 +206,32 @@ enum RollCameraOrientation {
     }
 
     /// Determines the view rotation angle (in degrees) to apply to `cameraBodyContent`
-    /// given the current window geometry and physical device landscape side.
+    /// given the current window geometry. Anchors to reference landscape (front camera on left, change 072).
     static func viewRotationDegrees(
         isPortraitWindow: Bool,
         windowInterfaceOrientation: UIInterfaceOrientation = .unknown,
-        physicalSide: LandscapeSide
+        physicalSide: LandscapeSide = .left
     ) -> Double {
         if isPortraitWindow {
-            switch physicalSide {
-            case .left: return 90.0
-            case .right: return -90.0
-            }
+            return 90.0
         } else {
-            let aligned = isWindowAligned(windowOrientation: windowInterfaceOrientation, physicalSide: physicalSide)
-            return (aligned || windowInterfaceOrientation == .unknown) ? 0.0 : 180.0
+            return (windowInterfaceOrientation == .landscapeLeft) ? 180.0 : 0.0
         }
     }
 
     /// Determines the camera rotation delta (in degrees) to apply to `CameraEngine`
-    /// given the current window geometry and physical device landscape side.
+    /// given the current window geometry. Anchors to reference landscape (front camera on left, change 072).
     static func cameraRotationDelta(
         isPortraitWindow: Bool,
         windowInterfaceOrientation: UIInterfaceOrientation = .unknown,
-        physicalSide: LandscapeSide
+        physicalSide: LandscapeSide = .left,
+        cameraPosition: AVCaptureDevice.Position = .back
     ) -> CGFloat {
         if isPortraitWindow {
-            switch physicalSide {
-            case .left: return 0.0
-            case .right: return 180.0
-            }
+            // Front camera sensor is mounted with 180° offset from back camera in horizon-level preview
+            return cameraPosition == .front ? 90.0 : -90.0
         } else {
-            let aligned = isWindowAligned(windowOrientation: windowInterfaceOrientation, physicalSide: physicalSide)
-            return (aligned || windowInterfaceOrientation == .unknown) ? 0.0 : 180.0
+            return (windowInterfaceOrientation == .landscapeLeft) ? 180.0 : 0.0
         }
     }
 
@@ -208,14 +247,13 @@ enum RollCameraOrientation {
         effectiveCameraAngle(baseAngle: baseAngle, delta: side.cameraAngleDelta)
     }
 
-    /// Fixed viewfinder bezel and inner preview dimensions in camera canvas points (change 071).
-    /// Fixed 4:3 landscape in camera body coordinates (inner 313.33 x 235, outer 333.33 x 251),
-    /// which naturally orients to 3:4 portrait relative to the user when held upright in portrait.
+    /// Fixed viewfinder bezel and inner preview dimensions matching Figma node 1458:26041 (change 072).
+    /// Bezel 444.406 x 337, live preview 424 x 318 (4:3 aspect ratio).
     static let viewfinderDimensions: (outerWidth: CGFloat, outerHeight: CGFloat, innerWidth: CGFloat, innerHeight: CGFloat) = {
-        let innerHeight: CGFloat = 235.0
-        let innerWidth: CGFloat = innerHeight * 4.0 / 3.0
-        let outerWidth: CGFloat = innerWidth + 20.0
-        let outerHeight: CGFloat = 251.0
+        let innerWidth: CGFloat = 424.0
+        let innerHeight: CGFloat = 318.0
+        let outerWidth: CGFloat = 444.406
+        let outerHeight: CGFloat = 337.0
         return (outerWidth, outerHeight, innerWidth, innerHeight)
     }()
 }

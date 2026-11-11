@@ -9,6 +9,8 @@ private final class EditorNavigator: Navigator {
     var selectedTab: AppTab = .home
     var path: [AppRoute] = []
     var isTabBarHidden = false
+    var cameraReturnPhase: CameraReturnPhase = .idle
+    var cameraReturnAngle: Double = 0.0
 }
 
 @MainActor
@@ -1043,6 +1045,8 @@ private final class CoverNavigator: Navigator {
     var selectedTab: AppTab = .home
     var path: [AppRoute] = []
     var isTabBarHidden = false
+    var cameraReturnPhase: CameraReturnPhase = .idle
+    var cameraReturnAngle: Double = 0.0
 }
 
 @MainActor

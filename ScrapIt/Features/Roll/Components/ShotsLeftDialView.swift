@@ -1,11 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// Circular analog shots-left dial element (change 041, change 055, change 059) matching Figma nodes 1302:47951 / 1300:33812.
+/// Circular analog shots-left dial element matching Figma nodes 1458:26072 / 1531:23455 (change 072).
 /// Displays remaining shots count as an analogue odometer drum with independent scrolling digit tumblers.
 struct ShotsLeftDialView: View {
     let shotsRemaining: Int
     var totalShots: Int = 36
+    var isSyncing: Bool = false
 
     @State private var previousShots: Int?
     @State private var hapticTask: Task<Void, Never>?
@@ -52,18 +53,16 @@ struct ShotsLeftDialView: View {
 
     var body: some View {
         ZStack {
-            // Outer Dial Housing from Figma (with drop shadows and embossed rim)
+            // 1. Outer Dark Dial Disc from Figma (83x83)
             Image("CameraDialOuter")
                 .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 118, height: 118)
+                .frame(width: 83, height: 83)
 
-            // Inner Recessed Drum (Figma 1302:47954, 55.865pt diameter)
+            // 2. Inner Recessed Drum (Figma 55.865 x 55.865)
             ZStack {
                 Image("CameraDialInner")
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 56, height: 56)
+                    .frame(width: 55.865, height: 55.865)
 
                 // Mechanical odometer tumbler wheels
                 HStack(spacing: 1) {
@@ -81,13 +80,30 @@ struct ShotsLeftDialView: View {
                 .frame(width: 50, height: 50)
                 .clipped()
             }
-            .frame(width: 56, height: 56)
+            .frame(width: 55.865, height: 55.865)
+
+            // 3. Subtle rotating yellow progress arc around outer rim (change 058)
+            if isSyncing {
+                ShotsLeftSyncIndicatorView()
+                    .transition(.opacity)
+            }
         }
         .frame(width: 83, height: 83)
+        .animation(.easeInOut(duration: 0.25), value: isSyncing)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(shotsRemaining) shots left")
+        .accessibilityLabel(isSyncing ? "\(shotsRemaining) shots left, syncing" : "\(shotsRemaining) shots left")
         .onAppear {
             previousShots = safeShots
+            if isSyncing {
+                HapticService.shared.startContinuousHum()
+            }
+        }
+        .onChange(of: isSyncing) { _, syncing in
+            if syncing {
+                HapticService.shared.startContinuousHum()
+            } else {
+                HapticService.shared.stopContinuousHum()
+            }
         }
         .onChange(of: safeShots) { oldVal, newVal in
             hapticTask?.cancel()
@@ -95,15 +111,14 @@ struct ShotsLeftDialView: View {
                 hapticTask = Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 250_000_000)
                     guard !Task.isCancelled else { return }
-                    let feedback = UIImpactFeedbackGenerator(style: .light)
-                    feedback.prepare()
-                    feedback.impactOccurred()
+                    HapticService.shared.playDialDecrement()
                 }
             }
             previousShots = newVal
         }
         .onDisappear {
             hapticTask?.cancel()
+            HapticService.shared.stopContinuousHum()
         }
     }
 }
@@ -253,33 +268,4 @@ private struct OdometerDrumWheel: View, Animatable {
             .opacity(opacity)
             .offset(y: y)
     }
-}
-
-#Preview {
-    struct PreviewWrapper: View {
-        @State private var shots = 23
-        private let totalShots = 24
-
-        var body: some View {
-            VStack(spacing: 24) {
-                ShotsLeftDialView(shotsRemaining: shots, totalShots: totalShots)
-
-                HStack(spacing: 16) {
-                    Button("Capture (-1)") {
-                        if shots > 0 { shots -= 1 }
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    Button("Reset (24)") {
-                        shots = 24
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-            .padding(40)
-            .background(Color(red: 20 / 255, green: 20 / 255, blue: 22 / 255))
-        }
-    }
-
-    return PreviewWrapper()
 }

@@ -330,6 +330,12 @@ struct RollRealtimeServiceTests {
 
         #expect(session.status == .ended)
         #expect(viewModel.takenShotsText == "24")
+        #expect(viewModel.showRollCompletePopup == true)
+
+        viewModel.proceedToRollReveal()
+        viewModel.finalizeSessionTask?.cancel()
+        _ = await viewModel.finalizeSessionTask?.result
+
         #expect(store.activeScrapbook != nil)
         #expect(session.createdScrapbookID == store.activeScrapbook?.id)
         if let scrapbookID = store.activeScrapbook?.id {

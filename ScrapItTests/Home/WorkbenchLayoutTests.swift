@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftData
 import Testing
 @testable import ScrapIt
 
@@ -64,6 +65,134 @@ struct WorkbenchLayoutTests {
         for item in items {
             #expect(bounds.insetBy(dx: -0.5, dy: -0.5).contains(item.frame), "\(item.asset)")
         }
+    }
+
+    @Test(arguments: screens)
+    func zoomedCameraScaleSizesProperlyForLandscapeAndPortraitAngles(_ screen: CGSize) {
+        let layoutScale = screen.width / WorkbenchLayout.designSize.width
+
+        // Landscape left / right angles (+90 / -90): fits vertically with clean margin from screen edges
+        for angle in [90.0, -90.0] {
+            let scale = WorkbenchLayout.zoomedCameraScale(container: screen, layoutScale: layoutScale, angle: angle)
+            let visualCameraHeight = WorkbenchLayout.cameraBodyHeight * layoutScale * scale
+
+            #expect(visualCameraHeight < screen.width, "Camera body has vertical margin from edge in landscape at angle \(angle)")
+            #expect(visualCameraHeight >= screen.width * 0.7, "Camera body is prominently zoomed in landscape at angle \(angle)")
+        }
+
+        // Upright angle (0.0): covers viewport
+        let portraitScale = WorkbenchLayout.zoomedCameraScale(container: screen, layoutScale: layoutScale, angle: 0.0)
+        let visualWidthPortrait = WorkbenchLayout.cameraSize.width * layoutScale * portraitScale
+        let visualHeightPortrait = WorkbenchLayout.cameraSize.height * layoutScale * portraitScale
+
+        #expect(visualWidthPortrait >= screen.width, "Width covers screen at angle 0")
+        #expect(visualHeightPortrait >= screen.height, "Height covers screen at angle 0")
+    }
+
+    @Test(arguments: screens)
+    func zoomedCameraCenterAlignsPhysicalBodyToScreenCenter(_ screen: CGSize) {
+        let layoutScale = screen.width / WorkbenchLayout.designSize.width
+
+        for angle in [0.0, 90.0, -90.0] {
+            let scale = WorkbenchLayout.zoomedCameraScale(container: screen, layoutScale: layoutScale, angle: angle)
+            let pos = WorkbenchLayout.zoomedCameraCenter(container: screen, layoutScale: layoutScale, angle: angle, scale: scale)
+            let rad = angle * .pi / 180.0
+            let rx = (WorkbenchLayout.cameraBodyCenterOffset.x * cos(rad) - WorkbenchLayout.cameraBodyCenterOffset.y * sin(rad)) * scale * layoutScale
+            let ry = (WorkbenchLayout.cameraBodyCenterOffset.x * sin(rad) + WorkbenchLayout.cameraBodyCenterOffset.y * cos(rad)) * scale * layoutScale
+            let visualCameraCenter = CGPoint(x: pos.x + rx, y: pos.y + ry)
+
+            #expect(abs(visualCameraCenter.x - screen.width / 2) < 0.001, "X centered for angle \(angle) on screen \(screen)")
+            #expect(abs(visualCameraCenter.y - screen.height / 2) < 0.001, "Y centered for angle \(angle) on screen \(screen)")
+        }
+    }
+
+    @Test func routerCameraReturnLifecycleControlsPhaseAndTabBarVisibility() {
+        let router = AppRouter()
+        #expect(router.cameraReturnPhase == .idle)
+        #expect(router.shouldShowTabBar)
+
+        router.beginCameraReturn(angle: 90.0)
+        #expect(router.cameraReturnPhase == .zoomedIn)
+        #expect(router.cameraReturnAngle == 90.0)
+        #expect(router.isTabBarHidden)
+        #expect(!router.shouldShowTabBar)
+
+        router.animateCameraReturnToIdle()
+        #expect(router.cameraReturnPhase == .animatingToIdle)
+        #expect(!router.shouldShowTabBar)
+
+        router.finishCameraReturn()
+        #expect(router.cameraReturnPhase == .idle)
+        #expect(!router.isTabBarHidden)
+        #expect(router.shouldShowTabBar)
+    }
+
+    @Test func workbenchViewModelForwardsCameraReturnTransitions() throws {
+        let schema = Schema([Scrapbook.self, ScrapPhoto.self, CaptureSession.self, ScrapbookPage.self, ScrapbookItem.self, StickerSheet.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let router = AppRouter()
+        let store = SessionStore(modelContext: container.mainContext)
+        let vm = WorkbenchViewModel(modelContext: container.mainContext, navigator: router, sessionStore: store)
+
+        router.beginCameraReturn(angle: -90.0)
+        #expect(vm.cameraReturnPhase == .zoomedIn)
+        #expect(vm.cameraReturnAngle == -90.0)
+
+        vm.animateCameraReturnToIdle()
+        #expect(vm.cameraReturnPhase == .animatingToIdle)
+
+        vm.finishCameraReturn()
+        #expect(vm.cameraReturnPhase == .idle)
+    }
+
+    @Test func cameraFlipMathResolvesTwoSidedCardProgression() {
+        // Start: camera back face visible at 0°
+        #expect(!CameraFlipMath.isFrontFacing(angle: 0.0))
+        #expect(CameraFlipMath.backAngle(for: 0.0) == 0.0)
+
+        // Mid-flip prior to edge-on boundary
+        #expect(!CameraFlipMath.isFrontFacing(angle: 45.0))
+        #expect(CameraFlipMath.backAngle(for: 45.0) == 45.0)
+        #expect(!CameraFlipMath.isFrontFacing(angle: 89.9))
+
+        // Midpoint boundary: edge-on transition to camera front face
+        #expect(CameraFlipMath.isFrontFacing(angle: 90.0))
+        #expect(CameraFlipMath.frontAngle(for: 90.0) == -90.0)
+
+        // Rotating into view
+        #expect(CameraFlipMath.isFrontFacing(angle: 135.0))
+        #expect(CameraFlipMath.frontAngle(for: 135.0) == -45.0)
+
+        // End of flip: front face fully facing forward
+        #expect(CameraFlipMath.isFrontFacing(angle: 180.0))
+        #expect(CameraFlipMath.frontAngle(for: 180.0) == 0.0)
+    }
+
+    @Test func cameraReturnOrientationAnglesPreserveLocalYAxisAcrossOrientations() {
+        let portraitAngle = RollCameraOrientation.cameraReturnAngle(deviceOrientation: .portrait)
+        let landscapeLeftAngle = RollCameraOrientation.cameraReturnAngle(deviceOrientation: .landscapeLeft)
+        let landscapeRightAngle = RollCameraOrientation.cameraReturnAngle(deviceOrientation: .landscapeRight)
+
+        #expect(portraitAngle == 0.0)
+        #expect(landscapeLeftAngle == 90.0)
+        #expect(landscapeRightAngle == -90.0)
+    }
+
+    @Test func cameraReturnScaleStagesProgressFromFullBleedToFloatingToIdle() {
+        let container = CGSize(width: 393, height: 852)
+        let layoutScale: CGFloat = 1.0
+
+        let portraitFullBleed = WorkbenchLayout.fullBleedCameraScale(container: container, layoutScale: layoutScale, angle: 0.0)
+        let portraitFloating = WorkbenchLayout.floatingCameraScale(container: container, layoutScale: layoutScale, angle: 0.0)
+
+        #expect(portraitFullBleed > portraitFloating)
+        #expect(portraitFloating > 1.0)
+
+        let landscapeFullBleed = WorkbenchLayout.fullBleedCameraScale(container: container, layoutScale: layoutScale, angle: 90.0)
+        let landscapeFloating = WorkbenchLayout.floatingCameraScale(container: container, layoutScale: layoutScale, angle: 90.0)
+
+        #expect(landscapeFullBleed > landscapeFloating)
+        #expect(landscapeFloating > 1.0)
     }
 }
 

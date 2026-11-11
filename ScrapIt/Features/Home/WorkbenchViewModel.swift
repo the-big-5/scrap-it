@@ -14,6 +14,23 @@ final class WorkbenchViewModel {
         }
     }
 
+    /// Return transition phase when navigating back from camera (change 086).
+    var cameraReturnPhase: CameraReturnPhase {
+        navigator?.cameraReturnPhase ?? .idle
+    }
+
+    var cameraReturnAngle: Double {
+        navigator?.cameraReturnAngle ?? 0.0
+    }
+
+    func animateCameraReturnToIdle() {
+        navigator?.animateCameraReturnToIdle()
+    }
+
+    func finishCameraReturn() {
+        navigator?.finishCameraReturn()
+    }
+
     init(
         modelContext: ModelContext,
         navigator: (any Navigator)? = nil,

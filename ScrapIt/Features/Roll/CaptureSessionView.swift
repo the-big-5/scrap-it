@@ -4,12 +4,17 @@ struct CaptureSessionView: View {
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
 
-    #if DEBUG
-    @State private var showsDebugLastShot = false
-    #endif
     @State private var simulatedLandscapeSide: RollCameraOrientation.LandscapeSide = .left
     @State private var deviceOrientation: RollCameraOrientation.DeviceOrientation = .landscapeLeft
+    @State private var zoomTextRotation: Double = 0.0
     @State private var motionService = CameraMotionService()
+    @State private var isClosingIrisOnReturn: Bool = false
+    @State private var popup1Opacity: Double = 1.0
+    @State private var popup2Opacity: Double = 1.0
+    @State private var isTransitioningBetweenPopups: Bool = false
+    private var isAnyPopupPresented: Bool {
+        flowViewModel.showEndRollConfirmation || flowViewModel.showRollCompletePopup
+    }
 
     private var camera: CameraController {
         flowViewModel.camera
@@ -25,6 +30,24 @@ struct CaptureSessionView: View {
             return activeScene.interfaceOrientation
         }
         return scenes.first?.interfaceOrientation ?? .unknown
+    }
+
+    private var symbolRotation: Double {
+        RollCameraOrientation.symbolRotationDegrees(for: deviceOrientation)
+    }
+
+    private var isPortraitOrientation: Bool {
+        deviceOrientation.isPortrait
+    }
+
+    private var liveBadgeCenter: CGPoint {
+        if isPortraitOrientation {
+            // Visual width becomes 20.21, visual height becomes 44.57 -> 10pt top & leading margin
+            return CGPoint(x: 10 + 20.21 / 2, y: 10 + 44.57 / 2)
+        } else {
+            // Visual width is 44.57, visual height is 20.21 -> 10pt top & leading margin
+            return CGPoint(x: 10 + 44.57 / 2, y: 10 + 20.21 / 2)
+        }
     }
 
     var body: some View {
@@ -52,12 +75,18 @@ struct CaptureSessionView: View {
                 Color(red: 42 / 255, green: 36 / 255, blue: 31 / 255)
                     .ignoresSafeArea()
 
-                cameraCanvas(isPortrait: isPortrait)
+                cameraCanvas
                     .frame(width: canvasWidth, height: canvasHeight)
                     .scaleEffect(scale)
                     .rotationEffect(.degrees(rotationDegrees))
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
+
+                if isAnyPopupPresented {
+                    popupOverlay(isPortraitWindow: isPortrait)
+                        .transition(.opacity)
+                }
             }
+            .animation(.easeInOut(duration: 0.25), value: isAnyPopupPresented)
             .ignoresSafeArea()
             .onChange(of: isPortrait) { _, newIsPortrait in
                 camera.setSimulatedLandscapeSide(
@@ -84,13 +113,20 @@ struct CaptureSessionView: View {
                 )
             }
             .onAppear {
+                zoomTextRotation = RollCameraOrientation.zoomTextRotationDegrees(
+                    for: deviceOrientation,
+                    previousRotation: zoomTextRotation
+                )
                 motionService.start { newOrientation in
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        deviceOrientation = newOrientation
-                        if let side = newOrientation.landscapeSide, side != simulatedLandscapeSide {
-                            simulatedLandscapeSide = side
-                        }
+                    guard newOrientation != deviceOrientation else { return }
+                    deviceOrientation = newOrientation
+                    if let side = newOrientation.landscapeSide, side != simulatedLandscapeSide {
+                        simulatedLandscapeSide = side
                     }
+                    zoomTextRotation = RollCameraOrientation.zoomTextRotationDegrees(
+                        for: newOrientation,
+                        previousRotation: zoomTextRotation
+                    )
                 }
                 camera.setSimulatedLandscapeSide(
                     simulatedLandscapeSide,
@@ -98,7 +134,7 @@ struct CaptureSessionView: View {
                     windowOrientation: windowOrientation,
                     deviceOrientation: deviceOrientation
                 )
-                OrientationLock.set(OrientationLock.mask(isCaptureSessionVisible: true))
+                OrientationLock.resetToPortrait()
                 flowViewModel.cameraDidAppear()
             }
             .onDisappear {
@@ -114,6 +150,7 @@ struct CaptureSessionView: View {
             }
         }
         .ignoresSafeArea()
+        .allowsHitTesting(flowViewModel.cameraReturnPhase == .idle && !isClosingIrisOnReturn)
         .navigationBarBackButtonHidden(true)
         .statusBarHidden()
         .background(
@@ -135,11 +172,6 @@ struct CaptureSessionView: View {
         } message: {
             Text("To zoom and switch cameras with a light press on Camera Control, turn on Camera Adjustments in Settings › Camera › Camera Control.")
         }
-        #if DEBUG
-        .sheet(isPresented: $showsDebugLastShot) {
-            DebugLastShotView(photo: flowViewModel.debugLastShot)
-        }
-        #endif
         .sheet(isPresented: $flowViewModel.isInviteSheetPresented) {
             InviteFriendSheetView(currentUser: currentUser, flowViewModel: flowViewModel)
                 .presentationDetents([.medium])
@@ -155,165 +187,211 @@ struct CaptureSessionView: View {
         }
     }
 
-    // MARK: - Camera Canvas (874 x 402 Figma Frame)
+    // MARK: - Camera Canvas (874 x 402 Figma Frame 1458:26041)
 
-    /// Leading margin offset for viewfinder and controls to clear the Dynamic Island in landscape.
-    private let viewfinderLeadingOffset: CGFloat = 64
-
-    private var isPortraitDevice: Bool {
-        deviceOrientation.isPortrait
-    }
-
-    /// Fixed viewfinder dimensions (333.33 x 251 outer, 313.33 x 235 inner 4:3 preview in landscape,
-    /// which naturally orients to 3:4 portrait when held upright in portrait).
-    private var viewfinderWidth: CGFloat {
-        RollCameraOrientation.viewfinderDimensions.outerWidth
-    }
-
-    private var viewfinderHeight: CGFloat {
-        RollCameraOrientation.viewfinderDimensions.outerHeight
-    }
-
-    /// Center X for viewfinder bay between offset 64 and shutter well 567.
-    private var viewfinderCenterX: CGFloat {
-        64.0 + (503.0 / 2.0)
-    }
-
-    private func cameraCanvas(isPortrait: Bool) -> some View {
+    private var cameraCanvas: some View {
         ZStack(alignment: .topLeading) {
-            // 1. Textured Camera Body Shape from Figma (1302:47937)
+            // 1. Textured Camera Body Shape from Figma
             Image("CameraBodyShape")
                 .resizable()
                 .frame(width: 874, height: 402)
                 .position(x: 874 / 2, y: 402 / 2)
 
-            // 2. Screen Bezel & Live Preview (1302:47969)
-            screenBezelView(isPortraitWindow: isPortrait)
-                .frame(width: viewfinderWidth, height: viewfinderHeight)
-                .position(x: viewfinderCenterX, y: 97 + viewfinderHeight / 2)
+            // 2. Left Column: Upper Flash Button Well (Figma Group 73: left 62, top 33, 60x120)
+            flashButtonView
+                .frame(width: 60, height: 120)
+                .position(x: 62 + 60 / 2, y: 33 + 120 / 2)
 
-            // 3. Bottom Controls Row (Flash, Live, Flip) with Equal Spacing
-            bottomControlsRow
-                .frame(width: viewfinderWidth, height: 32)
-                .position(x: viewfinderCenterX, y: 380)
+            // 3. Left Column: Lower Back Navigation Button (aligned flush to bottom of viewfinder margin at y: 370)
+            backButtonView
+                .frame(width: 60, height: 60)
+                .position(x: 62 + 60 / 2, y: 310 + 60 / 2)
 
-            // 4. Shutter Well & Button (1302:47961)
+            // 4. Center: Viewfinder Screen Bezel & Live Preview (Figma Group 67: left 136, top 33, 444.4x337)
+            screenBezelView
+                .frame(width: 444.406, height: 337)
+                .position(x: 136 + 444.406 / 2, y: 33 + 337 / 2)
+
+            // 5. Right Area: Zoom Control (Figma 1477:26750: left 594, top 14, 172x83)
+            zoomControlView
+                .frame(width: 172, height: 83)
+                .position(x: 594 + 172 / 2, y: 14 + 83 / 2)
+
+            // 6. Right Area: Dedicated Host End Roll Button (aligned with middle of zoom wheel at y: 63)
+            if isHost {
+                endRollButton
+                    .frame(width: 36, height: 48)
+                    .position(x: 874 - 36 / 2, y: 63)
+            }
+
+            // 7. Right Area: Recessed Shutter Well & Button (Figma Group 68: left 594, top 128, 154x154)
             shutterWellView
-                .frame(width: 107, height: 107)
-                .position(x: 567 + 107 / 2, y: 164 + 107 / 2)
+                .frame(width: 154, height: 154)
+                .position(x: 594 + 154 / 2, y: 128 + 154 / 2)
 
-            // 5. Circular Analog Shots-Left Dial (1302:47951)
+            // 8. Right Area: Flip Camera Button (Figma Group 74: left 596, top 298, 72x72)
+            flipButtonView
+                .frame(width: 72, height: 72)
+                .position(x: 596 + 72 / 2, y: 298 + 72 / 2)
+
+            // 9. Right Area: Circular Analog Shots-Left Dial (Figma 1458:26072: left 763, top 287, 83x83)
             ShotsLeftDialView(
                 shotsRemaining: flowViewModel.shotsRemaining,
-                totalShots: flowViewModel.activeSession?.rollSize ?? 36
+                totalShots: flowViewModel.activeSession?.rollSize ?? 36,
+                isSyncing: flowViewModel.isSyncingShot
             )
-                .frame(width: 83, height: 83)
-                .position(x: 697 + 83 / 2, y: 271 + 83 / 2)
-
-            // 6. Top Plate (1302:47984)
-            topPlateView
-                .frame(width: 875, height: 83)
-                .position(x: 875 / 2, y: 83 / 2)
+            .rotationEffect(.degrees(symbolRotation))
+            .animation(.easeInOut(duration: 0.3), value: symbolRotation)
+            .frame(width: 83, height: 83)
+            .position(x: 763 + 83 / 2, y: 287 + 83 / 2)
         }
         .frame(width: 874, height: 402)
         .clipped()
     }
 
-    // MARK: - Top Plate
+    // MARK: - Flash Button Well (Figma Group 73: ON node 1458:26095, OFF node 1476:26501)
 
-    private var topPlateView: some View {
-        ZStack(alignment: .topLeading) {
-            // Metallic Gradient Background
-            LinearGradient(
-                stops: [
-                    .init(color: Color(red: 42 / 255, green: 36 / 255, blue: 31 / 255), location: 0.0),
-                    .init(color: Color(red: 23 / 255, green: 23 / 255, blue: 23 / 255), location: 0.55),
-                    .init(color: Color(red: 42 / 255, green: 36 / 255, blue: 31 / 255), location: 1.0)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .overlay(
-                VStack(spacing: 0) {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.1))
-                        .frame(height: 1)
-                    Spacer()
-                    Rectangle()
-                        .fill(Color.black.opacity(0.6))
-                        .frame(height: 2)
-                }
-            )
+    private var flashButtonView: some View {
+        Button {
+            HapticService.shared.playSnapFeedback()
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                camera.cycleFlash()
+            }
+        } label: {
+            ZStack {
+                let isFlashOn = camera.flashChoice == .on
 
-            // Back Button (Leading aligned with viewfinder: left: 64px, top: 19px)
-            Button {
-                OrientationLock.resetToPortrait()
-                flowViewModel.returnToHomepage()
-            } label: {
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 44, height: 44)
-                    .overlay(
-                        Image(systemName: "chevron.backward")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(Color(white: 0.15))
-                            .offset(x: -1)
+                // Outer Recessed Well (60 x 120, rounded 20)
+                // When ON: green gradient (#40663d to #40653d)
+                // When OFF: dark grey gradient (#474747 to #454545, node 1476:26501)
+                RoundedRectangle(cornerRadius: 20)
+                    .withInnerShadow(
+                        fill: LinearGradient(
+                            stops: isFlashOn ? [
+                                .init(color: Color(red: 64 / 255, green: 102 / 255, blue: 61 / 255), location: 0.0),
+                                .init(color: Color(red: 69 / 255, green: 102 / 255, blue: 66 / 255), location: 0.6438),
+                                .init(color: Color(red: 64 / 255, green: 101 / 255, blue: 61 / 255), location: 1.0)
+                            ] : [
+                                .init(color: Color(red: 71 / 255, green: 71 / 255, blue: 71 / 255), location: 0.0),
+                                .init(color: Color(red: 67 / 255, green: 64 / 255, blue: 64 / 255), location: 0.6438),
+                                .init(color: Color(red: 69 / 255, green: 69 / 255, blue: 69 / 255), location: 1.0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        shadowColor: Color.black.opacity(0.8),
+                        radius: 3.7,
+                        x: 0,
+                        y: 4.5
                     )
-                    .shadow(color: Color.black.opacity(0.35), radius: 4, x: 0, y: 2)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Return to Homepage")
-            .position(x: viewfinderLeadingOffset + 22, y: 19 + 22)
+                    .shadow(color: Color.black.opacity(0.25), radius: 4, x: 0, y: 4)
 
-            // Zoom Control (Back camera only: centered at x: 585px, width: 172px, height: 83px)
-            VStack(spacing: 4) {
-                Text(String(format: "ZOOM %.1fx", camera.zoomFactor))
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(0.88)
-                    .foregroundStyle(Color(red: 185 / 255, green: 181 / 255, blue: 173 / 255))
-
-                KnurledZoomWheelView(
-                    capabilities: camera.zoomCapabilities,
-                    zoomFactor: camera.zoomFactor,
-                    isEnabled: !camera.isUsingFrontCamera,
-                    onZoomChanged: { camera.setZoomFactor($0) },
-                    onLensSelected: { camera.rampZoom(to: $0) }
-                )
-            }
-            .frame(width: 172, height: 83)
-            .position(x: 585, y: 83 / 2)
-            .opacity(camera.isUsingFrontCamera ? 0.0 : 1.0)
-            .animation(.easeInOut(duration: 0.16), value: camera.isUsingFrontCamera)
-
-            // Sliding Mechanical Hatch Covers (parks on left and right of wheel when open; covers wheel when closed)
-            ZoomWheelHatchView(isClosed: camera.isUsingFrontCamera)
-
-            // Info Button (Trailing: left: 789px, top: 22px, size: 44px, Figma 1302:48002)
-            Button {
-                flowViewModel.presentInviteFriends()
-            } label: {
-                ZStack {
-                    Image("CameraInfoRing")
-                        .resizable()
-                        .frame(width: 44, height: 44)
-
-                    Text("i")
-                        .font(.system(size: 20, weight: .bold, design: .serif))
-                        .foregroundStyle(Color(red: 235 / 255, green: 203 / 255, blue: 107 / 255))
-                        .offset(y: -1)
+                // Flash SF Symbol:
+                // When ON: bolt.fill in bottom position (y = 89)
+                // When OFF: bolt.slash.fill in top position (y = 31)
+                if isFlashOn {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 26, weight: .regular))
+                        .foregroundStyle(Color(red: 252 / 255, green: 251 / 255, blue: 248 / 255))
+                        .rotationEffect(.degrees(symbolRotation))
+                        .animation(.easeInOut(duration: 0.3), value: symbolRotation)
+                        .position(x: 30, y: 89)
+                        .transition(.opacity)
+                } else {
+                    Image(systemName: "bolt.slash.fill")
+                        .font(.system(size: 23, weight: .regular))
+                        .foregroundStyle(Color(red: 200 / 255, green: 198 / 255, blue: 192 / 255))
+                        .rotationEffect(.degrees(symbolRotation))
+                        .animation(.easeInOut(duration: 0.3), value: symbolRotation)
+                        .position(x: 30, y: 31)
+                        .transition(.opacity)
                 }
-                .frame(width: 44, height: 44)
+
+                // Physical Sliding Switch Thumb (44 x 44 rounded square, rounded 13)
+                // Inset by 8pt from edges: width 44 inside 60 leaves 8pt on left & right.
+                // When ON: at top (y: 30). When OFF: at bottom (y: 90). Both 8pt from ends.
+                RoundedRectangle(cornerRadius: 13)
+                    .withInnerShadow(
+                        fill: RadialGradient(
+                            stops: [
+                                .init(color: Color(red: 203 / 255, green: 203 / 255, blue: 203 / 255), location: 0.0),
+                                .init(color: Color(red: 160 / 255, green: 160 / 255, blue: 160 / 255), location: 1.0)
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 24
+                        ),
+                        shadowColor: Color.black.opacity(0.25),
+                        radius: 5.0,
+                        x: 0,
+                        y: 2.0
+                    )
+                    .shadow(color: Color.black.opacity(0.35), radius: 3, x: 0, y: 2)
+                    .frame(width: 44, height: 44)
+                    .position(
+                        x: 30,
+                        y: isFlashOn ? 30 : 90
+                    )
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Show Roll Invite Code")
-            .position(x: 789 + 22, y: 22 + 22)
+            .frame(width: 60, height: 120)
         }
-        .frame(width: 875, height: 83)
+        .buttonStyle(.plain)
+        .accessibilityLabel(camera.flashChoice == .on ? "Flash On" : "Flash Off")
     }
 
-    // MARK: - Screen Bezel & Live Preview (Figma 1302:47969)
+    // MARK: - Back Navigation Button (Figma Group 71: node 1458:26114)
 
-    private func screenBezelView(isPortraitWindow: Bool) -> some View {
+    private var backButtonView: some View {
+        Button {
+            guard flowViewModel.cameraReturnPhase == .idle, !isClosingIrisOnReturn else { return }
+            isClosingIrisOnReturn = true
+            HapticService.shared.playSnapFeedback()
+            let returnAngle = RollCameraOrientation.cameraReturnAngle(
+                deviceOrientation: deviceOrientation,
+                fallbackSide: simulatedLandscapeSide
+            )
+            Task { @MainActor in
+                // Allow mechanical iris closure (~180ms) before initiating return resize and flip
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                flowViewModel.prepareCameraReturn(angle: returnAngle)
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .withInnerShadow(
+                        fill: RadialGradient(
+                            stops: [
+                                .init(color: Color(red: 88 / 255, green: 88 / 255, blue: 88 / 255), location: 0.0),
+                                .init(color: Color(red: 66 / 255, green: 66 / 255, blue: 66 / 255), location: 0.5),
+                                .init(color: Color(red: 44 / 255, green: 44 / 255, blue: 44 / 255), location: 1.0)
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 30
+                        ),
+                        shadowColor: Color.black.opacity(0.35),
+                        radius: 5.0,
+                        x: 0,
+                        y: 2.0
+                    )
+                    .shadow(color: Color.black.opacity(0.25), radius: 4, x: 0, y: 2)
+
+                Image(systemName: "arrow.left")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(Color(red: 228 / 255, green: 228 / 255, blue: 228 / 255))
+                    .rotationEffect(.degrees(symbolRotation))
+                    .animation(.easeInOut(duration: 0.3), value: symbolRotation)
+            }
+            .frame(width: 60, height: 60)
+        }
+        .buttonStyle(.plain)
+        .disabled(flowViewModel.cameraReturnPhase != .idle || isClosingIrisOnReturn)
+        .accessibilityLabel("Return to Homepage")
+    }
+
+    // MARK: - Viewfinder Screen Bezel & Live Preview (Figma Group 67)
+
+    private var screenBezelView: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 14.5)
                 .fill(Color(red: 18 / 255, green: 18 / 255, blue: 18 / 255))
@@ -323,7 +401,7 @@ struct CaptureSessionView: View {
                 )
                 .shadow(color: Color.black.opacity(0.4), radius: 5.2, x: 0, y: 5.2)
 
-            // Live Preview with Roll Filter
+            // Live Preview with Roll Filter (424 x 318, 4:3)
             ZStack {
                 Color(red: 28 / 255, green: 27 / 255, blue: 26 / 255)
 
@@ -337,268 +415,287 @@ struct CaptureSessionView: View {
                     .animation(.easeOut(duration: 0.1), value: camera.shutterFlashOpacity)
                     .allowsHitTesting(false)
 
-                // Viewfinder HUD
-                viewfinderHUD(isPortraitWindow: isPortraitWindow)
+                // Viewfinder HUD: LIVE badge button & Host Handover banner
+                viewfinderHUD
 
-                // Mechanical Iris Diaphragm Overlay (aperture blades constricting on camera switch)
-                CameraIrisDiaphragmView(isClosed: camera.isSwitchingCamera)
+                // Mechanical Iris Diaphragm Overlay (aperture blades constricting on camera switch or return home)
+                CameraIrisDiaphragmView(isClosed: camera.isSwitchingCamera || isClosingIrisOnReturn)
             }
             .clipShape(RoundedRectangle(cornerRadius: 6.2))
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
-        .frame(width: viewfinderWidth, height: viewfinderHeight)
+        .frame(width: 444.406, height: 337)
     }
 
-    private func viewfinderHUD(isPortraitWindow: Bool) -> some View {
-        let isPortraitDevice = deviceOrientation.isPortrait
-        let hudRotation = RollCameraOrientation.hudElementRotationDegrees(
-            deviceOrientation: deviceOrientation,
-            isPortraitWindow: isPortraitWindow,
-            windowInterfaceOrientation: currentInterfaceOrientation,
-            simulatedLandscapeSide: simulatedLandscapeSide
-        )
+    private var viewfinderHUD: some View {
+        ZStack(alignment: .topLeading) {
+            // Interactive LIVE indicator button replacing participants badge
+            liveBadgeButton
+                .position(liveBadgeCenter)
+                .animation(.easeInOut(duration: 0.3), value: isPortraitOrientation)
 
-        return ZStack {
-            // 1. Participant Presence Badge
-            participantBadgeOverlay(hudRotation: hudRotation)
-
-            // 2. Host Handover Banner (Centered)
+            // Host Handover Banner (Centered)
             if let banner = flowViewModel.hostHandoverBanner {
-                PivotingElement(angle: hudRotation) {
-                    Text(banner)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(ScrapTheme.cameraGold)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.black.opacity(0.75)))
-                }
-            }
-
-            // 3. Action and Debug Buttons
-            actionButtonsOverlay(hudRotation: hudRotation, isPortraitDevice: isPortraitDevice)
-        }
-        .frame(width: RollCameraOrientation.viewfinderDimensions.innerWidth,
-               height: RollCameraOrientation.viewfinderDimensions.innerHeight)
-    }
-
-    @ViewBuilder
-    private func participantBadgeOverlay(hudRotation: Double) -> some View {
-        VStack {
-            HStack {
-                PivotingElement(angle: hudRotation) {
-                    participantBadgeView
-                }
-                Spacer()
-            }
-            Spacer()
-        }
-        .padding(.top, 10.36)
-        .padding(.leading, 10.36)
-    }
-
-    @ViewBuilder
-    private func actionButtonsOverlay(hudRotation: Double, isPortraitDevice: Bool) -> some View {
-        VStack {
-            Spacer()
-            HStack {
-                if isPortraitDevice {
-                    Spacer()
-                }
-                PivotingElement(angle: hudRotation) {
-                    actionButtonsGroup
-                }
-                if !isPortraitDevice {
-                    Spacer()
-                }
-            }
-        }
-        .padding(.bottom, 8)
-        .padding(.leading, isPortraitDevice ? 0 : 8)
-        .padding(.trailing, isPortraitDevice ? 8 : 0)
-    }
-
-    private var actionButtonsGroup: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) {
-                if isHost {
-                    endRollButton
-                }
-                #if DEBUG
-                debugLastShotButton
-                #endif
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                if isHost {
-                    endRollButton
-                }
-                #if DEBUG
-                debugLastShotButton
-                #endif
-            }
-        }
-    }
-
-    private var participantBadgeView: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "person.2.fill")
-                .font(.system(size: 11, weight: .semibold))
-            Text("\(flowViewModel.participantCount)")
-                .font(.system(size: 11.4, weight: .semibold))
-                .tracking(0.9)
-
-            if flowViewModel.showsOfflineStatus {
-                Text("• \(flowViewModel.queuedShotCount) queued")
-                    .font(.system(size: 10, weight: .semibold))
+                Text(banner)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(ScrapTheme.cameraGold)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.black.opacity(0.75)))
+                    .position(x: 424 / 2, y: 318 / 2)
             }
         }
-        .foregroundStyle(Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255))
-        .padding(.horizontal, 8.3)
-        .padding(.vertical, 3.1)
-        .background(
-            RoundedRectangle(cornerRadius: 4.14)
-                .fill(Color.black.opacity(0.62))
-        )
+        .frame(width: 424, height: 318)
     }
+
+    private var liveBadgeButton: some View {
+        Button {
+            camera.isLivePhotoEnabled.toggle()
+        } label: {
+            Text("LIVE")
+                .font(.system(size: 11.4, weight: .semibold))
+                .tracking(0.91)
+                .foregroundStyle(Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255))
+                .padding(.horizontal, 8.3)
+                .padding(.vertical, 3.1)
+                .overlay {
+                    if !camera.isLivePhotoEnabled {
+                        DiagonalSlashShape()
+                            .stroke(
+                                Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255),
+                                style: StrokeStyle(lineWidth: 1.0, lineCap: .round, lineJoin: .round)
+                            )
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 4.14)
+                        .fill(Color(red: 10 / 255, green: 10 / 255, blue: 10 / 255).opacity(0.62))
+                )
+        }
+        .buttonStyle(.plain)
+        .rotationEffect(.degrees(symbolRotation))
+        .animation(.easeInOut(duration: 0.3), value: symbolRotation)
+        .accessibilityLabel(camera.isLivePhotoEnabled ? "Live Photo Enabled" : "Live Photo Disabled")
+    }
+
+    // MARK: - Zoom Control (Figma 1477:26750)
+    // Container at (594 + 172/2, 14 + 83/2) = (680, 55.5), y spans 14...97
+    // Wheel top is at y = 14 + 19 = 33, exactly flush with Viewfinder bezel top (y = 33)
+
+    private var zoomControlView: some View {
+        ZStack {
+            Text(String(format: "ZOOM %.1f×", camera.zoomFactor))
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.88)
+                .foregroundStyle(Color(red: 185 / 255, green: 181 / 255, blue: 173 / 255))
+                .modifier(ZoomTextVerticalFlipModifier(angle: zoomTextRotation))
+                .animation(.easeInOut(duration: 0.35), value: zoomTextRotation)
+                .position(x: 86, y: 7)
+
+            KnurledZoomWheelView(
+                capabilities: camera.zoomCapabilities,
+                zoomFactor: camera.zoomFactor,
+                isEnabled: !camera.isUsingFrontCamera,
+                onZoomChanged: { camera.setZoomFactor($0) },
+                onLensSelected: { camera.rampZoom(to: $0) }
+            )
+            .frame(width: 160, height: 60)
+            .position(x: 86, y: 49)
+        }
+        .frame(width: 172, height: 83)
+    }
+
+    // MARK: - Dedicated Host End Roll Button (Figma Group 72: low profile)
 
     private var endRollButton: some View {
         Button {
-            flowViewModel.endSessionManuallyByHost(
-                currentUser: currentUser
-            )
+            HapticService.shared.playSnapFeedback()
+            flowViewModel.presentEndRollConfirmation()
         } label: {
-            Text("END ROLL")
-                .font(.system(size: 10, weight: .bold))
-                .tracking(0.6)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(ScrapTheme.indicatorRed.opacity(0.85))
+            ZStack {
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 14,
+                    bottomLeadingRadius: 14,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 0
                 )
+                .withInnerShadow(
+                    fill: RadialGradient(
+                        stops: [
+                            .init(color: Color(red: 160 / 255, green: 70 / 255, blue: 70 / 255), location: 0.45),
+                            .init(color: Color(red: 124 / 255, green: 53 / 255, blue: 53 / 255), location: 1.0)
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 28
+                    ),
+                    shadowColor: Color.black.opacity(0.35),
+                    radius: 3.0,
+                    x: -1,
+                    y: 1
+                )
+                .shadow(color: Color.black.opacity(0.2), radius: 2, x: -1, y: 1)
+                .frame(width: 36, height: 48)
+
+                Text("End Roll")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(-0.43)
+                    .foregroundStyle(Color(red: 254 / 255, green: 253 / 255, blue: 251 / 255))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 36, height: 48)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("End Roll")
     }
 
-    #if DEBUG
-    private var debugLastShotButton: some View {
-        Button {
-            showsDebugLastShot = true
-        } label: {
-            Text("DEBUG: LAST SHOT")
-                .font(.system(size: 10, weight: .bold))
-                .tracking(0.6)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.purple.opacity(0.85))
-                )
-        }
-        .buttonStyle(.plain)
-    }
-    #endif
-
-    // MARK: - Bottom Controls (Equal Spacing)
-
-    private var bottomControlsRow: some View {
-        HStack(spacing: 0) {
-            // Flash toggle
-            Button {
-                camera.cycleFlash()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: camera.flashChoice == .off ? "bolt.slash" : (camera.flashChoice == .on ? "bolt.fill" : "bolt.badge.automatic"))
-                        .font(.system(size: 14, weight: .bold))
-                    Text(camera.flashChoice == .auto ? "FLASH AUTO" : "FLASH")
-                        .font(.system(size: 14, weight: .bold))
-                }
-                .foregroundStyle(
-                    camera.flashChoice == .off
-                        ? Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255).opacity(0.7)
-                        : ScrapTheme.cameraGold
-                )
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity)
-
-            // LIVE toggle
-            Button {
-                camera.isLivePhotoEnabled.toggle()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "livephoto")
-                        .font(.system(size: 14, weight: .bold))
-                    Text("LIVE")
-                        .font(.system(size: 14, weight: .bold))
-                }
-                .foregroundStyle(
-                    camera.isLivePhotoEnabled
-                        ? ScrapTheme.cameraGold
-                        : Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255).opacity(0.4)
-                )
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity)
-
-            // Flip camera button
-            Button {
-                camera.toggleCameraPosition()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
-                        .font(.system(size: 14, weight: .bold))
-                    Text("FLIP")
-                        .font(.system(size: 14, weight: .bold))
-                }
-                .foregroundStyle(Color(red: 246 / 255, green: 241 / 255, blue: 231 / 255))
-            }
-            .buttonStyle(.plain)
-            .disabled(camera.isSwitchingCamera)
-            .opacity(camera.isSwitchingCamera ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: camera.isSwitchingCamera)
-            .frame(maxWidth: .infinity)
-        }
-        .frame(width: 487)
-    }
-
-    // MARK: - Shutter Well & Button (Figma 1302:47961)
+    // MARK: - Shutter Well & Button (Figma Group 68: node 1458:26069)
 
     private var shutterWellView: some View {
-        ZStack {
-            // Recessed Well from Figma (107x107)
-            Image("CameraShutterWell")
-                .resizable()
-                .frame(width: 107, height: 107)
-
-            // Metallic circular shutter button
-            Button {
-                Task {
-                    await flowViewModel.shutterTapped(currentUser: currentUser)
-                }
-            } label: {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.white,
-                                Color(white: 0.72),
-                                Color(white: 0.42)
-                            ],
-                            center: .center,
-                            startRadius: 4,
-                            endRadius: 38
-                        )
-                    )
-                    .frame(width: 76, height: 76)
-                    .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 4)
+        Button {
+            Task {
+                await flowViewModel.shutterTapped(currentUser: currentUser)
             }
-            .buttonStyle(ShutterButtonStyle(isProgrammaticallyPressed: flowViewModel.isShutterPressed))
+        } label: {
+            EmptyView()
         }
-        .frame(width: 107, height: 107)
+        .buttonStyle(ShutterButtonStyle(isProgrammaticallyPressed: flowViewModel.isShutterPressed))
+        .accessibilityLabel("Shutter")
+    }
+
+    // MARK: - Flip Camera Button (Figma Group 74: node 1458:26103)
+
+    private var flipButtonView: some View {
+        Button {
+            HapticService.shared.playSnapFeedback()
+            camera.toggleCameraPosition()
+        } label: {
+            ZStack {
+                // Outer Recessed Green Well (72 x 72)
+                Circle()
+                    .withInnerShadow(
+                        fill: LinearGradient(
+                            stops: [
+                                .init(color: Color(red: 46 / 255, green: 73 / 255, blue: 44 / 255), location: 0.0),
+                                .init(color: Color(red: 71 / 255, green: 112 / 255, blue: 67 / 255), location: 1.0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        shadowColor: Color.black.opacity(0.8),
+                        radius: 3.7,
+                        x: 0,
+                        y: 4.5
+                    )
+                    .shadow(color: Color.black.opacity(0.25), radius: 4, x: 0, y: 4)
+
+                // Silver Convex Button (58 x 58)
+                Circle()
+                    .withInnerShadow(
+                        fill: RadialGradient(
+                            stops: [
+                                .init(color: Color(red: 182 / 255, green: 182 / 255, blue: 182 / 255), location: 0.0),
+                                .init(color: Color(red: 153 / 255, green: 153 / 255, blue: 153 / 255), location: 0.55),
+                                .init(color: Color(red: 122 / 255, green: 122 / 255, blue: 122 / 255), location: 1.0)
+                            ],
+                            center: UnitPoint(x: 0.4, y: 0.35),
+                            startRadius: 0,
+                            endRadius: 29
+                        ),
+                        shadowColor: Color.black.opacity(0.22),
+                        radius: 3.7,
+                        x: 0,
+                        y: -4.5
+                    )
+                    .shadow(color: Color.black.opacity(0.55), radius: 4.5, x: 0, y: 5.9)
+                    .frame(width: 58, height: 58)
+
+                // Rotating Switch Symbol
+                Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
+                    .font(.system(size: 21, weight: .regular))
+                    .foregroundStyle(Color(red: 252 / 255, green: 251 / 255, blue: 248 / 255))
+                    .rotationEffect(.degrees(symbolRotation))
+                    .animation(.easeInOut(duration: 0.3), value: symbolRotation)
+                    .opacity(camera.isSwitchingCamera ? 0.6 : 1.0)
+            }
+            .frame(width: 72, height: 72)
+        }
+        .buttonStyle(.plain)
+        .disabled(camera.isSwitchingCamera)
+        .accessibilityLabel("Flip Camera")
+    }
+
+    // MARK: - End Roll & Roll Complete Popups (Figma 1517:25254 & 1512:26505)
+
+    @ViewBuilder
+    private func popupOverlay(isPortraitWindow: Bool) -> some View {
+        let rotationAngle: Double = {
+            if isPortraitWindow {
+                return RollCameraOrientation.cameraReturnAngle(deviceOrientation: deviceOrientation)
+            } else {
+                return RollCameraOrientation.symbolRotationDegrees(for: deviceOrientation)
+            }
+        }()
+
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    guard !isTransitioningBetweenPopups else { return }
+                    if flowViewModel.showEndRollConfirmation {
+                        flowViewModel.dismissEndRollConfirmation()
+                    }
+                }
+
+            if flowViewModel.showEndRollConfirmation {
+                EndRollConfirmationPopupView(
+                    shotsRemaining: flowViewModel.shotsRemaining,
+                    onCancel: {
+                        guard !isTransitioningBetweenPopups else { return }
+                        flowViewModel.dismissEndRollConfirmation()
+                    },
+                    onConfirm: {
+                        guard !isTransitioningBetweenPopups else { return }
+                        isTransitioningBetweenPopups = true
+                        // Step 1: Fade out popup 1 completely first
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            popup1Opacity = 0.0
+                        }
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 200_000_000)
+                            // Step 2: Swap to popup 2 invisibly while at 0 opacity
+                            popup2Opacity = 0.0
+                            flowViewModel.confirmEndRollByHost(currentUser: currentUser)
+                            popup1Opacity = 1.0
+                            // Step 3: Hold 250ms pause between popups
+                            try? await Task.sleep(nanoseconds: 250_000_000)
+                            // Step 4: Fade in popup 2
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                popup2Opacity = 1.0
+                            }
+                            isTransitioningBetweenPopups = false
+                        }
+                    }
+                )
+                .opacity(popup1Opacity)
+                .rotationEffect(.degrees(rotationAngle))
+                .animation(.easeInOut(duration: 0.3), value: deviceOrientation)
+            } else if flowViewModel.showRollCompletePopup {
+                RollCompletePopupView(
+                    isEndedEarly: flowViewModel.isRollEndedEarly,
+                    onReveal: {
+                        flowViewModel.transitionToRollReveal()
+                    }
+                )
+                .opacity(popup2Opacity)
+                .rotationEffect(.degrees(rotationAngle))
+                .animation(.easeInOut(duration: 0.3), value: deviceOrientation)
+            }
+        }
+        .zIndex(100)
     }
 }
 
@@ -607,67 +704,105 @@ private struct ShutterButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let isPressed = configuration.isPressed || isProgrammaticallyPressed
-        configuration.label
-            .scaleEffect(isPressed ? 0.92 : 1.0)
-            .opacity(isPressed ? 0.92 : 1.0)
-            .animation(.spring(response: 0.18, dampingFraction: 0.65), value: isPressed)
-            .contentShape(Circle())
-    }
-}
+        ZStack {
+            // Outer Recessed Green Well (154 x 154) - remains stationary
+            Circle()
+                .withInnerShadow(
+                    fill: LinearGradient(
+                        stops: [
+                            .init(color: Color(red: 46 / 255, green: 73 / 255, blue: 44 / 255), location: 0.0),
+                            .init(color: Color(red: 71 / 255, green: 112 / 255, blue: 67 / 255), location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    shadowColor: Color.black.opacity(0.8),
+                    radius: 3.7,
+                    x: 0,
+                    y: 4.5
+                )
+                .shadow(color: Color.black.opacity(0.25), radius: 4, x: 0, y: 4)
 
-private struct PivotingIntrinsicSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        let next = nextValue()
-        if next != .zero {
-            value = next
+            // 3D Spherical Metallic Shutter Button Dome (130 x 130) - ONLY this depresses on tap
+            Circle()
+                .withInnerShadow(
+                    fill: RadialGradient(
+                        stops: [
+                            .init(color: .white, location: 0.0),
+                            .init(color: Color(red: 200 / 255, green: 200 / 255, blue: 200 / 255), location: 0.4),
+                            .init(color: Color(red: 158 / 255, green: 158 / 255, blue: 158 / 255), location: 0.75),
+                            .init(color: Color(red: 114 / 255, green: 114 / 255, blue: 114 / 255), location: 1.0)
+                        ],
+                        center: UnitPoint(x: 0.45, y: 0.4),
+                        startRadius: 0,
+                        endRadius: 65
+                    ),
+                    shadowColor: Color.black.opacity(0.22),
+                    radius: 3.7,
+                    x: 0,
+                    y: -4.5
+                )
+                .shadow(color: Color.black.opacity(0.55), radius: 4.5, x: 0, y: 5.9)
+                .frame(width: 130, height: 130)
+                .scaleEffect(isPressed ? 0.94 : 1.0)
+                .opacity(isPressed ? 0.92 : 1.0)
+                .animation(.spring(response: 0.18, dampingFraction: 0.65), value: isPressed)
         }
+        .frame(width: 154, height: 154)
+        .contentShape(Circle())
     }
 }
 
-private struct PivotingElement<Content: View>: View, Animatable {
-    var angle: Double
-    @ViewBuilder let content: () -> Content
+// MARK: - Shape Inner Shadow Helper
 
-    @State private var intrinsicSize: CGSize = .zero
+private struct DiagonalSlashShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 4.5, y: rect.height - 4.5))
+        path.addLine(to: CGPoint(x: rect.width - 4.5, y: 4.5))
+        return path
+    }
+}
+
+private extension Shape {
+    func withInnerShadow<S: ShapeStyle>(
+        fill: S,
+        shadowColor: Color = Color.black.opacity(0.8),
+        radius: CGFloat = 3.7,
+        x: CGFloat = 0,
+        y: CGFloat = 4.5
+    ) -> some View {
+        self.fill(fill)
+            .overlay(
+                self
+                    .stroke(shadowColor, lineWidth: radius * 2)
+                    .offset(x: x, y: y)
+                    .blur(radius: radius)
+                    .mask(self)
+            )
+    }
+}
+
+// MARK: - Zoom Text Vertical 3D Flip Modifier
+
+private struct ZoomTextVerticalFlipModifier: AnimatableModifier {
+    var angle: Double
 
     var animatableData: Double {
         get { angle }
         set { angle = newValue }
     }
 
-    private var boundingWidth: CGFloat {
-        guard intrinsicSize != .zero else { return 0 }
-        let rad = angle * .pi / 180.0
-        return intrinsicSize.width * abs(cos(rad)) + intrinsicSize.height * abs(sin(rad))
-    }
-
-    private var boundingHeight: CGFloat {
-        guard intrinsicSize != .zero else { return 0 }
-        let rad = angle * .pi / 180.0
-        return intrinsicSize.width * abs(sin(rad)) + intrinsicSize.height * abs(cos(rad))
-    }
-
-    var body: some View {
-        Color.clear
-            .frame(
-                width: intrinsicSize == .zero ? nil : boundingWidth,
-                height: intrinsicSize == .zero ? nil : boundingHeight
+    func body(content: Content) -> some View {
+        let isFlipped = angle > 90.0
+        content
+            .scaleEffect(x: isFlipped ? -1.0 : 1.0, y: 1.0)
+            .rotation3DEffect(
+                .degrees(angle),
+                axis: (x: 1.0, y: 0.0, z: 0.0),
+                perspective: 0.6
             )
-            .overlay(
-                content()
-                    .fixedSize()
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear.preference(key: PivotingIntrinsicSizeKey.self, value: proxy.size)
-                        }
-                    )
-                    .rotationEffect(.degrees(angle))
-            )
-            .onPreferenceChange(PivotingIntrinsicSizeKey.self) { size in
-                if size != .zero && size != intrinsicSize {
-                    intrinsicSize = size
-                }
-            }
     }
 }
+
+

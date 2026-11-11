@@ -2,6 +2,7 @@ import AVFoundation
 import CoreImage
 import Foundation
 import Observation
+import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -9,13 +10,11 @@ import UIKit
 enum CameraFlashChoice: String, CaseIterable {
     case off = "OFF"
     case on = "ON"
-    case auto = "AUTO"
 
     var captureMode: AVCaptureDevice.FlashMode {
         switch self {
         case .off: .off
         case .on: .on
-        case .auto: .auto
         }
     }
 }
@@ -31,7 +30,7 @@ struct CapturedShot {
 /// filtered preview, zoom, flip, flash, Live Photo, physical buttons and the Camera Adjustments pop-up.
 @Observable
 final class CameraController {
-    var flashChoice: CameraFlashChoice = .auto
+    var flashChoice: CameraFlashChoice = .off
     var isLivePhotoEnabled: Bool = true
     private(set) var isUsingFrontCamera: Bool = false
     private(set) var zoomFactor: CGFloat = 1.0
@@ -45,6 +44,7 @@ final class CameraController {
     private(set) var hasCameraControl: Bool = false
     private(set) var isCapturing: Bool = false
     private(set) var isSwitchingCamera: Bool = false
+    private(set) var lastBackCameraZoom: CGFloat = 1.0
     var shutterFlashOpacity: Double = 0.0
     /// "Turn On Camera Adjustments" alert.
     var showsCameraAdjustmentsPrompt: Bool = false
@@ -146,15 +146,71 @@ final class CameraController {
     func toggleCameraPosition() {
         guard isSessionRunning, !isCapturing, !isSwitchingCamera else { return }
         isSwitchingCamera = true
+        if !isUsingFrontCamera {
+            lastBackCameraZoom = zoomFactor
+        }
         Task {
             defer { isSwitchingCamera = false }
             // Lead time for mechanical iris closure to cover the preview before sensor disconnect
             try? await Task.sleep(nanoseconds: 180_000_000)
             guard let position = await engine.switchCamera() else { return }
-            isUsingFrontCamera = position == .front
+            let isNowFront = position == .front
+            isUsingFrontCamera = isNowFront
             isLiveSupported = await engine.isLivePhotoAvailable()
-            zoomCapabilities = await engine.resetZoom()
-            zoomFactor = 1
+            let caps = await engine.resetZoom()
+
+            let startZoom = zoomFactor
+            let targetZoom: CGFloat
+            if isNowFront {
+                targetZoom = 1.0
+            } else {
+                targetZoom = caps.clamped(lastBackCameraZoom)
+            }
+
+            let distance = abs(targetZoom - startZoom)
+            // Roll duration is proportional to zoom distance so wheel rolling rate is smooth and consistent
+            let duration = max(0.12, min(0.65, Double(distance) * 0.15))
+
+            if distance > 0.05 {
+                Task { @MainActor in
+                    let tickInterval: UInt64 = 45_000_000
+                    let tickCount = max(1, Int(duration / 0.045))
+                    for _ in 0..<tickCount {
+                        HapticService.shared.playRatchetTick()
+                        try? await Task.sleep(nanoseconds: tickInterval)
+                    }
+                }
+            }
+
+            if !isNowFront {
+                // Switching to back camera: expand capabilities first, then animate wheel roll to targetZoom
+                await MainActor.run {
+                    zoomCapabilities = caps
+                    withAnimation(.easeInOut(duration: duration)) {
+                        zoomFactor = targetZoom
+                    }
+                }
+            } else {
+                // Switching to front camera: keep existing capabilities so the wheel animates smoothly to 1.0
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: duration)) {
+                        zoomFactor = targetZoom
+                    }
+                }
+            }
+            if !isNowFront {
+                engine.setZoom(targetZoom)
+            }
+
+            // Finish the zoom wheel animation before showing the viewfinder again (change 072)
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+
+            if isNowFront {
+                // Lock capabilities to front camera once wheel has settled at 1.0
+                await MainActor.run {
+                    zoomCapabilities = caps
+                }
+            }
             // Settle time for the first video frame to render before mechanical iris dilates open
             try? await Task.sleep(nanoseconds: 100_000_000)
         }

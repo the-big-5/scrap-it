@@ -9,6 +9,8 @@ private final class FakeNavigator: Navigator {
     var selectedTab: AppTab = .home
     var path: [AppRoute] = []
     var isTabBarHidden = false
+    var cameraReturnPhase: CameraReturnPhase = .idle
+    var cameraReturnAngle: Double = 0.0
 }
 
 private final class FakeRoomService: RollRoomServicing {
@@ -487,7 +489,16 @@ struct RollRoomTests {
         #expect(vm.lobbyJoinedCount == 3)
     }
 
-    // MARK: - Camera UI Update (Change 041)
+    // MARK: - Camera UI Update (Change 041, 086)
+
+    @Test func prepareCameraReturnSetsNavigatorTransitionPhase() {
+        let vm = makeViewModel()
+        vm.prepareCameraReturn(angle: 90.0)
+
+        #expect(navigator.cameraReturnPhase == .zoomedIn)
+        #expect(navigator.cameraReturnAngle == 90.0)
+        #expect(navigator.isTabBarHidden)
+    }
 
     @Test func returnToHomepagePopsToRootAndResetsOrientation() {
         let vm = makeViewModel()
