@@ -52,37 +52,47 @@ struct ScrapbookEditorTests {
 
     // MARK: - Pages
 
-    @Test func newScrapbookStartsWithOneEmptyPage() {
+    private func freshDefaults() -> UserDefaults {
+        UserDefaults(suiteName: UUID().uuidString)!
+    }
+
+    @Test func newScrapbookStartsWithOneEmptySpread() {
         let vm = makeEditor()
-        #expect(vm.pages.count == 1)
+        #expect(vm.pages.count == 2)
+        #expect(vm.spreadCount == 1)
+        #expect(vm.mode == .book)
+        #expect(vm.currentPage?.id == vm.leftPage?.id)
         #expect(vm.currentPage?.allItems.isEmpty == true)
-        #expect(vm.pageIndicatorText == "1 / 1")
     }
 
-    @Test func pagesCanBeAddedMovedAndDeleted() throws {
+    @Test func anOddPageCountGetsOneMorePage() throws {
+        for order in 0..<3 {
+            let page = ScrapbookPage(order: order)
+            context.insert(page)
+            page.scrapbook = scrapbook
+        }
+        try context.save()
         let vm = makeEditor()
-        let first = try #require(vm.currentPage)
-        vm.addPage()
-        let second = try #require(vm.currentPage)
-        #expect(vm.pages.map(\.id) == [first.id, second.id])
-        #expect(vm.pageIndicatorText == "2 / 2")
-
-        vm.movePage(by: -1)
-        #expect(vm.pages.map(\.id) == [second.id, first.id])
-
-        vm.deleteCurrentPage()
-        #expect(vm.pages.map(\.id) == [first.id])
-        vm.deleteCurrentPage()
-        #expect(vm.pages.count == 1)
+        #expect(vm.pages.count == 4)
+        #expect(vm.spreads.map(\.count) == [2, 2])
     }
 
-    @Test func backgroundIsSavedPerPage() {
+    @Test func swipingPastTheLastSpreadAddsTwoEmptyPages() {
         let vm = makeEditor()
-        vm.setBackground(.grid)
-        vm.addPage()
-        #expect(vm.currentBackground == .grid)
-        vm.setBackground(.kraft)
-        #expect(vm.pages.map(\.pageBackground) == [.grid, .kraft])
+        let first = vm.currentSpreadPages.map(\.id)
+        vm.swipeSpread(by: -1)
+        #expect(vm.spreadIndex == 0)
+
+        vm.swipeSpread(by: 1)
+        #expect(vm.pages.count == 4)
+        #expect(vm.spreadIndex == 1)
+        #expect(vm.currentPage?.id == vm.leftPage?.id)
+        #expect(!first.contains(vm.leftPage?.id ?? UUID()))
+
+        vm.swipeSpread(by: -1)
+        #expect(vm.spreadIndex == 0)
+        #expect(vm.currentSpreadPages.map(\.id) == first)
+        #expect(vm.pages.count == 4)
     }
 
     // MARK: - Photos
@@ -173,14 +183,17 @@ struct ScrapbookEditorTests {
         #expect(didCut)
         #expect(vm.currentPage?.allItems.count == 2)
         #expect(vm.currentPage?.allItems.allSatisfy { $0.maskPolygon != nil } == true)
-        #expect(vm.canUndoCut)
+        #expect(vm.canUndo)
 
-        vm.undoLastCut()
+        vm.undo()
 
         #expect(vm.currentPage?.allItems.map(\.id) == [item.id])
         #expect(item.maskPolygon == nil)
         #expect(item.centerX == 0.5)
-        #expect(!vm.canUndoCut)
+        #expect(vm.canRedo)
+
+        vm.redo()
+        #expect(vm.currentPage?.allItems.count == 2)
     }
 
     @Test func strokeOutsideAPhotoCutsNothing() {
@@ -251,7 +264,6 @@ struct ScrapbookEditorTests {
         #expect(vm.isCutting)
         #expect(vm.activeTool == nil)
         #expect(vm.raisedTool == .scissors)
-        #expect(!vm.allowsPageSwipe)
 
         vm.selectTrayTool(.washi)
         #expect(!vm.isCutting)
@@ -262,18 +274,6 @@ struct ScrapbookEditorTests {
         vm.closeTray()
         #expect(!vm.isTrayOpen)
         #expect(vm.activeTool == nil)
-        #expect(vm.allowsPageSwipe)
-    }
-
-    @Test func swipeChangesPageOnlyWithoutAPageTool() {
-        let vm = makeEditor()
-        vm.addPage()
-        vm.swipePage(by: -1)
-        #expect(vm.currentIndex == 0)
-
-        vm.selectTrayTool(.scissors)
-        vm.swipePage(by: 1)
-        #expect(vm.currentIndex == 0)
     }
 
     @Test func toolHintsShowOncePerScrapbook() throws {
@@ -456,7 +456,10 @@ struct ScrapbookEditorTests {
         try await Task.sleep(for: .milliseconds(100))
 
         let placed = realtime.broadcastedEvents.filter { $0.type == .itemPlaced }.compactMap(\.item)
-        #expect(placed.count == 7)
+        // Pencil opens a layer on both pages of the spread (change 025); the right page's stays empty and is removed.
+        #expect(placed.count == 8)
+        let emptyLayer = try #require(placed.first { $0.drawingData != nil && $0.id != drawingID })
+        #expect(realtime.broadcastedEvents.contains { $0.type == .itemRemoved && $0.itemID == emptyLayer.id })
         #expect(placed.contains { $0.photoID == stillPhoto.id })
         #expect(placed.contains { $0.letterID == LetterCatalog.letters.first?.id })
         #expect(placed.contains { $0.text == "Hi" })
@@ -494,8 +497,9 @@ struct ScrapbookEditorTests {
 
         // Single-use slot applies across all pages in the scrapbook.
         let firstPage = try #require(vm.pages.first)
-        vm.addPage()
+        vm.swipeSpread(by: 1)
         #expect(vm.trayPhotos.isEmpty)
+        vm.swipeSpread(by: -1)
         vm.currentPageID = firstPage.id
 
         let placedStill = try #require(vm.currentPage?.allItems.first { $0.photoID == stillPhoto.id })
@@ -614,17 +618,20 @@ struct ScrapbookEditorTests {
         ))
         #expect(liveItem.loopEnabled == true)
 
-        // Cut + undoLastCut broadcast & peer apply
+        // Cut + undo (change 025): friends get the piece removed and the whole photo back
         liveItem.centerX = 0.5
         liveItem.centerY = 0.5
         liveItem.rotation = 0
         let pageSize = CGSize(width: 300, height: 400)
         #expect(vm.cut(along: [CGPoint(x: 0, y: 200), CGPoint(x: 150, y: 201), CGPoint(x: 300, y: 200)], pageSize: pageSize))
-        vm.undoLastCut()
+        let pieceID = try #require(vm.currentPage?.allItems.first { $0.photoID == livePhoto.id && $0.id != liveItem.id }?.id)
+        realtime.broadcastedEvents.removeAll()
+        vm.undo()
         try await Task.sleep(for: .milliseconds(50))
-        let cutUndo = try #require(realtime.broadcastedEvents.last { $0.type == .itemCutUndone })
-        #expect(cutUndo.restoredItem?.id == liveItem.id)
-        #expect(cutUndo.removedPieceIDs?.count == 1)
+        #expect(realtime.broadcastedEvents.contains { $0.type == .itemRemoved && $0.itemID == pieceID })
+        let maskRestore = try #require(realtime.broadcastedEvents.last { $0.type == .itemCut })
+        #expect(maskRestore.itemID == liveItem.id)
+        #expect(maskRestore.maskData == nil)
 
         // Simulate peer state where pieces exist and original is absent, then apply itemCutUndone
         let restoredID = UUID()
@@ -646,7 +653,7 @@ struct ScrapbookEditorTests {
         let vm = ScrapbookViewModel(modelContext: context, sessionStore: SessionStore(modelContext: context),
                                     scrapbookID: scrapbook.id, realtimeService: realtime)
         await vm.connectRealtime()
-        vm.pageGlobalFrame = CGRect(x: 20, y: 100, width: 300, height: 400)
+        vm.pageGlobalFrames[try #require(vm.currentPage).id] = CGRect(x: 20, y: 100, width: 300, height: 400)
         vm.trashDropFrame = CGRect(x: 150, y: 600, width: 64, height: 64)
 
         // Cut a photo into two pieces
@@ -775,6 +782,189 @@ struct ScrapbookEditorTests {
         _ = vm
         _ = makeEditor()
         #expect(page.allItems.count == 2)
+    }
+
+    // MARK: - Book view and spread editor (change 025)
+
+    @Test func pageHintShowsOncePerUser() {
+        let defaults = freshDefaults()
+        let first = ScrapbookViewModel(modelContext: context, sessionStore: SessionStore(modelContext: context),
+                                       scrapbookID: scrapbook.id, defaults: defaults)
+        #expect(first.showsPageHint)
+        first.dismissPageHint()
+        #expect(!first.showsPageHint)
+
+        let other = Scrapbook(title: "Other")
+        context.insert(other)
+        let second = ScrapbookViewModel(modelContext: context, sessionStore: SessionStore(modelContext: context),
+                                        scrapbookID: other.id, defaults: defaults)
+        #expect(!second.showsPageHint)
+    }
+
+    @Test func backLeavesOnlyAfterYes() {
+        let vm = makeEditor()
+        navigator.path = [.scrapbook(scrapbook.id)]
+        vm.requestBack()
+        #expect(vm.isBackConfirmationPresented)
+        vm.isBackConfirmationPresented = false
+        #expect(navigator.path == [.scrapbook(scrapbook.id)])
+
+        vm.requestBack()
+        vm.confirmBack()
+        #expect(navigator.path.isEmpty)
+    }
+
+    @Test func zoomCyclesSpreadLeftRightAndPicksTheActivePage() throws {
+        let vm = makeEditor()
+        vm.openSpread()
+        #expect(vm.mode == .edit)
+        #expect(vm.zoom == .spread)
+        #expect(vm.allowsLandscape)
+        #expect(vm.editablePages.count == 2)
+
+        vm.cycleZoom()
+        #expect(vm.zoom == .left)
+        #expect(vm.currentPage?.id == vm.leftPage?.id)
+        #expect(!vm.allowsLandscape)
+        #expect(vm.editablePages.map(\.id) == [try #require(vm.leftPage).id])
+
+        vm.cycleZoom()
+        #expect(vm.zoom == .right)
+        #expect(vm.currentPage?.id == vm.rightPage?.id)
+        #expect(vm.addPhoto(stillPhoto.id))
+        #expect(vm.rightPage?.allItems.count == 1)
+
+        vm.cycleZoom()
+        #expect(vm.zoom == .spread)
+        vm.closeSpread()
+        #expect(vm.mode == .book)
+        #expect(!vm.allowsLandscape)
+    }
+
+    @Test func itemsCrossTheGutterOnlyOnTheSpread() throws {
+        let vm = makeEditor()
+        vm.openSpread()
+        let left = try #require(vm.leftPage)
+        let right = try #require(vm.rightPage)
+        vm.addPhoto(stillPhoto.id, at: CGPoint(x: 0.8, y: 0.5))
+        let item = try #require(left.allItems.first)
+        let pageSize = CGSize(width: 200, height: 266)
+
+        // Dragged 0.4 page widths to the right: centre at 1.2 → right page at 0.2.
+        vm.commitTransform(itemID: item.id, translation: CGSize(width: 80, height: 0), scale: 1, rotationDelta: 0,
+                           pageSize: pageSize)
+        #expect(item.page?.id == right.id)
+        #expect(abs(item.centerX - 0.2) < 0.0001)
+        #expect(vm.currentPage?.id == right.id)
+
+        vm.undo()
+        #expect(item.page?.id == left.id)
+        #expect(abs(item.centerX - 0.8) < 0.0001)
+
+        // Zoomed to the left page: the item stays on it.
+        vm.cycleZoom()
+        vm.commitTransform(itemID: item.id, translation: CGSize(width: 80, height: 0), scale: 1, rotationDelta: 0,
+                           pageSize: pageSize)
+        #expect(item.page?.id == left.id)
+        #expect(item.centerX == 1)
+    }
+
+    @Test func undoAndRedoCoverEveryChange() throws {
+        let vm = makeEditor()
+        vm.openSpread()
+        #expect(!vm.canUndo)
+        #expect(!vm.canRedo)
+
+        vm.addPhoto(stillPhoto.id, at: CGPoint(x: 0.5, y: 0.5))
+        let photo = try #require(vm.currentPage?.allItems.first)
+        vm.commitTransform(itemID: photo.id, translation: CGSize(width: 30, height: 0), scale: 1, rotationDelta: 0,
+                           pageSize: CGSize(width: 300, height: 400))
+        #expect(abs(photo.centerX - 0.6) < 0.0001)
+
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "Bali"
+        vm.commitTextEditor()
+        #expect(vm.currentPage?.allItems.count == 2)
+
+        vm.undo()
+        #expect(vm.currentPage?.allItems.count == 1)
+        vm.undo()
+        #expect(abs(photo.centerX - 0.5) < 0.0001)
+        #expect(vm.canRedo)
+
+        vm.redo()
+        #expect(abs(photo.centerX - 0.6) < 0.0001)
+
+        // A new change clears the redo steps.
+        vm.removeItem(photo.id)
+        #expect(!vm.canRedo)
+        #expect(vm.currentPage?.allItems.isEmpty == true)
+        vm.undo()
+        #expect(vm.currentPage?.allItems.contains { $0.photoID == stillPhoto.id } == true)
+
+        // Pencil strokes are undone one by one.
+        vm.selectTrayTool(.pencil)
+        vm.updateActiveDrawing(Data("stroke 1".utf8))
+        vm.updateActiveDrawing(Data("stroke 2".utf8))
+        vm.undo()
+        #expect(vm.activeDrawingData == Data("stroke 1".utf8))
+        vm.redo()
+        #expect(vm.activeDrawingData == Data("stroke 2".utf8))
+
+        // Closing the editor starts a new history.
+        vm.closeSpread()
+        vm.openSpread()
+        #expect(!vm.canUndo)
+        #expect(!vm.canRedo)
+    }
+
+    @Test func pencilDrawsOnBothPagesOfTheSpread() throws {
+        let vm = makeEditor()
+        vm.openSpread()
+        let left = try #require(vm.leftPage)
+        let right = try #require(vm.rightPage)
+        vm.selectTrayTool(.pencil)
+        #expect(vm.drawingLayerIDs.keys.sorted { $0.uuidString < $1.uuidString }
+                == [left.id, right.id].sorted { $0.uuidString < $1.uuidString })
+
+        vm.updateDrawing(Data("right".utf8), onPage: right.id)
+        #expect(vm.drawingData(onPage: right.id) == Data("right".utf8))
+        #expect(vm.currentPage?.id == right.id)
+
+        // Closing Pencil keeps the right page's strokes and drops the empty left layer.
+        vm.selectTrayTool(.pencil)
+        #expect(left.allItems.isEmpty)
+        #expect(right.allItems.map(\.kind) == [.drawing])
+
+        // Zoomed to one page, only that page gets a canvas.
+        vm.cycleZoom()
+        vm.selectTrayTool(.pencil)
+        #expect(Array(vm.drawingLayerIDs.keys) == [left.id])
+    }
+
+    @Test func trayDropsLandOnTheHalfOfTheSpreadUnderTheFinger() throws {
+        let vm = makeEditor()
+        vm.openSpread()
+        #expect(vm.dropFromTray(.photo(livePhoto.id), at: CGPoint(x: 0.75, y: 0.5)))
+        let placed = try #require(vm.rightPage?.allItems.first)
+        #expect(abs(placed.centerX - 0.5) < 0.0001)
+        #expect(vm.currentPage?.id == vm.rightPage?.id)
+    }
+
+    @Test func whosHereSplitsThisSpreadAndOtherPages() async {
+        let realtime = MockScrapbookRealtimeService()
+        let vm = ScrapbookViewModel(modelContext: context, sessionStore: SessionStore(modelContext: context),
+                                    scrapbookID: scrapbook.id, currentUser: UserProfile(appleUserID: "me", name: "Nabiel"),
+                                    realtimeService: realtime)
+        await vm.connectRealtime()
+        realtime.simulateIncomingPresence([
+            CollaboratorPresence(id: "a", name: "Lepin", colorHex: "#27AE60", currentPageIndex: 1),
+            CollaboratorPresence(id: "b", name: "Sanny", colorHex: "#E50935", currentPageIndex: 4),
+        ])
+        #expect(vm.whosHereOnThisSpread.map(\.name) == ["Nabiel", "Lepin"])
+        #expect(vm.whosHereOnThisSpread.first?.isMe == true)
+        #expect(vm.whosHereOnOtherPages.map(\.name) == ["Sanny"])
+        #expect(vm.whosHereOnOtherPages.first?.pageNumber == 5)
     }
 
     // MARK: - Profile

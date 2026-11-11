@@ -10,10 +10,18 @@ struct ToolTray<SubTray: View>: View {
     /// Swipe down on the main tray.
     let onClose: () -> Void
     let onSelect: (ScrapbookTool) -> Void
+    /// Where the closed button sits in the tray's own space (change 025: `.bottomTrailing` when the tray is turned
+    /// on its left side in landscape, so the button ends up at the bottom of the screen).
+    var closedAlignment: Alignment = .bottomLeading
+    /// Turns the closed button back upright when the whole tray is turned on its side (change 025), so the pen
+    /// stands up as in Figma 1563:30642 / 1563:30756.
+    var closedButtonRotation: Angle = .zero
     @ViewBuilder let subTray: (ScrapbookTool) -> SubTray
 
+    private var closedAnchor: UnitPoint { closedAlignment == .bottomTrailing ? .bottomTrailing : .bottomLeading }
+
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack(alignment: closedAlignment) {
             if isOpen {
                 VStack(spacing: -TrayStyle.overlap) {
                     if let activeTool, activeTool.hasSubTray {
@@ -25,10 +33,10 @@ struct ToolTray<SubTray: View>: View {
                     mainTray
                         .zIndex(1)
                 }
-                .transition(.scale(scale: 0.25, anchor: .bottomLeading).combined(with: .opacity))
+                .transition(.scale(scale: 0.25, anchor: closedAnchor).combined(with: .opacity))
             } else {
                 closedButton
-                    .transition(.scale(scale: 0.8, anchor: .bottomLeading).combined(with: .opacity))
+                    .transition(.scale(scale: 0.8, anchor: closedAnchor).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 6)
@@ -58,6 +66,7 @@ struct ToolTray<SubTray: View>: View {
                     .clipShape(Circle().inset(by: 7))
             }
             .frame(width: TrayStyle.closedSize, height: TrayStyle.closedSize)
+            .rotationEffect(closedButtonRotation)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Open tools")
