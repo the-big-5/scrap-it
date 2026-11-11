@@ -14,7 +14,8 @@ struct ScrollPanProbe: UIViewRepresentable {
     /// Start point (window coordinates = `.global`). `false` = don't begin.
     var canBegin: (CGPoint) -> Bool = { _ in true }
     var onChanged: (CGPoint, CGSize) -> Void = { _, _ in }
-    /// End point, translation, and `true` when the system cancelled it.
+    /// End point (window), translation in the tray's own space (so "down" is toward the tray's bottom edge even when
+    /// the tray is turned on its side in landscape, change 025), and `true` when the system cancelled it.
     var onEnded: (CGPoint, CGSize, Bool) -> Void = { _, _, _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -79,7 +80,7 @@ struct ScrollPanProbe: UIViewRepresentable {
         @objc private func handle(_ pan: UIPanGestureRecognizer) {
             guard let probe else { return }
             let location = pan.location(in: nil)
-            let t = pan.translation(in: nil)
+            let t = pan.translation(in: pan.view)
             let translation = CGSize(width: t.x, height: t.y)
             switch pan.state {
             case .began, .changed: probe.onChanged(location, translation)

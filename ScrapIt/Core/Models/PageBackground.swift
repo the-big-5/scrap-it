@@ -14,7 +14,8 @@ enum PageBackground: String, CaseIterable, Identifiable {
     case dotted = "paper.dotted"
 
     enum Pattern {
-        case none, lined, grid, dotted
+        /// `paperDots`: the scrapbook paper from Figma (change 025): faint dots every 22 pt on a 201 pt page.
+        case none, lined, grid, dotted, paperDots
     }
 
     var id: String { rawValue }
@@ -37,7 +38,8 @@ enum PageBackground: String, CaseIterable, Identifiable {
     /// RGB 0–1.
     var baseRGB: (red: Double, green: Double, blue: Double) {
         switch self {
-        case .cream: (0.97, 0.94, 0.87)
+        // Figma Paper/normal #F6F1E7 (change 025).
+        case .cream: (246 / 255, 241 / 255, 231 / 255)
         case .white: (1, 1, 1)
         case .kraft: (0.78, 0.64, 0.47)
         case .black: (0.1, 0.1, 0.1)
@@ -53,6 +55,7 @@ enum PageBackground: String, CaseIterable, Identifiable {
         case .lined: .lined
         case .grid: .grid
         case .dotted: .dotted
+        case .cream: .paperDots
         default: .none
         }
     }
