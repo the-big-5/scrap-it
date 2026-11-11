@@ -86,10 +86,47 @@ struct RollRevealTests {
         #expect(viewModel.arrivalCount == 1)
         #expect(!viewModel.isDeveloping)
         #expect(viewModel.showsReadyText)
+        #expect(viewModel.envelopeStatusText == RollRevealViewModel.readyText)
         viewModel.hideReadyText()
         #expect(!viewModel.showsReadyText)
+        #expect(viewModel.envelopeStatusText == RollRevealViewModel.openHintText)
         viewModel.tear()
         #expect(viewModel.stage == .scattered)
+        #expect(viewModel.envelopeStatusText == nil)
+    }
+
+    @Test func envelopeStatusTextTracksDevelopingReadyOpenHintAndTornStates() {
+        addSession(shotsUsed: 2)
+        addPhoto(at: 1)
+        let locked = makeViewModel()
+        #expect(locked.envelopeStatusText == RollRevealViewModel.printingText)
+
+        addPhoto(at: 2)
+        let ready = makeViewModel()
+        ready.setMatSize(screen)
+        #expect(!ready.isDeveloping)
+        #expect(!ready.showsReadyText)
+        #expect(ready.envelopeStatusText == RollRevealViewModel.openHintText)
+
+        ready.tear()
+        #expect(ready.stage == .scattered)
+        #expect(ready.envelopeStatusText == nil)
+    }
+
+    @Test func slidingPointerGlidesLeftToRightAndFadesOutAtEndOfCycle() {
+        let hiddenStart = RevealEnvelopeView.pointerFrame(at: 0.0)
+        let activeStart = RevealEnvelopeView.pointerFrame(at: 0.14)
+        let midpoint = RevealEnvelopeView.pointerFrame(at: 0.46)
+        let activeEnd = RevealEnvelopeView.pointerFrame(at: 0.78)
+        let pauseEnd = RevealEnvelopeView.pointerFrame(at: 0.95)
+
+        #expect(hiddenStart.opacity == 0)
+        #expect(activeStart.opacity == 1)
+        #expect(activeEnd.opacity == 1)
+        #expect(pauseEnd.opacity == 0)
+        #expect(activeStart.x < midpoint.x)
+        #expect(midpoint.x < activeEnd.x)
+        #expect(midpoint.scale < hiddenStart.scale)
     }
 
     @Test func envelopeOpensAfterTenSecondsEvenWithPhotosMissing() async {
