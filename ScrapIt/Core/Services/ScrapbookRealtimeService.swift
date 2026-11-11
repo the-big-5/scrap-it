@@ -99,6 +99,11 @@ enum ScrapbookEventType: String, Codable, Sendable {
     case pageAdded = "page_added"
     case pageDeleted = "page_deleted"
     case pageMoved = "page_moved"
+    /// Change 026: a member finished editing (`memberID`), the host locked the scrapbook, the cover color changed
+    /// (`coverColor`). Cover items use the item events with page index -1 (front) and -2 (spine).
+    case editingDone = "editing_done"
+    case scrapbookLocked = "scrapbook_locked"
+    case coverColor = "cover_color"
 }
 
 struct ScrapbookEvent: Codable, Sendable, Equatable {
@@ -123,6 +128,8 @@ struct ScrapbookEvent: Codable, Sendable, Equatable {
     let textColor: String?
     let stickerSetID: String?
     let targetPageIndex: Int?
+    let memberID: String?
+    let coverColor: String?
 
     init(
         type: ScrapbookEventType,
@@ -145,7 +152,9 @@ struct ScrapbookEvent: Codable, Sendable, Equatable {
         text: String? = nil,
         textColor: String? = nil,
         stickerSetID: String? = nil,
-        targetPageIndex: Int? = nil
+        targetPageIndex: Int? = nil,
+        memberID: String? = nil,
+        coverColor: String? = nil
     ) {
         self.type = type
         self.pageIndex = pageIndex
@@ -168,6 +177,8 @@ struct ScrapbookEvent: Codable, Sendable, Equatable {
         self.textColor = textColor
         self.stickerSetID = stickerSetID
         self.targetPageIndex = targetPageIndex
+        self.memberID = memberID
+        self.coverColor = coverColor
     }
 }
 

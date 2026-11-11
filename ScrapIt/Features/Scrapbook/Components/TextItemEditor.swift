@@ -5,6 +5,8 @@ import SwiftUI
 struct TextEditorOverlay: View {
     @Binding var draft: String
     @Binding var color: TextItemColor
+    /// The font the text will have where it's placed (Architects Daughter on the cover, change 026).
+    var font: Font = TextItemStyle.font(size: 30)
     let onDone: () -> Void
     @FocusState private var isFocused: Bool
 
@@ -23,7 +25,7 @@ struct TextEditorOverlay: View {
                 }
 
                 TextField("Type something", text: $draft, axis: .vertical)
-                    .font(TextItemStyle.font(size: 30))
+                    .font(font)
                     .foregroundStyle(color.color)
                     .multilineTextAlignment(.center)
                     .lineLimit(1...4)

@@ -10,6 +10,10 @@ struct ToolTray<SubTray: View>: View {
     /// Swipe down on the main tray.
     let onClose: () -> Void
     let onSelect: (ScrapbookTool) -> Void
+    /// The tools in the main tray (change 026: fewer on the cover and the spine).
+    var tools: [ScrapbookTool] = ScrapbookTool.allCases
+    /// Edit Cover (change 026): the main tray stays open, centered, and doesn't scroll or fold away.
+    var isFixed = false
     /// Where the closed button sits in the tray's own space (change 025: `.bottomTrailing` when the tray is turned
     /// on its left side in landscape, so the button ends up at the bottom of the screen).
     var closedAlignment: Alignment = .bottomLeading
@@ -74,8 +78,8 @@ struct ToolTray<SubTray: View>: View {
 
     private var mainTray: some View {
         let area = TrayStyle.trayHeight - TrayStyle.stitchInset * 2
-        return TrayScroll(spacing: 16) {
-            ForEach(ScrapbookTool.allCases) { tool in
+        return TrayScroll(spacing: 16, isFixed: isFixed) {
+            ForEach(tools) { tool in
                 let isActive = activeTool == tool
                 Button {
                     // A light haptic each time a tool is picked.
@@ -91,10 +95,12 @@ struct ToolTray<SubTray: View>: View {
                 .accessibilityAddTraits(isActive ? .isSelected : [])
             }
         } probe: {
-            // Swiping down folds the tray back into the round button.
-            ScrollPanProbe(direction: .down, onEnded: { _, translation, cancelled in
-                if !cancelled, translation.height > 30 { onClose() }
-            })
+            // Swiping down folds the tray back into the round button (not on a fixed tray).
+            if !isFixed {
+                ScrollPanProbe(direction: .down, onEnded: { _, translation, cancelled in
+                    if !cancelled, translation.height > 30 { onClose() }
+                })
+            }
         }
     }
 }

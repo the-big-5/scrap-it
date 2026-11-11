@@ -35,12 +35,22 @@ struct ScrapbookPageView: View {
     /// Active dragged item and trash hover state (unclips the dragged item over page bounds).
     var draggedItemID: UUID?
     var isTrashTargeted = false
+    /// Width / height: 3:4 for pages; the front cover and the spine have their own shape (change 026).
+    var aspectRatio: CGFloat = 3 / 4
+    /// Cover sides draw the cover art behind instead of the paper (change 026).
+    var drawsBackground = true
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                PageBackgroundView(background: page.pageBackground)
-                    .onTapGesture { actions?.deselect() }
+                Group {
+                    if drawsBackground {
+                        PageBackgroundView(background: page.pageBackground)
+                    } else {
+                        Color.clear.contentShape(Rectangle())
+                    }
+                }
+                .onTapGesture { actions?.deselect() }
 
                 ForEach(page.sortedItems, id: \.id) { item in
                     ScrapbookItemView(
@@ -62,7 +72,7 @@ struct ScrapbookPageView: View {
             }
             .coordinateSpace(name: Self.coordinateSpace)
         }
-        .aspectRatio(3 / 4, contentMode: .fit)
+        .aspectRatio(aspectRatio, contentMode: .fit)
         .clipShape(Rectangle().inset(by: draggedItemID != nil ? -2000 : 0))
     }
 }

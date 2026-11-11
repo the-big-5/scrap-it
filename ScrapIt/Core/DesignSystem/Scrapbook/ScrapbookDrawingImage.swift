@@ -23,9 +23,10 @@ struct ScrapbookDrawingImage: View {
                     image = nil
                     return
                 }
-                let scale = max(geometry.size.width / ScrapbookPage.canvasSize.width * displayScale, 0.1)
+                let scale = max(geometry.size.height / ScrapbookPage.canvasSize.height * displayScale, 0.1)
+                let canvas = ScrapbookPage.canvasSize(for: geometry.size)
                 image = await Task.detached(priority: .userInitiated) {
-                    Self.lightImage(of: data, scale: scale)
+                    Self.lightImage(of: data, canvas: canvas, scale: scale)
                 }.value
             }
         }
@@ -33,11 +34,11 @@ struct ScrapbookDrawingImage: View {
     }
 
     /// Always the light-mode ink colors, like the canvas (otherwise black ink turns white in dark mode; brief K5).
-    nonisolated private static func lightImage(of data: Data, scale: CGFloat) -> UIImage? {
+    nonisolated private static func lightImage(of data: Data, canvas: CGSize, scale: CGFloat) -> UIImage? {
         guard let drawing = try? PKDrawing(data: data), !drawing.strokes.isEmpty else { return nil }
         var image: UIImage?
         UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-            image = drawing.image(from: CGRect(origin: .zero, size: ScrapbookPage.canvasSize), scale: scale)
+            image = drawing.image(from: CGRect(origin: .zero, size: canvas), scale: scale)
         }
         return image
     }

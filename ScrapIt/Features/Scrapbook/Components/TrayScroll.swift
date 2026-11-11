@@ -10,6 +10,8 @@ struct TrayScroll<Content: View, Probe: View>: View {
     /// is behind the main tray.
     var contentBottom: CGFloat = TrayStyle.trayHeight - TrayStyle.stitchInset
     var spacing: CGFloat = 14
+    /// A fixed tray (change 026, Edit Cover): its few tools sit centered and it doesn't scroll.
+    var isFixed = false
     @ViewBuilder let content: () -> Content
     @ViewBuilder var probe: () -> Probe
 
@@ -22,7 +24,7 @@ struct TrayScroll<Content: View, Probe: View>: View {
                     content()
                 }
                 .padding(.horizontal, 20)
-                .frame(minWidth: geometry.size.width, alignment: .leading)
+                .frame(minWidth: geometry.size.width, alignment: isFixed ? .center : .leading)
                 .frame(height: contentBottom - Self.contentTop)
                 .clipped()
                 .padding(.top, Self.contentTop)
@@ -31,6 +33,7 @@ struct TrayScroll<Content: View, Probe: View>: View {
                 .background { probe() }
             }
             .scrollClipDisabled()
+            .scrollDisabled(isFixed)
         }
         .frame(height: TrayStyle.trayHeight)
     }

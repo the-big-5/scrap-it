@@ -31,6 +31,10 @@ struct RoomSnapshot: Equatable, Sendable {
     /// Public `RollShot` record names listed in the room (members-only index, change 012).
     var shotRecordNames: [String] = []
     var endTime: Date? = nil
+    /// Members who finished editing the scrapbook (`ScrapbookDone` records, change 026).
+    var doneEditingUserIDs: [String] = []
+    /// The host saved (locked) the scrapbook (`ScrapbookLock` record, change 026).
+    var scrapbookLocked: Bool = false
 }
 
 /// Everything the host knows when creating a room.
@@ -74,6 +78,10 @@ protocol RollRoomServicing: AnyObject {
     func downloadShotPayload(recordName: String) async throws -> Data
     /// Encrypted payloads of several public `RollShot`s, fetched together (change 020).
     func downloadShotPayloads(recordNames: [String]) async -> [String: Result<Data, Error>]
+    /// This member finished editing the scrapbook (change 026).
+    func markDoneEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws
+    /// The host saved the scrapbook: locked for everyone (change 026).
+    func lockScrapbook(inRoom code: String, zoneOwnerName: String?) async throws
 }
 
 extension RollRoomServicing {
@@ -93,6 +101,8 @@ extension RollRoomServicing {
 
 extension RollRoomServicing {
     func updateParticipant(_ user: RoomParticipant, inRoom code: String, zoneOwnerName: String?) async throws {}
+    func markDoneEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws {}
+    func lockScrapbook(inRoom code: String, zoneOwnerName: String?) async throws {}
 }
 
 extension Notification.Name {
@@ -370,6 +380,9 @@ final class CloudKitRollRoomService: RollRoomServicing {
             let shotRecordNames = records
                 .filter { $0.recordType == "RollShotRef" }
                 .compactMap { $0["shotRecordName"] as? String }
+            let doneEditingUserIDs = records
+                .filter { $0.recordType == "ScrapbookDone" }
+                .compactMap { $0["userID"] as? String }
             return RoomSnapshot(
                 sessionID: UUID(uuidString: (session["sessionID"] as? String) ?? "") ?? UUID(),
                 rollCode: code,
@@ -384,7 +397,9 @@ final class CloudKitRollRoomService: RollRoomServicing {
                 zoneOwnerName: zoneOwnerName,
                 rollKey: session["rollKey"] as? Data,
                 shotRecordNames: shotRecordNames,
-                endTime: session["endTime"] as? Date
+                endTime: session["endTime"] as? Date,
+                doneEditingUserIDs: doneEditingUserIDs,
+                scrapbookLocked: records.contains { $0.recordType == "ScrapbookLock" }
             )
         } catch let error as RoomError {
             throw error
@@ -511,6 +526,31 @@ final class CloudKitRollRoomService: RollRoomServicing {
             }
         }
         return updated
+    }
+
+    /// Own records in the room zone, so finishing never rewrites a participant's record (change 026).
+    func markDoneEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws {
+        let location = RollRoomLocation(rollCode: code, zoneOwnerName: zoneOwnerName)
+        let record = CKRecord(recordType: "ScrapbookDone",
+                              recordID: CKRecord.ID(recordName: "Done-\(userID)", zoneID: location.zoneID))
+        record["userID"] = userID
+        try await saveScrapbookRecord(record, location: location)
+    }
+
+    func lockScrapbook(inRoom code: String, zoneOwnerName: String?) async throws {
+        let location = RollRoomLocation(rollCode: code, zoneOwnerName: zoneOwnerName)
+        let record = CKRecord(recordType: "ScrapbookLock",
+                              recordID: CKRecord.ID(recordName: "ScrapbookLock", zoneID: location.zoneID))
+        record["lockedAt"] = Date.now
+        try await saveScrapbookRecord(record, location: location)
+    }
+
+    private func saveScrapbookRecord(_ record: CKRecord, location: RollRoomLocation) async throws {
+        let results = try await location.database(in: container)
+            .modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
+        if case .failure(let error)? = results.saveResults[record.recordID] {
+            throw error
+        }
     }
 
     private func participantRecord(_ user: RoomParticipant, location: RollRoomLocation) -> CKRecord {

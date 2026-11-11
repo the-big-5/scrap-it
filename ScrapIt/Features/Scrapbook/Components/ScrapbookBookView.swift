@@ -21,16 +21,25 @@ struct ScrapbookBookView: View {
             desk
             VStack(spacing: 0) {
                 HStack {
-                    BackCircleButton(action: viewModel.requestBack)
+                    // Reading a finished book: back to the closed book (change 026).
+                    BackCircleButton {
+                        if viewModel.isBookEditable {
+                            viewModel.requestBack()
+                        } else {
+                            viewModel.closeReadOnlyBook()
+                        }
+                    }
                         .accessibilityLabel("Back")
                     Spacer()
                 }
                 .padding(.horizontal, 22)
                 Spacer()
-                Button("Done", action: viewModel.finishScrapbook)
-                    .buttonStyle(.ds(.primary, size: .large, fullWidth: true))
-                    .padding(.horizontal, 22)
-                    .padding(.bottom, 24)
+                if viewModel.isBookEditable {
+                    Button("Done", action: viewModel.finishScrapbook)
+                        .buttonStyle(.ds(.primary, size: .large, fullWidth: true))
+                        .padding(.horizontal, 22)
+                        .padding(.bottom, 24)
+                }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: viewModel.showsPageHint)
@@ -56,7 +65,7 @@ struct ScrapbookBookView: View {
                 book(scale: scale)
                     .position(x: center.x, y: center.y + 3 * scale)
 
-                if viewModel.showsPageHint {
+                if viewModel.showsPageHint && viewModel.isBookEditable {
                     PageHintTooltip(onClose: viewModel.dismissPageHint)
                         .frame(width: 306 * scale)
                         .position(x: center.x, y: center.y + (bookHeight(scale: scale) / 2) + 84 * scale)
@@ -117,7 +126,7 @@ struct ScrapbookBookView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            guard turn == 0 else { return }
+            guard turn == 0, viewModel.isBookEditable else { return }
             viewModel.openSpread()
         }
         .gesture(turnGesture(pageWidth: pageWidth))

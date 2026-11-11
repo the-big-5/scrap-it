@@ -140,10 +140,13 @@ struct ScrapbookItemView: View {
             }
         case .text:
             Text(item.text ?? "")
-                .font(TextItemStyle.font(size: normalizedWidth * pageSize.width))
+                .font(item.page?.role != nil
+                      ? TextItemStyle.coverFont(size: normalizedWidth * pageSize.width)
+                      : TextItemStyle.font(size: normalizedWidth * pageSize.width))
                 .foregroundStyle(TextItemColor.from(item.textColor).color)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: pageSize.width * TextItemStyle.maxWidthRatio)
+                // Text standing up along the spine wraps by the spine's length (change 026).
+                .frame(maxWidth: (abs(sin(item.rotation)) > 0.7 ? pageSize.height : pageSize.width) * TextItemStyle.maxWidthRatio)
                 .fixedSize(horizontal: false, vertical: true)
         case .drawing:
             EmptyView()
