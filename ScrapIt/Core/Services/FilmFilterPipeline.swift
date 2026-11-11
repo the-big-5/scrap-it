@@ -103,6 +103,30 @@ nonisolated enum FilmPhotoEncoder {
     /// Sweet spot between visual fidelity and file size (change 014: ~60% size reduction over 0.90).
     static let defaultCompressionQuality: Double = 0.78
 
+    /// Center-crops an image to 4:3 (landscape) or 3:4 (portrait) aspect ratio if it deviates.
+    static func cropToStandardAspectRatio(_ image: CIImage, targetAspectRatio: CGFloat? = nil) -> CIImage {
+        let extent = image.extent
+        guard extent.width > 0, extent.height > 0 else { return image }
+        let isPortrait = extent.height > extent.width
+        let target = targetAspectRatio ?? (isPortrait ? (3.0 / 4.0) : (4.0 / 3.0))
+        let current = extent.width / extent.height
+        if abs(current - target) < 0.005 {
+            return image
+        }
+        let cropRect: CGRect
+        if current > target {
+            let newWidth = (extent.height * target).rounded()
+            let originX = (extent.origin.x + (extent.width - newWidth) / 2.0).rounded()
+            cropRect = CGRect(x: originX, y: extent.origin.y, width: newWidth, height: extent.height)
+        } else {
+            let newHeight = (extent.width / target).rounded()
+            let originY = (extent.origin.y + (extent.height - newHeight) / 2.0).rounded()
+            cropRect = CGRect(x: extent.origin.x, y: originY, width: extent.width, height: newHeight)
+        }
+        let cropped = image.cropped(to: cropRect)
+        return cropped.transformed(by: CGAffineTransform(translationX: -cropRect.origin.x, y: -cropRect.origin.y))
+    }
+
     /// Scales down large images proportionally so the longest edge does not exceed `maxDimension`.
     /// Preserves exact aspect ratio with zero cropping.
     static func downsampledImageIfNeeded(_ image: CIImage, maxDimension: CGFloat = maxDimension) -> CIImage {
@@ -122,7 +146,8 @@ nonisolated enum FilmPhotoEncoder {
         compressionQuality: Double = defaultCompressionQuality,
         context: CIContext = RenderContext.ciContext
     ) -> Data? {
-        let targetImage = downsampledImageIfNeeded(image)
+        let croppedImage = cropToStandardAspectRatio(image)
+        let targetImage = downsampledImageIfNeeded(croppedImage)
         let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
         guard let cgImage = context.createCGImage(targetImage, from: targetImage.extent, format: .RGBA8, colorSpace: colorSpace) else {
             return nil

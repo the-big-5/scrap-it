@@ -575,4 +575,100 @@ struct CameraBehaviorTests {
         #expect(smallScaleX == 1.0)
         #expect(smallScaleY == 1.0)
     }
+
+    // MARK: - Viewfinder and Photo 3:4 / 4:3 Aspect Ratio (change 071)
+
+    @Test func photoEncoderCropsNonStandardLandscapeImageTo4x3() {
+        // 16:9 widescreen input (1920 × 1080)
+        let wideImage = CIImage(color: CIColor(red: 0.1, green: 0.5, blue: 0.8))
+            .cropped(to: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let cropped = FilmPhotoEncoder.cropToStandardAspectRatio(wideImage)
+
+        #expect(abs(cropped.extent.width - 1440) < 0.001)
+        #expect(abs(cropped.extent.height - 1080) < 0.001)
+        #expect(abs(cropped.extent.origin.x - 0) < 0.001)
+        #expect(abs(cropped.extent.origin.y - 0) < 0.001)
+        #expect(abs((cropped.extent.width / cropped.extent.height) - (4.0 / 3.0)) < 0.001)
+    }
+
+    @Test func photoEncoderCropsNonStandardPortraitImageTo3x4() {
+        // 9:16 vertical input (1080 × 1920)
+        let tallImage = CIImage(color: CIColor(red: 0.1, green: 0.5, blue: 0.8))
+            .cropped(to: CGRect(x: 0, y: 0, width: 1080, height: 1920))
+        let cropped = FilmPhotoEncoder.cropToStandardAspectRatio(tallImage)
+
+        #expect(abs(cropped.extent.width - 1080) < 0.001)
+        #expect(abs(cropped.extent.height - 1440) < 0.001)
+        #expect(abs(cropped.extent.origin.x - 0) < 0.001)
+        #expect(abs(cropped.extent.origin.y - 0) < 0.001)
+        #expect(abs((cropped.extent.width / cropped.extent.height) - (3.0 / 4.0)) < 0.001)
+    }
+
+    @Test func photoEncoderPreservesStandard4x3And3x4Images() {
+        let standardLandscape = CIImage(color: CIColor(red: 0.2, green: 0.6, blue: 0.9))
+            .cropped(to: CGRect(x: 0, y: 0, width: 4032, height: 3024))
+        let resultLandscape = FilmPhotoEncoder.cropToStandardAspectRatio(standardLandscape)
+        #expect(resultLandscape.extent == standardLandscape.extent)
+
+        let standardPortrait = CIImage(color: CIColor(red: 0.2, green: 0.6, blue: 0.9))
+            .cropped(to: CGRect(x: 0, y: 0, width: 3024, height: 4032))
+        let resultPortrait = FilmPhotoEncoder.cropToStandardAspectRatio(standardPortrait)
+        #expect(resultPortrait.extent == standardPortrait.extent)
+    }
+
+    @Test func photoEncoderEncodesNonStandardImageToExactTargetDimensions() throws {
+        // 16:9 input encoded via jpegData
+        let wideImage = CIImage(color: CIColor(red: 0.3, green: 0.7, blue: 0.2))
+            .cropped(to: CGRect(x: 0, y: 0, width: 3840, height: 2160))
+        let data = try #require(FilmPhotoEncoder.jpegData(from: wideImage))
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let pixelWidth = properties[kCGImagePropertyPixelWidth] as? Int,
+              let pixelHeight = properties[kCGImagePropertyPixelHeight] as? Int else {
+            Issue.record("Failed to read image properties from encoded JPEG")
+            return
+        }
+
+        #expect(pixelWidth == 2048)
+        #expect(pixelHeight == 1536)
+        #expect(Double(pixelWidth) / Double(pixelHeight) == 4.0 / 3.0)
+    }
+
+    @Test func movieWriterCropsNonStandardVideoTo4x3Landscape() throws {
+        let rawSize = CGSize(width: 1920, height: 1080)
+        let (crop, targetSize) = LivePhotoMovieWriter.cropRect(for: rawSize, transform: .identity)
+
+        let rect = try #require(crop)
+        #expect(rect.origin.x == 240)
+        #expect(rect.origin.y == 0)
+        #expect(rect.width == 1440)
+        #expect(rect.height == 1080)
+        #expect(targetSize.width == 1440)
+        #expect(targetSize.height == 1080)
+    }
+
+    @Test func movieWriterCropsNonStandardVideoTo3x4Portrait() throws {
+        let rawSize = CGSize(width: 1080, height: 1920)
+        let (crop, targetSize) = LivePhotoMovieWriter.cropRect(for: rawSize, transform: .identity)
+
+        let rect = try #require(crop)
+        #expect(rect.origin.x == 0)
+        #expect(rect.origin.y == 240)
+        #expect(rect.width == 1080)
+        #expect(rect.height == 1440)
+        #expect(targetSize.width == 1080)
+        #expect(targetSize.height == 1440)
+    }
+
+    @Test func movieWriterLeavesStandard4x3VideoUncropped() {
+        let rawLandscape = CGSize(width: 1920, height: 1440)
+        let (cropLandscape, _) = LivePhotoMovieWriter.cropRect(for: rawLandscape, transform: .identity)
+        #expect(cropLandscape == nil)
+
+        // Portrait video delivered with 90-degree transform from 4:3 camera buffer
+        let transform90 = CGAffineTransform(rotationAngle: .pi / 2)
+        let (cropPortrait, _) = LivePhotoMovieWriter.cropRect(for: rawLandscape, transform: transform90)
+        #expect(cropPortrait == nil)
+    }
 }
