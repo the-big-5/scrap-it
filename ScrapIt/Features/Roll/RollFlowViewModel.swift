@@ -616,7 +616,17 @@ final class RollFlowViewModel {
         navigator?.popToRoot()
     }
 
-    /// Back button on CaptureSessionView (change 041): returns to Homepage.
+    /// Current camera return transition phase (change 086).
+    var cameraReturnPhase: CameraReturnPhase {
+        navigator?.cameraReturnPhase ?? .idle
+    }
+
+    /// Prepares homepage with zoomed-in camera and orientation for return transition (change 086).
+    func prepareCameraReturn(angle: Double) {
+        navigator?.beginCameraReturn(angle: angle)
+    }
+
+    /// Back button on CaptureSessionView (change 041, 086): returns to Homepage.
     func returnToHomepage() {
         OrientationLock.resetToPortrait()
         isInviteSheetPresented = false

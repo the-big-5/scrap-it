@@ -17,6 +17,12 @@ import UIKit
         #expect(side?.cameraAngleDelta == 180.0)
     }
 
+    @Test func cameraReturnAngleResolvesPortraitAndBothLandscapeSides() {
+        #expect(RollCameraOrientation.cameraReturnAngle(deviceOrientation: .portrait) == 0.0)
+        #expect(RollCameraOrientation.cameraReturnAngle(deviceOrientation: .landscapeLeft) == 90.0)
+        #expect(RollCameraOrientation.cameraReturnAngle(deviceOrientation: .landscapeRight) == -90.0)
+    }
+
     @Test func nonLandscapeOrientationsReturnNilToRetainPreviousState() {
         let nonLandscape: [UIDeviceOrientation] = [
             .portrait,

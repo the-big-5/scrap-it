@@ -117,6 +117,22 @@ enum RollCameraOrientation {
     /// Standard upright portrait photo capture angle in AVFoundation on iOS (90°).
     static let portraitCaptureAngle: CGFloat = 90.0
 
+    /// Determines the camera return angle (in degrees) relative to portrait workbench coordinates (change 086).
+    /// Returns 0° when held upright in portrait, +90° for Landscape Left, and -90° for Landscape Right.
+    static func cameraReturnAngle(
+        deviceOrientation: DeviceOrientation,
+        fallbackSide: LandscapeSide = .left
+    ) -> Double {
+        switch deviceOrientation {
+        case .portrait:
+            return 0.0
+        case .landscapeLeft:
+            return LandscapeSide.left.viewRotationDegrees
+        case .landscapeRight:
+            return LandscapeSide.right.viewRotationDegrees
+        }
+    }
+
     /// Resolves the photo capture rotation angle based on physical device orientation and landscape fallback.
     static func photoCaptureAngle(
         deviceOrientation: DeviceOrientation,
