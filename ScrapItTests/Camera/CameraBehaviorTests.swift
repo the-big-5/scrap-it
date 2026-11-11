@@ -147,11 +147,12 @@ struct CameraBehaviorTests {
         #expect(PrimaryButtonAction.resolve(hasCameraControl: false) == .flipCamera)
     }
 
-    // MARK: - Camera flip & debouncing (change 061)
+    // MARK: - Camera flip & debouncing (change 061 & change 072)
 
     @Test func cameraControllerInitialSwitchStateIsFalse() {
         let controller = CameraController()
         #expect(!controller.isSwitchingCamera)
+        #expect(controller.lastBackCameraZoom == 1.0)
     }
 
     @Test func cameraControllerFlipGuardedWhenSessionNotRunning() {
@@ -192,13 +193,11 @@ struct CameraBehaviorTests {
         HapticService.shared.playShutterClick()
     }
 
-    @Test func flashCyclesOffOnAuto() {
+    @Test func flashCyclesOffOn() {
         let camera = CameraController()
         camera.flashChoice = .off
         camera.handleSecondaryButton()
         #expect(camera.flashChoice == .on)
-        camera.handleSecondaryButton()
-        #expect(camera.flashChoice == .auto)
         camera.handleSecondaryButton()
         #expect(camera.flashChoice == .off)
     }
@@ -254,8 +253,8 @@ struct CameraBehaviorTests {
 
     // MARK: - Orientation
 
-    @Test func captureSessionIsLandscapeOthersPortrait() {
-        #expect(OrientationLock.mask(isCaptureSessionVisible: true) == .landscape)
+    @Test func captureSessionAllowsAllOrientationsOthersPortrait() {
+        #expect(OrientationLock.mask(isCaptureSessionVisible: true) == .portrait)
         #expect(OrientationLock.mask(isCaptureSessionVisible: false) == .portrait)
     }
 

@@ -18,9 +18,10 @@ struct KnurledZoomWheelView: View {
     @GestureState private var isFingerOnWheel = false
     @State private var lastTranslation: CGFloat = 0
     @State private var lastTickTime: Date = .distantPast
+    @State private var animatedTravel: Double = 0
 
-    private let wheelWidth: CGFloat = 172
-    private let wheelHeight: CGFloat = 44
+    private let wheelWidth: CGFloat = 160
+    private let wheelHeight: CGFloat = 60
     private let cornerRadius: CGFloat = 10
     private let ribCount = 14
     private let ribSpacing: CGFloat = 16
@@ -49,7 +50,7 @@ struct KnurledZoomWheelView: View {
             // Horizontally rolling knurled ribs. Drawn from the continuous wheel travel so jumps
             // (Camera Control 0.1 steps, lens taps) animate as a real roll instead of aliasing.
             KnurledRibs(
-                travel: model.travel,
+                travel: isFingerOnWheel ? model.travel : animatedTravel,
                 ribCount: ribCount,
                 ribSpacing: ribSpacing,
                 wheelWidth: wheelWidth
@@ -91,7 +92,6 @@ struct KnurledZoomWheelView: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
         .shadow(color: Color.black.opacity(0.4), radius: 6, x: 0, y: 4)
-        .opacity(isEnabled && model.isZoomable ? 1 : 0.45)
         .allowsHitTesting(isEnabled && model.isZoomable)
         .gesture(
             DragGesture(minimumDistance: 1)
@@ -106,12 +106,14 @@ struct KnurledZoomWheelView: View {
                     let previousZoom = model.zoom
                     let update = model.drag(by: Double(dx), velocity: Double(value.velocity.width))
                     playHaptics(for: update)
+                    animatedTravel = model.travel
                     if model.zoom != previousZoom {
                         onZoomChanged(model.zoom)
                     }
                 }
                 .onEnded { _ in
                     isDragging = false
+                    animatedTravel = model.travel
                 }
         )
         .onTapGesture { location in
@@ -120,9 +122,13 @@ struct KnurledZoomWheelView: View {
         }
         .onAppear {
             model = ZoomWheelModel(capabilities: capabilities, zoom: zoomFactor)
+            animatedTravel = model.travel
         }
         .onChange(of: capabilities) { _, newCapabilities in
             model.update(capabilities: newCapabilities, zoom: zoomFactor)
+            if !isFingerOnWheel {
+                animatedTravel = model.travel
+            }
         }
         .onChange(of: isFingerOnWheel) { _, onWheel in
             if !onWheel { isDragging = false }
@@ -130,8 +136,11 @@ struct KnurledZoomWheelView: View {
         .onChange(of: zoomFactor) { _, newZoom in
             // Follows zoom from elsewhere (Camera Control, flip) unless the finger is on the wheel.
             if !isFingerOnWheel, abs(newZoom - model.zoom) > 0.001 {
-                withAnimation(.spring(response: 0.28, dampingFraction: 1.0)) {
-                    model.sync(to: newZoom)
+                let distance = abs(newZoom - model.zoom)
+                let duration = max(0.12, min(0.65, Double(distance) * 0.15))
+                model.sync(to: newZoom)
+                withAnimation(.easeInOut(duration: duration)) {
+                    animatedTravel = model.travel
                 }
             }
         }
@@ -207,7 +216,7 @@ private struct KnurledRibs: View, Animatable {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: 2.4, height: 34)
+                        .frame(width: 2.4, height: 50)
                         .opacity(max(0.18, 1.0 - pow(normalizedDistance, 2)))
                         .scaleEffect(x: max(0.65, 1.0 - (normalizedDistance * 0.25)), y: 1.0)
                         .offset(x: shiftedX)
