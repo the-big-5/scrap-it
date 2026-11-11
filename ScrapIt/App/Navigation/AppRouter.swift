@@ -8,6 +8,7 @@ final class AppRouter: Navigator {
     var path: [AppRoute] = []
     var cameraReturnPhase: CameraReturnPhase = .idle
     var cameraReturnAngle: Double = 0.0
+    var isFadingToReveal: Bool = false
 
     var shouldShowTabBar: Bool {
         path.isEmpty && (!isTabBarHidden || selectedTab != .home) && cameraReturnPhase == .idle

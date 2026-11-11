@@ -8,6 +8,12 @@ struct CaptureSessionView: View {
     @State private var deviceOrientation: RollCameraOrientation.DeviceOrientation = .landscapeLeft
     @State private var zoomTextRotation: Double = 0.0
     @State private var motionService = CameraMotionService()
+    @State private var popup1Opacity: Double = 1.0
+    @State private var popup2Opacity: Double = 1.0
+    @State private var isTransitioningBetweenPopups: Bool = false
+    private var isAnyPopupPresented: Bool {
+        flowViewModel.showEndRollConfirmation || flowViewModel.showRollCompletePopup
+    }
 
     private var camera: CameraController {
         flowViewModel.camera
@@ -73,7 +79,13 @@ struct CaptureSessionView: View {
                     .scaleEffect(scale)
                     .rotationEffect(.degrees(rotationDegrees))
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
+
+                if isAnyPopupPresented {
+                    popupOverlay(isPortraitWindow: isPortrait)
+                        .transition(.opacity)
+                }
             }
+            .animation(.easeInOut(duration: 0.25), value: isAnyPopupPresented)
             .ignoresSafeArea()
             .onChange(of: isPortrait) { _, newIsPortrait in
                 camera.setSimulatedLandscapeSide(
@@ -188,10 +200,10 @@ struct CaptureSessionView: View {
                 .frame(width: 60, height: 120)
                 .position(x: 62 + 60 / 2, y: 33 + 120 / 2)
 
-            // 3. Left Column: Lower Back Navigation Button (Figma Group 71: left 62, top 302, 60x60)
+            // 3. Left Column: Lower Back Navigation Button (aligned flush to bottom of viewfinder margin at y: 370)
             backButtonView
                 .frame(width: 60, height: 60)
-                .position(x: 62 + 60 / 2, y: 302 + 60 / 2)
+                .position(x: 62 + 60 / 2, y: 310 + 60 / 2)
 
             // 4. Center: Viewfinder Screen Bezel & Live Preview (Figma Group 67: left 136, top 33, 444.4x337)
             screenBezelView
@@ -203,11 +215,11 @@ struct CaptureSessionView: View {
                 .frame(width: 172, height: 83)
                 .position(x: 594 + 172 / 2, y: 14 + 83 / 2)
 
-            // 6. Right Area: Dedicated Host End Roll Button (Figma Group 72: low profile)
+            // 6. Right Area: Dedicated Host End Roll Button (aligned with middle of zoom wheel at y: 63)
             if isHost {
                 endRollButton
                     .frame(width: 36, height: 48)
-                    .position(x: 874 - 36 / 2, y: 29 + 48 / 2)
+                    .position(x: 874 - 36 / 2, y: 63)
             }
 
             // 7. Right Area: Recessed Shutter Well & Button (Figma Group 68: left 594, top 128, 154x154)
@@ -491,7 +503,7 @@ struct CaptureSessionView: View {
     private var endRollButton: some View {
         Button {
             HapticService.shared.playSnapFeedback()
-            flowViewModel.endSessionManuallyByHost(currentUser: currentUser)
+            flowViewModel.presentEndRollConfirmation()
         } label: {
             ZStack {
                 UnevenRoundedRectangle(
@@ -606,6 +618,76 @@ struct CaptureSessionView: View {
         .buttonStyle(.plain)
         .disabled(camera.isSwitchingCamera)
         .accessibilityLabel("Flip Camera")
+    }
+
+    // MARK: - End Roll & Roll Complete Popups (Figma 1517:25254 & 1512:26505)
+
+    @ViewBuilder
+    private func popupOverlay(isPortraitWindow: Bool) -> some View {
+        let rotationAngle: Double = {
+            if isPortraitWindow {
+                return RollCameraOrientation.cameraReturnAngle(deviceOrientation: deviceOrientation)
+            } else {
+                return RollCameraOrientation.symbolRotationDegrees(for: deviceOrientation)
+            }
+        }()
+
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    guard !isTransitioningBetweenPopups else { return }
+                    if flowViewModel.showEndRollConfirmation {
+                        flowViewModel.dismissEndRollConfirmation()
+                    }
+                }
+
+            if flowViewModel.showEndRollConfirmation {
+                EndRollConfirmationPopupView(
+                    shotsRemaining: flowViewModel.shotsRemaining,
+                    onCancel: {
+                        guard !isTransitioningBetweenPopups else { return }
+                        flowViewModel.dismissEndRollConfirmation()
+                    },
+                    onConfirm: {
+                        guard !isTransitioningBetweenPopups else { return }
+                        isTransitioningBetweenPopups = true
+                        // Step 1: Fade out popup 1 completely first
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            popup1Opacity = 0.0
+                        }
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 200_000_000)
+                            // Step 2: Swap to popup 2 invisibly while at 0 opacity
+                            popup2Opacity = 0.0
+                            flowViewModel.confirmEndRollByHost(currentUser: currentUser)
+                            popup1Opacity = 1.0
+                            // Step 3: Hold 250ms pause between popups
+                            try? await Task.sleep(nanoseconds: 250_000_000)
+                            // Step 4: Fade in popup 2
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                popup2Opacity = 1.0
+                            }
+                            isTransitioningBetweenPopups = false
+                        }
+                    }
+                )
+                .opacity(popup1Opacity)
+                .rotationEffect(.degrees(rotationAngle))
+                .animation(.easeInOut(duration: 0.3), value: deviceOrientation)
+            } else if flowViewModel.showRollCompletePopup {
+                RollCompletePopupView(
+                    isEndedEarly: flowViewModel.isRollEndedEarly,
+                    onReveal: {
+                        flowViewModel.transitionToRollReveal()
+                    }
+                )
+                .opacity(popup2Opacity)
+                .rotationEffect(.degrees(rotationAngle))
+                .animation(.easeInOut(duration: 0.3), value: deviceOrientation)
+            }
+        }
+        .zIndex(100)
     }
 }
 
