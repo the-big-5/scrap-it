@@ -73,6 +73,10 @@ final class RollFlowViewModel {
     @ObservationIgnored private var shutterPressSequence: Int = 0
     @ObservationIgnored private(set) var shutterAnimationTask: Task<Void, Never>?
 
+    // Sync state (change 058)
+    /// True while background CloudKit slot claims or photo sync is actively in flight.
+    private(set) var isSyncingShot: Bool = false
+
     #if DEBUG
     /// Last shot taken on this device, for the debug Live Photo viewer (DEBUG builds only).
     private(set) var debugLastShot: ScrapPhoto?
@@ -184,10 +188,12 @@ final class RollFlowViewModel {
         String(format: "%02d", activeSession?.slotsUsed ?? 0)
     }
 
-    /// Remaining shots left on the active roll (change 041), counting down to 0.
+    /// Remaining shots left on the active roll (change 041, 058), counting down to 0.
+    /// Holds count while background slot claims are in flight until CloudKit confirms.
     var shotsRemaining: Int {
         guard let session = activeSession else { return 0 }
-        return max(0, session.rollSize - session.slotsUsed)
+        let confirmedSlotsUsed = max(0, session.slotsUsed - shotsAwaitingClaim.count)
+        return max(0, session.rollSize - confirmedSlotsUsed)
     }
 
     var shotsRemainingText: String {
@@ -812,6 +818,7 @@ final class RollFlowViewModel {
     func shutterTapped(currentUser: UserProfile) async {
         guard camera.canCapture else { return }
         await MainActor.run {
+            isSyncingShot = true
             triggerShutterAnimation()
         }
         // Change 020: from the shutter on (photo processing, slot, movie, upload start), the shot finishes
@@ -826,7 +833,13 @@ final class RollFlowViewModel {
                 currentUser: currentUser,
                 expectsLiveMovie: shot.livePhotoMovie != nil
             )
-            guard let photo, let movieTask = shot.livePhotoMovie else { return }
+            guard let photo else {
+                await MainActor.run {
+                    isSyncingShot = !shotsAwaitingClaim.isEmpty
+                }
+                return
+            }
+            guard let movieTask = shot.livePhotoMovie else { return }
             // The still is saved first; the filtered Live Photo movie follows when ready.
             let movieData = await movieTask.value
             shotsAwaitingMovie.remove(photo.id)
@@ -885,6 +898,7 @@ final class RollFlowViewModel {
         )
         modelContext.insert(photo)
         shotsAwaitingClaim.insert(photo.id)
+        isSyncingShot = true
         if expectsLiveMovie {
             shotsAwaitingMovie.insert(photo.id)
         }
@@ -938,6 +952,7 @@ final class RollFlowViewModel {
         )
 
         shotsAwaitingClaim.remove(photo.id)
+        isSyncingShot = !shotsAwaitingClaim.isEmpty
         switch result {
         case .claimed(let authoritativeSlots, let rollFinished):
             session.slotsUsed = authoritativeSlots
@@ -1059,6 +1074,7 @@ final class RollFlowViewModel {
 
     func finalizeSessionAndOpenScrapbook() {
         OrientationLock.resetToPortrait()
+        isSyncingShot = false
         if let session = activeSession {
             let cloud = self.cloudService
             let notReady = shotsAwaitingClaim.union(shotsAwaitingMovie)

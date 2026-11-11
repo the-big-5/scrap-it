@@ -6,6 +6,7 @@ import UIKit
 struct ShotsLeftDialView: View {
     let shotsRemaining: Int
     var totalShots: Int = 36
+    var isSyncing: Bool = false
 
     @State private var previousShots: Int?
     @State private var hapticTask: Task<Void, Never>?
@@ -80,10 +81,17 @@ struct ShotsLeftDialView: View {
                 .clipped()
             }
             .frame(width: 55.865, height: 55.865)
+
+            // 3. Subtle rotating yellow progress arc around outer rim (change 058)
+            if isSyncing {
+                ShotsLeftSyncIndicatorView()
+                    .transition(.opacity)
+            }
         }
         .frame(width: 83, height: 83)
+        .animation(.easeInOut(duration: 0.25), value: isSyncing)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(shotsRemaining) shots left")
+        .accessibilityLabel(isSyncing ? "\(shotsRemaining) shots left, syncing" : "\(shotsRemaining) shots left")
         .onAppear {
             previousShots = safeShots
         }
