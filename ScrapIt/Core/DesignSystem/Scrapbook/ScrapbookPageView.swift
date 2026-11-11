@@ -30,8 +30,6 @@ struct ScrapbookPageView: View {
     var actions: ScrapbookItemActions?
     /// Covers draw the PencilKit layer as an image; the editor puts a live canvas on top instead.
     var showsDrawingImage = false
-    /// Swipe left / right on an empty area: -1 previous page, +1 next page. `nil` = off (change 022).
-    var onSwipePage: ((Int) -> Void)?
     /// The drawing layer being drawn (hidden; the canvas replaces it).
     var activeDrawingID: UUID?
     /// Active dragged item and trash hover state (unclips the dragged item over page bounds).
@@ -43,7 +41,6 @@ struct ScrapbookPageView: View {
             ZStack {
                 PageBackgroundView(background: page.pageBackground)
                     .onTapGesture { actions?.deselect() }
-                    .gesture(swipe, including: onSwipePage == nil ? .none : .all)
 
                 ForEach(page.sortedItems, id: \.id) { item in
                     ScrapbookItemView(
@@ -67,14 +64,5 @@ struct ScrapbookPageView: View {
         }
         .aspectRatio(3 / 4, contentMode: .fit)
         .clipShape(Rectangle().inset(by: draggedItemID != nil ? -2000 : 0))
-    }
-
-    private var swipe: some Gesture {
-        DragGesture(minimumDistance: 24)
-            .onEnded { value in
-                let dx = value.translation.width
-                guard abs(dx) > 60, abs(dx) > abs(value.translation.height) * 1.5 else { return }
-                onSwipePage?(dx < 0 ? 1 : -1)
-            }
     }
 }

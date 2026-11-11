@@ -187,18 +187,19 @@ struct ScrapItTests {
         )
         await viewModel.connectRealtime()
 
-        #expect(viewModel.pages.count == 1)
+        // A new scrapbook starts with one spread of two pages (change 025).
+        #expect(viewModel.pages.count == 2)
         #expect(viewModel.currentPage?.pageBackground == .cream)
 
         // 1. Simulate remote page added
         mockRealtime.simulateIncomingEvent(ScrapbookEvent(
             type: .pageAdded,
-            pageIndex: 1,
+            pageIndex: 2,
             senderID: "remote-user",
             background: PageBackground.kraft.rawValue
         ))
-        #expect(viewModel.pages.count == 2)
-        #expect(viewModel.pages[1].pageBackground == .kraft)
+        #expect(viewModel.pages.count == 3)
+        #expect(viewModel.pages[2].pageBackground == .kraft)
 
         // 2. Simulate remote item placed on page 0
         let itemID = UUID()

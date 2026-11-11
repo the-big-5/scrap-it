@@ -78,13 +78,12 @@ final class PencilController {
     var opacity: Double = 1 { didSet { applyTool() } }
     /// Size + opacity panel above the Pencil tray.
     var showsSizePanel = false
-    private(set) var canUndo = false
 
-    @ObservationIgnored weak var canvas: PKCanvasView?
-    /// Called after each stroke and undo with the drawing data (`nil` = no strokes left).
-    @ObservationIgnored var onDrawingChanged: ((Data?) -> Void)?
-    @ObservationIgnored private var history: [PKDrawing] = []
-    @ObservationIgnored private var current = PKDrawing()
+    /// One canvas per page being drawn on (change 025: both pages of the spread), by page id.
+    @ObservationIgnored private var canvases: [UUID: PKCanvasView] = [:]
+    /// Called after each stroke with the page and its drawing data (`nil` = no strokes left). Undo / redo live in the
+    /// editor ViewModel for every change (change 025).
+    @ObservationIgnored var onDrawingChanged: ((UUID, Data?) -> Void)?
     @ObservationIgnored private var isRestoring = false
 
     /// The eraser only erases where the finger passes (`.bitmap`), not whole strokes.
@@ -101,49 +100,29 @@ final class PencilController {
         }
     }
 
-    func attach(_ canvas: PKCanvasView, drawing: PKDrawing) {
-        self.canvas = canvas
-        current = drawing
-        history = []
-        canUndo = false
+    func attach(_ canvas: PKCanvasView, drawing: PKDrawing, pageID: UUID) {
+        canvases[pageID] = canvas
         isRestoring = true
         canvas.drawing = drawing
         isRestoring = false
-        applyTool()
+        canvas.tool = pkTool
     }
 
-    func replaceDrawingFromRemote(_ drawing: PKDrawing) {
-        current = drawing
+    /// A friend's strokes, or undo / redo: the canvas shows the stored drawing without reporting a change.
+    func replaceDrawing(_ drawing: PKDrawing, pageID: UUID) {
         isRestoring = true
-        canvas?.drawing = drawing
+        canvases[pageID]?.drawing = drawing
         isRestoring = false
     }
 
-    func detach() {
-        canvas = nil
-        history = []
-        canUndo = false
+    func detach(pageID: UUID, canvas: PKCanvasView) {
+        if canvases[pageID] === canvas { canvases[pageID] = nil }
     }
 
-    func drawingDidChange(_ drawing: PKDrawing) {
+    func drawingDidChange(_ drawing: PKDrawing, pageID: UUID) {
         guard !isRestoring else { return }
         showsSizePanel = false
-        history.append(current)
-        if history.count > 50 { history.removeFirst() }
-        current = drawing
-        canUndo = true
-        onDrawingChanged?(Self.data(of: drawing))
-    }
-
-    /// Undoes the last stroke of the active layer. No redo.
-    func undo() {
-        guard let previous = history.popLast() else { return }
-        current = previous
-        isRestoring = true
-        canvas?.drawing = previous
-        isRestoring = false
-        canUndo = !history.isEmpty
-        onDrawingChanged?(Self.data(of: previous))
+        onDrawingChanged?(pageID, Self.data(of: drawing))
     }
 
     private static func data(of drawing: PKDrawing) -> Data? {
@@ -151,6 +130,7 @@ final class PencilController {
     }
 
     private func applyTool() {
-        canvas?.tool = pkTool
+        let tool = pkTool
+        for canvas in canvases.values { canvas.tool = tool }
     }
 }
