@@ -233,4 +233,17 @@ import UIKit
             simulatedLandscapeSide: .right
         ) == 0.0)
     }
+
+    // MARK: - Viewfinder dimensions (change 071)
+
+    @Test func viewfinderDimensionsAreFixedTo4x3LandscapeInCameraBody() {
+        let dims = RollCameraOrientation.viewfinderDimensions
+        #expect(dims.outerHeight == 251.0)
+        #expect(dims.innerHeight == 235.0)
+        #expect(abs((dims.innerWidth / dims.innerHeight) - (4.0 / 3.0)) < 0.0001)
+        #expect(dims.outerWidth == dims.innerWidth + 20.0)
+        // When the camera body is physically held in portrait, width and height swap relative to user
+        let userPortraitAspect = dims.innerHeight / dims.innerWidth
+        #expect(abs(userPortraitAspect - (3.0 / 4.0)) < 0.0001)
+    }
 }

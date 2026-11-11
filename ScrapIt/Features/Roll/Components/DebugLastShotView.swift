@@ -14,7 +14,7 @@ struct DebugLastShotView: View {
                 if let photo {
                     VStack(spacing: 12) {
                         LivePhotoPlayerView(imageData: photo.imageData, movieData: photo.livePhotoMovieData)
-                            .aspectRatio(4 / 3, contentMode: .fit)
+                            .aspectRatio(contentMode: .fit)
                         Text(statusText(for: photo))
                             .font(.footnote)
                             .foregroundStyle(.secondary)

@@ -420,7 +420,8 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
                                     return
                                 }
                                 let filtered = self.photoPipeline.apply(look, to: image, forFinalPhoto: true)
-                                continuation.resume(returning: CapturedPhoto(image: filtered, liveMovie: liveMovie))
+                                let cropped = FilmPhotoEncoder.cropToStandardAspectRatio(filtered)
+                                continuation.resume(returning: CapturedPhoto(image: cropped, liveMovie: liveMovie))
                             }
                         }
                     })

@@ -160,6 +160,25 @@ struct CaptureSessionView: View {
     /// Leading margin offset for viewfinder and controls to clear the Dynamic Island in landscape.
     private let viewfinderLeadingOffset: CGFloat = 64
 
+    private var isPortraitDevice: Bool {
+        deviceOrientation.isPortrait
+    }
+
+    /// Fixed viewfinder dimensions (333.33 x 251 outer, 313.33 x 235 inner 4:3 preview in landscape,
+    /// which naturally orients to 3:4 portrait when held upright in portrait).
+    private var viewfinderWidth: CGFloat {
+        RollCameraOrientation.viewfinderDimensions.outerWidth
+    }
+
+    private var viewfinderHeight: CGFloat {
+        RollCameraOrientation.viewfinderDimensions.outerHeight
+    }
+
+    /// Center X for viewfinder bay between offset 64 and shutter well 567.
+    private var viewfinderCenterX: CGFloat {
+        64.0 + (503.0 / 2.0)
+    }
+
     private func cameraCanvas(isPortrait: Bool) -> some View {
         ZStack(alignment: .topLeading) {
             // 1. Textured Camera Body Shape from Figma (1302:47937)
@@ -170,13 +189,13 @@ struct CaptureSessionView: View {
 
             // 2. Screen Bezel & Live Preview (1302:47969)
             screenBezelView(isPortraitWindow: isPortrait)
-                .frame(width: 487, height: 251)
-                .position(x: viewfinderLeadingOffset + 487 / 2, y: 97 + 251 / 2)
+                .frame(width: viewfinderWidth, height: viewfinderHeight)
+                .position(x: viewfinderCenterX, y: 97 + viewfinderHeight / 2)
 
             // 3. Bottom Controls Row (Flash, Live, Flip) with Equal Spacing
             bottomControlsRow
-                .frame(width: 487, height: 32)
-                .position(x: viewfinderLeadingOffset + 487 / 2, y: 380)
+                .frame(width: viewfinderWidth, height: 32)
+                .position(x: viewfinderCenterX, y: 380)
 
             // 4. Shutter Well & Button (1302:47961)
             shutterWellView
@@ -319,7 +338,6 @@ struct CaptureSessionView: View {
                     .allowsHitTesting(false)
 
                 // Viewfinder HUD
-                // Viewfinder HUD
                 viewfinderHUD(isPortraitWindow: isPortraitWindow)
 
                 // Mechanical Iris Diaphragm Overlay (aperture blades constricting on camera switch)
@@ -329,7 +347,7 @@ struct CaptureSessionView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
-        .frame(width: 487, height: 251)
+        .frame(width: viewfinderWidth, height: viewfinderHeight)
     }
 
     private func viewfinderHUD(isPortraitWindow: Bool) -> some View {
@@ -360,7 +378,8 @@ struct CaptureSessionView: View {
             // 3. Action and Debug Buttons
             actionButtonsOverlay(hudRotation: hudRotation, isPortraitDevice: isPortraitDevice)
         }
-        .frame(width: 467, height: 235)
+        .frame(width: RollCameraOrientation.viewfinderDimensions.innerWidth,
+               height: RollCameraOrientation.viewfinderDimensions.innerHeight)
     }
 
     @ViewBuilder

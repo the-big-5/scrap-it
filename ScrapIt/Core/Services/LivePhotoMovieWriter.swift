@@ -15,6 +15,38 @@ nonisolated enum LivePhotoMovieWriter {
     /// Average bitrate target: ~2.5 Mbps (change 014: ~80% size reduction over unconstrained video).
     static let targetAverageBitRate: Int = 2_500_000
 
+    /// Calculates center crop rect to ensure video adheres to 4:3 (landscape) or 3:4 (portrait) aspect ratio.
+    static func cropRect(for naturalSize: CGSize, transform: CGAffineTransform) -> (cropRect: CGRect?, targetRawSize: CGSize) {
+        let transformedSize = naturalSize.applying(transform)
+        let effectiveWidth = abs(transformedSize.width)
+        let effectiveHeight = abs(transformedSize.height)
+        guard effectiveWidth > 0, effectiveHeight > 0 else {
+            return (nil, naturalSize)
+        }
+        let isPortraitVideo = effectiveHeight > effectiveWidth
+        let isRotated = abs(transform.b) > 0.1
+        let rawTargetAspect: CGFloat = isRotated
+            ? (isPortraitVideo ? (4.0 / 3.0) : (3.0 / 4.0))
+            : (isPortraitVideo ? (3.0 / 4.0) : (4.0 / 3.0))
+
+        let currentAspect = naturalSize.width / naturalSize.height
+        if abs(currentAspect - rawTargetAspect) < 0.005 {
+            return (nil, naturalSize)
+        }
+
+        if currentAspect > rawTargetAspect {
+            let newWidth = naturalSize.height * rawTargetAspect
+            let originX = (naturalSize.width - newWidth) / 2.0
+            let rect = CGRect(x: originX, y: 0, width: newWidth, height: naturalSize.height)
+            return (rect, CGSize(width: newWidth, height: naturalSize.height))
+        } else {
+            let newHeight = naturalSize.width / rawTargetAspect
+            let originY = (naturalSize.height - newHeight) / 2.0
+            let rect = CGRect(x: 0, y: originY, width: naturalSize.width, height: newHeight)
+            return (rect, CGSize(width: naturalSize.width, height: newHeight))
+        }
+    }
+
     static func constrainedDimensions(from naturalSize: CGSize, maxDimension: CGFloat = maxVideoDimension) -> (width: Int, height: Int, scaleX: CGFloat, scaleY: CGFloat) {
         let rawWidth = naturalSize.width
         let rawHeight = naturalSize.height
@@ -45,7 +77,8 @@ nonisolated enum LivePhotoMovieWriter {
             throw LivePhotoMovieError.noVideoTrack
         }
         let (naturalSize, transform) = try await track.load(.naturalSize, .preferredTransform)
-        let (width, height, scaleX, scaleY) = constrainedDimensions(from: naturalSize)
+        let (crop, targetRawSize) = cropRect(for: naturalSize, transform: transform)
+        let (width, height, scaleX, scaleY) = constrainedDimensions(from: targetRawSize)
 
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
@@ -97,7 +130,7 @@ nonisolated enum LivePhotoMovieWriter {
         let copier = FrameCopier(reader: reader, output: output, writer: writer, videoInput: videoInput,
                                  adaptor: adaptor, firstSample: firstSample, look: look,
                                  bounds: CGRect(x: 0, y: 0, width: width, height: height),
-                                 scaleX: scaleX, scaleY: scaleY)
+                                 scaleX: scaleX, scaleY: scaleY, cropRect: crop)
         try await copier.run()
 
         await writer.finishWriting()
@@ -118,6 +151,7 @@ nonisolated enum LivePhotoMovieWriter {
         private let bounds: CGRect
         private let scaleX: CGFloat
         private let scaleY: CGFloat
+        private let cropRect: CGRect?
         private let pipeline = FilmFilterPipeline()
         private let context = RenderContext.ciContext
         private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
@@ -128,7 +162,7 @@ nonisolated enum LivePhotoMovieWriter {
         init(reader: AVAssetReader, output: AVAssetReaderTrackOutput, writer: AVAssetWriter,
              videoInput: AVAssetWriterInput, adaptor: AVAssetWriterInputPixelBufferAdaptor,
              firstSample: CMSampleBuffer, look: FilmLook, bounds: CGRect,
-             scaleX: CGFloat, scaleY: CGFloat) {
+             scaleX: CGFloat, scaleY: CGFloat, cropRect: CGRect? = nil) {
             self.reader = reader
             self.output = output
             self.writer = writer
@@ -139,6 +173,7 @@ nonisolated enum LivePhotoMovieWriter {
             self.bounds = bounds
             self.scaleX = scaleX
             self.scaleY = scaleY
+            self.cropRect = cropRect
         }
 
         func run() async throws {
@@ -165,7 +200,12 @@ nonisolated enum LivePhotoMovieWriter {
                     finish(LivePhotoMovieError.writeFailed)
                     return
                 }
-                let filtered = pipeline.apply(look, to: CIImage(cvPixelBuffer: source))
+                let sourceCI = CIImage(cvPixelBuffer: source)
+                let cropped = cropRect.map {
+                    sourceCI.cropped(to: $0)
+                        .transformed(by: CGAffineTransform(translationX: -$0.origin.x, y: -$0.origin.y))
+                } ?? sourceCI
+                let filtered = pipeline.apply(look, to: cropped)
                 let target = (scaleX == 1.0 && scaleY == 1.0)
                     ? filtered
                     : filtered.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))

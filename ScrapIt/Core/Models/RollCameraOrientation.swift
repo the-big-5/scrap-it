@@ -207,4 +207,15 @@ enum RollCameraOrientation {
     static func effectiveCameraAngle(baseAngle: CGFloat, side: LandscapeSide) -> CGFloat {
         effectiveCameraAngle(baseAngle: baseAngle, delta: side.cameraAngleDelta)
     }
+
+    /// Fixed viewfinder bezel and inner preview dimensions in camera canvas points (change 071).
+    /// Fixed 4:3 landscape in camera body coordinates (inner 313.33 x 235, outer 333.33 x 251),
+    /// which naturally orients to 3:4 portrait relative to the user when held upright in portrait.
+    static let viewfinderDimensions: (outerWidth: CGFloat, outerHeight: CGFloat, innerWidth: CGFloat, innerHeight: CGFloat) = {
+        let innerHeight: CGFloat = 235.0
+        let innerWidth: CGFloat = innerHeight * 4.0 / 3.0
+        let outerWidth: CGFloat = innerWidth + 20.0
+        let outerHeight: CGFloat = 251.0
+        return (outerWidth, outerHeight, innerWidth, innerHeight)
+    }()
 }
