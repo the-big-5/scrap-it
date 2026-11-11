@@ -76,7 +76,7 @@ ScrapIt/
 │   │                   CutGeometry, ScrapbookItemLayout, ScrapbookImageLoader, LiveMovieFileCache, LivePlaybackCoordinator, DeletedScrapbookList,
 │   │                   DigicamGrade, FilterSamplePhotos (+ FilterSampleRenderer), ProfileAvatarProcessor
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle, CircleIconButton, LivePhotoPlayerView,
-│                       Scrapbook/ (ScrapbookPageView, ScrapbookItemView, PageBackgroundView, LoopingVideoView, ScrapbookDrawingImage, ViewFrameReader, WashiTapeView, TextItemAppearance)
+│                       Scrapbook/ (ScrapbookPageView, ScrapbookItemView, PageBackgroundView, LoopingVideoView, ScrapbookDrawingImage, ViewFrameReader, WashiTapeView, TextItemAppearance, BookSpineArt)
 └── Features/
     ├── Auth/           WelcomeSignInView, AuthViewModel
     ├── Home/           WorkbenchView, WorkbenchViewModel, WorkbenchLayout (desk asset frames, uniform scale)
@@ -115,7 +115,7 @@ Stored with SwiftData. Only Profile syncs to the user's private CloudKit databas
 - title, cover photo, created date
 - photos (list; the caption field stays in the model but is not shown since change 013)
 - members: all members are equal co-owners (no single owner)
-- pages and sticker sheets (change 013, this device only); tools whose hint was already shown (change 022); cover color, locked (+ date), pages finished on this phone, members done editing (change 026)
+- pages and sticker sheets (change 013, this device only); tools whose hint was already shown (change 022); cover color, locked (+ date), pages finished on this phone, members done editing (change 026); cover color picked (change 103: until then the default blue is shown)
 
 ### ScrapbookPage (change 013) [Draft]
 - order, background, items, role (`nil` page, `front`, `spine`; cover sides stay out of spreads, change 026). Max 40 items (change 022). Shown two per spread (page index / 2); a scrapbook always has an even page count (change 025). The old page drawing field is only read to move it into a layer

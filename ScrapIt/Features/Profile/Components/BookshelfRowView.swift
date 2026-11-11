@@ -27,7 +27,7 @@ struct BookshelfRowView: View {
                         Button {
                             onOpen(entry.scrapbook)
                         } label: {
-                            BookSpineView(title: entry.scrapbook.title, style: entry.style)
+                            BookSpineView(scrapbook: entry.scrapbook)
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
@@ -52,37 +52,25 @@ struct BookshelfRowView: View {
     }
 }
 
+/// A scrapbook's spine as made in Edit Cover (change 103): the spine art in the cover color with the spine's items
+/// (pencil, stickers, text) on top. Nothing on it when the spine was never decorated.
 private struct BookSpineView: View {
     static let aspectRatio: CGFloat = 23.68 / 147.84
 
-    let title: String
-    let style: BookSpineStyle
+    let scrapbook: Scrapbook
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 1.28, style: .continuous)
-
-        DSColorToken(style.backgroundHex).color
-            .aspectRatio(Self.aspectRatio, contentMode: .fit)
-            .overlay {
-                Image("BookSpineTexture")
-                    .resizable()
+        ZStack {
+            BookSpineArt(colorHex: scrapbook.displayedCoverColorHex)
+            if let spine = scrapbook.coverPage(.spine) {
+                ScrapbookPageView(page: spine, photos: [:], photoAspect: { _ in nil },
+                                  aspectRatio: ScrapbookPage.Role.spine.aspectRatio, drawsBackground: false)
+                    .allowsHitTesting(false)
             }
-            .overlay {
-                GeometryReader { proxy in
-                    Text(title)
-                        .dsTypography(DSTypographyToken(family: .architectsDaughter, weight: .regular, size: 9.6, lineHeight: 11))
-                        .foregroundStyle(DSColorToken(style.titleHex))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(width: max(proxy.size.height - 24, 36))
-                        .rotationEffect(.degrees(-90))
-                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-                }
-            }
-            .clipShape(shape)
-            .overlay(
-                shape.strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5)
-            )
-            .contentShape(Rectangle())
+        }
+        .aspectRatio(Self.aspectRatio, contentMode: .fit)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(scrapbook.title)
     }
 }

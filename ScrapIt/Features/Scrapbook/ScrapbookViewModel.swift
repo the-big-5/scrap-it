@@ -261,6 +261,9 @@ final class ScrapbookViewModel {
 
     var pages: [ScrapbookPage] { scrapbook?.sortedPages ?? [] }
 
+    /// The book's pages plus the cover sides (front, spine), for lookups by page ID (change 026).
+    private var pagesAndCover: [ScrapbookPage] { scrapbook?.pages ?? [] }
+
     /// The active page, or the cover side being decorated (change 026).
     var currentPage: ScrapbookPage? {
         (scrapbook?.pages ?? []).first { $0.id == currentPageID } ?? pages.first
@@ -462,7 +465,7 @@ final class ScrapbookViewModel {
         }
     }
 
-    var coverColorHex: String { scrapbook?.coverColorHex ?? "#FFFFFF" }
+    var coverColorHex: String { scrapbook?.displayedCoverColorHex ?? Scrapbook.defaultCoverColorHex }
 
     func coverPage(_ role: ScrapbookPage.Role) -> ScrapbookPage? {
         scrapbook?.coverPage(role)
@@ -527,8 +530,9 @@ final class ScrapbookViewModel {
 
     /// The color picker under the cover; the texture stays visible over any color.
     func setCoverColor(_ hex: String) {
-        guard let scrapbook, !isReadOnly, scrapbook.coverColorHex != hex else { return }
+        guard let scrapbook, !isReadOnly, !(scrapbook.coverColorPicked && scrapbook.coverColorHex == hex) else { return }
         scrapbook.coverColorHex = hex
+        scrapbook.coverColorPicked = true
         if save() {
             broadcast(ScrapbookEvent(type: .coverColor, pageIndex: Self.frontCoverEventIndex, senderID: senderID,
                                      coverColor: hex))
@@ -992,6 +996,11 @@ final class ScrapbookViewModel {
         isTrayOpen = false
     }
 
+    /// Edit Cover: swiping the second tray down puts the tool away; the main tray stays.
+    func closeSubTray() {
+        setActiveTool(nil)
+    }
+
     func selectTrayTool(_ tool: ScrapbookTool) {
         selectedItemID = nil
         switch tool {
@@ -1113,6 +1122,9 @@ final class ScrapbookViewModel {
     // MARK: - Washi
 
     func selectWashi(_ style: WashiStyle) {
+        // A swipe down that starts on a roll also lands as a tap after the tray closed (Edit Cover); with the
+        // Washi tool put away, a roll can't be picked.
+        guard activeTool == .washi else { return }
         setWashi(washiStyleID == style.id ? nil : style.id)
     }
 
@@ -1273,11 +1285,14 @@ final class ScrapbookViewModel {
             return false
         }
         recordUndo()
+        // On the narrow spine a sheet-sized sticker would already be wider than the spine and couldn't grow; it lands
+        // at 60% of the spine's width so it can still be made bigger (change 103).
+        let isSpine = page.role == ScrapbookPage.Role.spine.rawValue
         let item = ScrapbookItem(
             stickerID: sticker.id,
             centerX: (center.x - pageFrame.minX) / pageFrame.width,
             centerY: (center.y - pageFrame.minY) / pageFrame.height,
-            width: width / pageFrame.width,
+            width: isSpine ? min(width / pageFrame.width, 0.6) : width / pageFrame.width,
             rotation: rotation,
             zIndex: page.maxZIndex + 1
         )
@@ -1415,7 +1430,7 @@ final class ScrapbookViewModel {
 
     private func drawingLayer(onPage pageID: UUID) -> ScrapbookItem? {
         guard let id = drawingLayerIDs[pageID] else { return nil }
-        return pages.first { $0.id == pageID }?.allItems.first { $0.id == id }
+        return pagesAndCover.first { $0.id == pageID }?.allItems.first { $0.id == id }
     }
 
     func drawingData(onPage pageID: UUID) -> Data? {
@@ -1450,7 +1465,7 @@ final class ScrapbookViewModel {
         let pending = pendingDrawingLayerIDs
         pendingDrawingLayerIDs.removeAll()
         guard save() else { return }
-        for item in pages.flatMap(\.allItems) where pending.contains(item.id) {
+        for item in pagesAndCover.flatMap(\.allItems) where pending.contains(item.id) {
             broadcastDrawingUpdated(item)
         }
     }
@@ -1463,7 +1478,7 @@ final class ScrapbookViewModel {
         drawingLayerIDs.removeAll()
         if hintTool == .pencil { hintTool = nil }
         for (pageID, itemID) in layers {
-            guard let page = pages.first(where: { $0.id == pageID }),
+            guard let page = pagesAndCover.first(where: { $0.id == pageID }),
                   let item = page.allItems.first(where: { $0.id == itemID }),
                   item.drawingData?.isEmpty != false else { continue }
             pendingDrawingLayerIDs.remove(itemID)
@@ -1476,10 +1491,9 @@ final class ScrapbookViewModel {
     }
 
     private func broadcastDrawingUpdated(_ item: ScrapbookItem) {
-        let pageIndex = pages.firstIndex { $0.id == item.page?.id } ?? currentIndex
         broadcast(ScrapbookEvent(
             type: .drawingUpdated,
-            pageIndex: pageIndex,
+            pageIndex: pageIndex(of: item.page),
             senderID: senderID,
             itemID: item.id,
             zIndex: item.zIndex,
@@ -1858,6 +1872,7 @@ final class ScrapbookViewModel {
         case .coverColor:
             guard let hex = event.coverColor, let scrapbook else { return }
             scrapbook.coverColorHex = hex
+            scrapbook.coverColorPicked = true
             save()
 
         case .stickerSheetReset:

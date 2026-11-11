@@ -3,30 +3,8 @@ import Foundation
 import Observation
 import SwiftData
 
-struct BookSpineStyle: Equatable, Sendable {
-    let backgroundHex: UInt32
-    let titleHex: UInt32
-
-    /// Exact 12-color book spine palette from Figma `1300:36434` (`1515:30880`..`1515:31233`).
-    static let palette: [BookSpineStyle] = [
-        BookSpineStyle(backgroundHex: 0xFFFFFF, titleHex: 0x000000),
-        BookSpineStyle(backgroundHex: 0xD68D8D, titleHex: 0x000000),
-        BookSpineStyle(backgroundHex: 0x3045CC, titleHex: 0xFFFFFF),
-        BookSpineStyle(backgroundHex: 0xFAE8C3, titleHex: 0x000000),
-        BookSpineStyle(backgroundHex: 0xFFE0C9, titleHex: 0x000000),
-        BookSpineStyle(backgroundHex: 0xE1803B, titleHex: 0x000000),
-        BookSpineStyle(backgroundHex: 0x2A241F, titleHex: 0xB6B6B6),
-        BookSpineStyle(backgroundHex: 0x32AEBE, titleHex: 0x000000),
-        BookSpineStyle(backgroundHex: 0x4A161A, titleHex: 0xFFFFFF),
-        BookSpineStyle(backgroundHex: 0xCE6A82, titleHex: 0x000000),
-        BookSpineStyle(backgroundHex: 0xFAE8C3, titleHex: 0xFFFFFF),
-        BookSpineStyle(backgroundHex: 0x1B344E, titleHex: 0xFFFFFF)
-    ]
-}
-
 struct BookshelfItem: Identifiable {
     let scrapbook: Scrapbook
-    let style: BookSpineStyle
     var id: UUID { scrapbook.id }
 }
 
@@ -213,19 +191,15 @@ final class ProfileViewModel {
         navigator?.push(.createRollSetup)
     }
 
-    /// Groups scrapbooks into wooden shelf rows of up to `booksPerShelf` (12) spines, cycling deterministically across the 12 Figma colors.
+    /// Groups scrapbooks into wooden shelf rows of up to `booksPerShelf` (12) spines; each spine is the one made in Edit Cover (change 103).
     var shelfRows: [[BookshelfItem]] {
         guard !scrapbooks.isEmpty else { return [] }
         return stride(from: 0, to: scrapbooks.count, by: Self.booksPerShelf).map { start in
             let end = min(start + Self.booksPerShelf, scrapbooks.count)
             return (start..<end).map { index in
-                BookshelfItem(scrapbook: scrapbooks[index], style: spineStyle(at: index))
+                BookshelfItem(scrapbook: scrapbooks[index])
             }
         }
-    }
-
-    func spineStyle(at index: Int) -> BookSpineStyle {
-        BookSpineStyle.palette[abs(index) % BookSpineStyle.palette.count]
     }
 
     func requestDelete(_ scrapbook: Scrapbook) {

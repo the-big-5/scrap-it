@@ -117,12 +117,21 @@ struct ScrapbookBookView: View {
         }
         .padding(.horizontal, 7.4 * scale)
         .padding(.vertical, 4.75 * scale)
-        // Cover: plain navy for now; the cover design isn't ready [Open].
+        // Cover: the scrapbook's cover color (Edit Cover, change 026) with the cover grain and inner shadow.
         .background(
-            RoundedRectangle(cornerRadius: 4.7 * scale)
-                .fill(LinearGradient(colors: [Color(red: 0.17, green: 0.22, blue: 0.47), Color(red: 0.12, green: 0.15, blue: 0.34)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .shadow(color: Color(red: 41 / 255, green: 26 / 255, blue: 10 / 255).opacity(0.35), radius: 2, y: 1)
+            ZStack {
+                Color(coverHex: viewModel.coverColorHex)
+                Image("BookCoverTexture")
+                    .resizable(resizingMode: .tile)
+                    .blendMode(.overlay)
+                    .opacity(0.55)
+                RoundedRectangle(cornerRadius: 4.7 * scale)
+                    .stroke(Color.black.opacity(0.3), lineWidth: 7 * scale)
+                    .blur(radius: 7 * scale)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 4.7 * scale))
+            .compositingGroup()
+            .shadow(color: Color(red: 41 / 255, green: 26 / 255, blue: 10 / 255).opacity(0.35), radius: 2, y: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {

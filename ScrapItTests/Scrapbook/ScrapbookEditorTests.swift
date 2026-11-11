@@ -1173,10 +1173,93 @@ struct ScrapbookCoverTests {
         #expect(vm.coverActions == .finished)
     }
 
+    @Test func unpickedCoverShowsTheDefaultBlueAndAPickedWhiteStays() async throws {
+        scrapbook.coverColorHex = "#FFFFFF"
+        let vm = makeEditor(as: guest)
+        await vm.connectRealtime()
+        #expect(vm.coverColorHex == Scrapbook.defaultCoverColorHex)
+        #expect(scrapbook.displayedCoverColorHex == Scrapbook.defaultCoverColorHex)
+
+        vm.setCoverColor("#FFFFFF")
+        #expect(scrapbook.coverColorPicked)
+        #expect(vm.coverColorHex == "#FFFFFF")
+        #expect(scrapbook.displayedCoverColorHex == "#FFFFFF")
+    }
+
+    @Test func aFriendsPickedColorCounts() async throws {
+        scrapbook.coverColorHex = "#FFFFFF"
+        let vm = makeEditor(as: guest)
+        await vm.connectRealtime()
+        realtime.simulateIncomingEvent(ScrapbookEvent(type: .coverColor, pageIndex: -1, senderID: "host-1", coverColor: "#FFFFFF"))
+        #expect(scrapbook.coverColorPicked)
+        #expect(vm.coverColorHex == "#FFFFFF")
+    }
+
+    @Test func pencilStrokesOnTheCoverAreKept() async throws {
+        let vm = makeEditor(as: host)
+        vm.finishScrapbook()
+        vm.editCover()
+        for side in [CoverSide.front, .spine] {
+            if side == .spine { vm.showSpine() }
+            #expect(vm.beginDrawing())
+            let page = try #require(vm.coverPage(side.role))
+            vm.updateDrawing(Data("strokes".utf8), onPage: page.id)
+            vm.endDrawing()
+            #expect(page.allItems.contains { $0.kind == .drawing && $0.drawingData == Data("strokes".utf8) })
+        }
+    }
+
+    @Test func aStickerOnTheSpineCanStillGrow() throws {
+        let vm = makeEditor(as: host)
+        vm.finishScrapbook()
+        vm.editCover()
+        vm.showSpine()
+        vm.toggleStickerSheet(StickerCatalog.travel)
+        let sticker = try #require(vm.stickerSet.stickers.first)
+        let frame = CGRect(x: 0, y: 0, width: 74, height: 462)
+        #expect(vm.placeSticker(sticker, center: CGPoint(x: 37, y: 200), width: 90, rotation: 0, pageFrame: frame))
+        let item = try #require(vm.coverPage(.spine)?.allItems.first { $0.kind == .sticker })
+        #expect(item.width < item.widthRange.upperBound)
+    }
+
+    @Test func closingTheSecondTrayKeepsTheCoverTrayOpen() {
+        let vm = makeEditor(as: host)
+        vm.finishScrapbook()
+        vm.editCover()
+        vm.selectTrayTool(.pencil)
+        #expect(vm.isDrawing)
+        vm.closeSubTray()
+        #expect(vm.activeTool == nil)
+        #expect(!vm.isDrawing)
+        #expect(vm.isTrayOpen)
+    }
+
+    @Test func closingTheTrayPutsTheWashiAway() throws {
+        let style = try #require(WashiCatalog.styles.first)
+        let vm = makeEditor(as: host)
+        vm.openSpread()
+        vm.openTray()
+        vm.selectTrayTool(.washi)
+        vm.selectWashi(style)
+        #expect(vm.washiStyleID == style.id)
+        vm.closeTray()
+        #expect(vm.washiStyleID == nil)
+
+        vm.openTray()
+        vm.selectTrayTool(.washi)
+        vm.selectWashi(style)
+        vm.closeSubTray()
+        #expect(vm.washiStyleID == nil)
+
+        // The tap of the swipe that closed the tray arrives late: no washi.
+        vm.selectWashi(style)
+        #expect(vm.washiStyleID == nil)
+    }
+
     @Test func coverColorIsSavedAndShared() async throws {
         let vm = makeEditor(as: guest)
         await vm.connectRealtime()
-        #expect(vm.coverColorHex == "#FFFFFF")
+        #expect(vm.coverColorHex == "#303D6E")
         vm.setCoverColor("#2B3A78")
         #expect(scrapbook.coverColorHex == "#2B3A78")
         try await Task.sleep(for: .milliseconds(50))
