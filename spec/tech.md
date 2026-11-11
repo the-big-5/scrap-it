@@ -14,6 +14,8 @@
 - Third-party libraries: `supabase-swift` (approved for Realtime slot count sync, change 011); only specific ones approved [Locked]
 - Scrapbook drawing: PencilKit (iOS 13+, system framework). The Pencil tray picks the tools (no system tool picker, no reed pen; change 022); drawings are layer items stored in a fixed 600 × 800 space and zoomed to the page; only the layers being drawn (one per page on screen, change 025) are `PKCanvasView`s, the others are cached still images (light ink in dark mode). A page drawing from before 022 moves into one back layer when the page is opened. PaperKit markup (iOS 26) not used (change 013)
 - Scrapbook sync (change 042, 062): all toolbar item kinds (`photo`, Travel and Fun `sticker`, `letter`, `text`, `washi`, `drawing` layers), transforms (`item_transformed`, including Live Photo `loopEnabled`), text edits (`item_text_updated`), scissors cuts and undo (`item_cut`, `item_cut_undone`), item deletions (`item_removed`), shared sticker sheet locks + `"Take a New Sheet"` (`sticker_sheet_reset`), backgrounds (`page_background`), and page add/move/delete (`page_added`, `page_moved`, `page_deleted`) broadcast live via Supabase Realtime (`ScrapbookEvent` / `ScrapbookItemPayload`). Pencil drawing layers sync per `itemID` with Last-Write-Wins (refreshing an active `PKCanvasView` via `remoteDrawingRevision` while keeping `itemID == nil` page-level `drawing_updated` as a legacy fallback). Placed `photoID`s across all scrapbook pages enforce shared single-use slots in `PhotoTray`, and local or remote removal/page deletion restores unused `stickerID` slots in `StickerSheet.usedStickerIDs`.
+- Scrapbook cover and finishing (change 026): cover items use the item events with page index -1 (front) / -2 (spine); new Supabase events `editing_done` (memberID), `scrapbook_locked`, `cover_color`; the CloudKit room zone gets `ScrapbookDone` (one per member, `Done-<userID>`) and `ScrapbookLock` records, read when the editor opens so offline friends count
+- Drawing space by page shape (change 026): 800 high, width by the page's ratio (600 for 3:4 pages), so strokes keep their size on the narrow spine
 - Live Photo loops (change 023): the audio session is set to `.ambient` before a loop plays, so other apps' music keeps playing
 - Scrapbook undo / redo (change 025): one history of the spread's pages (all item fields) and sticker sheet slots per edit view visit; every change on this phone records a step, redo steps clear on a new change; undo / redo is sent with the existing events (`item_placed` / `item_removed` / `item_transformed` / `item_text_updated` / `drawing_updated` / `item_cut`), last write wins. Replaces the cut-only and Pencil-only undo
 - Scrapbook page hint (change 025): "More pages to fill!" is shown once per user (`UserDefaults` key `scrapbookPageHintShown`)
@@ -80,7 +82,8 @@ ScrapIt/
     ├── Home/           WorkbenchView, WorkbenchViewModel, WorkbenchLayout (desk asset frames, uniform scale)
     ├── Profile/        ProfileView, EditProfileView, ProfileViewModel, Components/ (ProfileAvatarView)
     ├── Roll/           CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, RollFlowViewModel, Components/ (InviteFriendSheetView, RollInviteShare, RollAvatarView, RollRoomHeader, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, ShotsLeftDialView, CameraIrisDiaphragmView)
-    └── Scrapbook/      ScrapbookEditorView, ScrapbookViewModel, Components/ (ScrapbookBookView, BookBackConfirmation, WhosHereSheet, SpreadEditorButton,
+    └── Scrapbook/      ScrapbookEditorView, ScrapbookViewModel, Components/ (ScrapbookBookView, ScrapbookCoverScreen, BookCoverViews, BookStarCard,
+                        BookBackConfirmation, WhosHereSheet, SpreadEditorButton,
                         ScissorsToolView, StickerDragController, StickerSheetOverlay, BackgroundPickerView,
                         TrayStyle, ToolTray, TrayScroll, ScrollPanProbe, SubTrays, TrayDragController, PencilController, PencilTray, DrawingCanvasView,
                         WashiPullOverlay, TextItemEditor, ScrapbookPhotoViewer, ScrapbookTrashCanView)
@@ -112,10 +115,10 @@ Stored with SwiftData. Only Profile syncs to the user's private CloudKit databas
 - title, cover photo, created date
 - photos (list; the caption field stays in the model but is not shown since change 013)
 - members: all members are equal co-owners (no single owner)
-- pages and sticker sheets (change 013, this device only); tools whose hint was already shown (change 022)
+- pages and sticker sheets (change 013, this device only); tools whose hint was already shown (change 022); cover color, locked (+ date), pages finished on this phone, members done editing (change 026)
 
 ### ScrapbookPage (change 013) [Draft]
-- order, background, items. Max 40 items (change 022). Shown two per spread (page index / 2); a scrapbook always has an even page count (change 025). The old page drawing field is only read to move it into a layer
+- order, background, items, role (`nil` page, `front`, `spine`; cover sides stay out of spreads, change 026). Max 40 items (change 022). Shown two per spread (page index / 2); a scrapbook always has an even page count (change 025). The old page drawing field is only read to move it into a layer
 
 ### ScrapbookItem (change 013) [Draft]
 - photo id, sticker id, letter id, text + text color, washi id + length + tear seed, or drawing data (change 022; the kind comes from the filled field); center / width (normalized to the page, limits per kind), rotation, z-order, Live motion on / off, scissors cut shape

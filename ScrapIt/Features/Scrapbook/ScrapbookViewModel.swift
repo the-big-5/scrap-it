@@ -47,6 +47,41 @@ struct TextEditorState: Equatable {
 enum ScrapbookEditorMode: Equatable {
     case book
     case edit
+    /// The closed book after Done (change 026).
+    case cover
+    /// Decorating the front cover or the spine (change 026).
+    case editCover
+}
+
+/// The side of the cover being decorated (change 026).
+enum CoverSide: Equatable {
+    case front, spine
+
+    var role: ScrapbookPage.Role {
+        switch self {
+        case .front: .front
+        case .spine: .spine
+        }
+    }
+}
+
+/// The paper cards over the cover screen (change 026).
+enum FinishCard: Equatable {
+    /// Host, someone still In Progress: "Ready to close the scrapbook?"
+    case confirmSave
+    /// Host after saving: "Scrapbook Complete!"
+    case complete
+    /// Participant after Done Editing: "Nice Work!"
+    case niceWork
+}
+
+/// One person in the Editing Progress sheet (change 026).
+struct EditingProgressRow: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let colorHex: String
+    let avatarData: Data?
+    let isMe: Bool
 }
 
 /// Edit view zoom: both pages, or one page filling the screen (change 025).
@@ -86,6 +121,8 @@ final class ScrapbookViewModel {
     static let pageFullMessage = "This page is full"
     static let maxUndoSteps = 50
     static let pageHintShownKey = "scrapbookPageHintShown"
+    /// Text on the spine: font size relative to the spine's width (about 20 pt on the 74 pt Figma spine).
+    static let spineTextSize: Double = 0.27
     /// Taps on letters within this time line up to the right (change 022).
     static let letterRunInterval: TimeInterval = 3
 
@@ -111,6 +148,14 @@ final class ScrapbookViewModel {
     private(set) var showsPageHint: Bool
     var isBackConfirmationPresented = false
     var isWhosHerePresented = false
+    // Cover and finishing (change 026)
+    private(set) var coverSide: CoverSide = .front
+    private(set) var finishCard: FinishCard?
+    var isEditingProgressPresented = false
+    /// Members' profile photos from the room (change 044 `RollParticipant` avatars), so friends who aren't
+    /// online still show their photo (change 026).
+    private(set) var memberAvatars: [String: Data] = [:]
+    @ObservationIgnored private let roomService: (any RollRoomServicing)?
     @ObservationIgnored private let defaults: UserDefaults
     // Undo / redo for every change in the edit view (change 025)
     private var undoStack: [EditorSnapshot] = []
@@ -158,8 +203,10 @@ final class ScrapbookViewModel {
         realtimeService: (any ScrapbookRealtimeProviding)? = nil,
         playback: LivePlaybackCoordinator = .shared,
         imageLoader: ScrapbookImageLoader = .shared,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        roomService: (any RollRoomServicing)? = nil
     ) {
+        self.roomService = roomService
         self.defaults = defaults
         let showsHint = !defaults.bool(forKey: Self.pageHintShownKey)
         showsPageHint = showsHint
@@ -202,6 +249,10 @@ final class ScrapbookViewModel {
         if currentPageID == nil || !currentSpreadPages.contains(where: { $0.id == currentPageID }) {
             currentPageID = currentSpreadPages.first?.id
         }
+        // Done with the pages, finished, or locked: it opens on the closed book (change 026).
+        if mode == .book, hasFinishedPages || isReadOnly {
+            mode = .cover
+        }
     }
 
     var title: String { scrapbook?.title ?? "" }
@@ -210,8 +261,9 @@ final class ScrapbookViewModel {
 
     var pages: [ScrapbookPage] { scrapbook?.sortedPages ?? [] }
 
+    /// The active page, or the cover side being decorated (change 026).
     var currentPage: ScrapbookPage? {
-        pages.first { $0.id == currentPageID } ?? pages.first
+        (scrapbook?.pages ?? []).first { $0.id == currentPageID } ?? pages.first
     }
 
     var currentIndex: Int {
@@ -221,8 +273,25 @@ final class ScrapbookViewModel {
     var isCurrentPageFull: Bool { (currentPage?.allItems.count ?? 0) >= ScrapbookPage.maxItems }
     var remainingSlots: Int { ScrapbookPage.maxItems - (currentPage?.allItems.count ?? 0) }
 
+    /// Index sent to friends: the page's place in the book, or -1 / -2 for the front cover / spine (change 026).
     private func pageIndex(of page: ScrapbookPage?) -> Int {
-        pages.firstIndex { $0.id == page?.id } ?? currentIndex
+        switch page?.role.flatMap(ScrapbookPage.Role.init(rawValue:)) {
+        case .front: Self.frontCoverEventIndex
+        case .spine: Self.spineEventIndex
+        case nil: pages.firstIndex { $0.id == page?.id } ?? currentIndex
+        }
+    }
+
+    static let frontCoverEventIndex = -1
+    static let spineEventIndex = -2
+
+    /// The page a friend's event is about: a page of the book, or the front cover / spine.
+    private func page(atEventIndex index: Int) -> ScrapbookPage? {
+        switch index {
+        case Self.frontCoverEventIndex: coverPage(.front)
+        case Self.spineEventIndex: coverPage(.spine)
+        default: pages.indices.contains(index) ? pages[index] : nil
+        }
     }
 
     /// Adds an empty page at the end (same background as the last page) and tells friends.
@@ -258,7 +327,8 @@ final class ScrapbookViewModel {
     func swipeSpread(by delta: Int) {
         dismissPageHint()
         let target = spreadIndex + delta
-        if delta > 0, target >= spreadCount {
+        // Reading a finished book never adds pages (change 026).
+        if delta > 0, target >= spreadCount, isBookEditable {
             appendPage()
             appendPage()
         }
@@ -276,8 +346,12 @@ final class ScrapbookViewModel {
         defaults.set(true, forKey: Self.pageHintShownKey)
     }
 
+    /// The pages can still change: not done with them, and not locked (change 026).
+    var isBookEditable: Bool { !hasFinishedPages && !isReadOnly }
+
     /// Tapping the book zooms into the edit view for the spread on screen, showing both pages.
     func openSpread() {
+        guard isBookEditable else { return }
         dismissPageHint()
         zoom = .spread
         currentPageID = leftPage?.id
@@ -318,10 +392,13 @@ final class ScrapbookViewModel {
 
     /// Pages that take touches in the edit view: the zoomed page, or both pages of the spread.
     var editablePages: [ScrapbookPage] {
+        if mode == .editCover {
+            return coverPage(coverSide.role).map { [$0] } ?? []
+        }
         switch zoom {
-        case .spread: currentSpreadPages
-        case .left: leftPage.map { [$0] } ?? []
-        case .right: (rightPage ?? leftPage).map { [$0] } ?? []
+        case .spread: return currentSpreadPages
+        case .left: return leftPage.map { [$0] } ?? []
+        case .right: return (rightPage ?? leftPage).map { [$0] } ?? []
         }
     }
 
@@ -344,8 +421,270 @@ final class ScrapbookViewModel {
         goBack()
     }
 
-    /// Done in the book view: its action comes in a later change.
-    func finishScrapbook() {}
+    // MARK: - Cover and finishing (change 026)
+
+    /// The roll's host saves the scrapbook; participants mark themselves done.
+    var isHost: Bool {
+        guard let sessionID = scrapbook?.sourceSessionID,
+              let session = (try? modelContext.fetch(FetchDescriptor<CaptureSession>(predicate: #Predicate { $0.id == sessionID })))?.first
+        else { return true }
+        return session.hostUserID == senderID
+    }
+
+    var hasFinishedPages: Bool { scrapbook?.hasFinishedPages ?? false }
+    var isLocked: Bool { scrapbook?.isLocked ?? false }
+    var isDoneEditing: Bool { scrapbook?.doneEditingMemberIDs.contains(senderID) ?? false }
+
+    /// Locked by the host, or a participant who tapped Done Editing: nothing can be changed any more.
+    var isReadOnly: Bool { isLocked || (!isHost && isDoneEditing) }
+
+    /// The buttons under the closed book.
+    enum CoverActions: Equatable {
+        /// Edit Cover + Save Scrapbook
+        case host
+        /// Edit Cover + Done Editing
+        case participant
+        /// Back to Home
+        case finished
+    }
+
+    var coverActions: CoverActions {
+        if isReadOnly { return .finished }
+        return isHost ? .host : .participant
+    }
+
+    /// Pencil, Stickers, Washi, Letters, Text on the front; Pencil, Stickers, Text on the spine; all on the pages.
+    var availableTools: [ScrapbookTool] {
+        guard mode == .editCover else { return ScrapbookTool.allCases }
+        switch coverSide {
+        case .front: return [.pencil, .sticker, .washi, .letters, .text]
+        case .spine: return [.pencil, .sticker, .text]
+        }
+    }
+
+    var coverColorHex: String { scrapbook?.coverColorHex ?? "#FFFFFF" }
+
+    func coverPage(_ role: ScrapbookPage.Role) -> ScrapbookPage? {
+        scrapbook?.coverPage(role)
+    }
+
+    /// The front cover or spine, created the first time (here or by a friend's event).
+    @discardableResult
+    private func ensureCoverPage(_ role: ScrapbookPage.Role) -> ScrapbookPage? {
+        if let page = coverPage(role) { return page }
+        guard let scrapbook else { return nil }
+        let page = ScrapbookPage(order: 0)
+        page.role = role.rawValue
+        modelContext.insert(page)
+        page.scrapbook = scrapbook
+        save()
+        return page
+    }
+
+    /// Done in the book view: the pages are finished for this user, and the book closes on the cover screen.
+    /// The host counts as done from here (they have no Done Editing button).
+    func finishScrapbook() {
+        guard let scrapbook, !isReadOnly else { return }
+        closeTray()
+        selectedItemID = nil
+        scrapbook.hasFinishedPages = true
+        save()
+        if isHost {
+            markDoneEditing()
+        }
+        mode = .cover
+    }
+
+    /// Edit Cover: the front, with the tray already open.
+    func editCover() {
+        guard !isReadOnly, ensureCoverPage(.front) != nil, ensureCoverPage(.spine) != nil else { return }
+        showCoverSide(.front)
+        mode = .editCover
+    }
+
+    /// → in Edit Cover: on to the spine.
+    func showSpine() {
+        showCoverSide(.spine)
+    }
+
+    private func showCoverSide(_ side: CoverSide) {
+        closeTray()
+        selectedItemID = nil
+        coverSide = side
+        currentPageID = coverPage(side.role)?.id
+        isTrayOpen = true
+    }
+
+    /// ✓ on the spine: back to the cover screen.
+    func finishCoverEdit() {
+        cancelItemDrag()
+        if textEditor != nil { commitTextEditor() }
+        closeTray()
+        selectedItemID = nil
+        coverSide = .front
+        mode = .cover
+    }
+
+    /// The color picker under the cover; the texture stays visible over any color.
+    func setCoverColor(_ hex: String) {
+        guard let scrapbook, !isReadOnly, scrapbook.coverColorHex != hex else { return }
+        scrapbook.coverColorHex = hex
+        if save() {
+            broadcast(ScrapbookEvent(type: .coverColor, pageIndex: Self.frontCoverEventIndex, senderID: senderID,
+                                     coverColor: hex))
+        }
+    }
+
+    /// Participant: Done Editing → "Nice Work!"; read-only from now on.
+    func doneEditing() {
+        guard !isHost, !isReadOnly else { return }
+        markDoneEditing()
+        finishCard = .niceWork
+    }
+
+    /// Host: Save Scrapbook asks first only while someone is still In Progress.
+    func requestSave() {
+        guard isHost, !isLocked else { return }
+        if editingInProgress.isEmpty {
+            saveScrapbook()
+        } else {
+            finishCard = .confirmSave
+        }
+    }
+
+    /// Locks the scrapbook for everyone, then "Scrapbook Complete!".
+    func saveScrapbook() {
+        guard let scrapbook, isHost, !isLocked else { return }
+        if !isDoneEditing { markDoneEditing() }
+        scrapbook.isLocked = true
+        scrapbook.lockedAt = .now
+        save()
+        broadcast(ScrapbookEvent(type: .scrapbookLocked, pageIndex: 0, senderID: senderID))
+        let room = roomLocation
+        if let roomService, let room {
+            Task { try? await roomService.lockScrapbook(inRoom: room.code, zoneOwnerName: room.owner) }
+        }
+        finishCard = .complete
+    }
+
+    func dismissFinishCard() {
+        finishCard = nil
+    }
+
+    /// "View Bookshelf": the Profile tab.
+    func viewBookshelf() {
+        finishCard = nil
+        navigator?.popToRoot()
+        navigator?.selectedTab = .profile
+    }
+
+    /// "Back to Home": the Home tab.
+    func backToHome() {
+        navigator?.popToRoot()
+        navigator?.selectedTab = .home
+    }
+
+    /// A finished or locked scrapbook can still be read: the book opens without any tools.
+    func openReadOnlyBook() {
+        guard isReadOnly || hasFinishedPages else { return }
+        mode = .book
+    }
+
+    /// Back from the read-only book: the closed book again.
+    func closeReadOnlyBook() {
+        mode = .cover
+    }
+
+    private func markDoneEditing() {
+        guard let scrapbook else { return }
+        if !scrapbook.doneEditingMemberIDs.contains(senderID) {
+            scrapbook.doneEditingMemberIDs.append(senderID)
+            save()
+        }
+        broadcast(ScrapbookEvent(type: .editingDone, pageIndex: 0, senderID: senderID, memberID: senderID))
+        let room = roomLocation
+        if let roomService, let room {
+            let userID = senderID
+            Task { try? await roomService.markDoneEditing(userID: userID, inRoom: room.code, zoneOwnerName: room.owner) }
+        }
+    }
+
+    private var roomLocation: (code: String, owner: String?)? {
+        guard let sessionID = scrapbook?.sourceSessionID,
+              let session = (try? modelContext.fetch(FetchDescriptor<CaptureSession>(predicate: #Predicate { $0.id == sessionID })))?.first,
+              !session.rollCode.isEmpty else { return nil }
+        return (session.rollCode, session.ckZoneOwnerName)
+    }
+
+    /// Reads who is done and whether it's locked from the room, so offline friends count too.
+    func refreshFinishStatus() async {
+        guard let roomService, let room = roomLocation,
+              let snapshot = try? await roomService.fetchRoom(code: room.code, zoneOwnerName: room.owner) else { return }
+        for participant in snapshot.participants {
+            if let avatar = participant.avatarData { memberAvatars[participant.userID] = avatar }
+        }
+        applyFinishStatus(doneIDs: snapshot.doneEditingUserIDs, locked: snapshot.scrapbookLocked)
+    }
+
+    private func applyFinishStatus(doneIDs: [String], locked: Bool) {
+        guard let scrapbook else { return }
+        let merged = Array(Set(scrapbook.doneEditingMemberIDs).union(doneIDs)).sorted()
+        if merged != scrapbook.doneEditingMemberIDs.sorted() {
+            scrapbook.doneEditingMemberIDs = merged
+        }
+        if locked && !scrapbook.isLocked {
+            lockFromFriend()
+        }
+        save()
+    }
+
+    /// The host saved while this phone was editing: everything turns read-only on the closed book.
+    private func lockFromFriend() {
+        guard let scrapbook else { return }
+        scrapbook.isLocked = true
+        scrapbook.lockedAt = scrapbook.lockedAt ?? .now
+        cancelItemDrag()
+        textEditor = nil
+        closeTray()
+        selectedItemID = nil
+        if mode == .edit || mode == .editCover || mode == .book {
+            mode = .cover
+        }
+    }
+
+    /// A member's profile photo: mine from my profile (the same as the Profile tab), a friend's from their live
+    /// presence or else from the room.
+    private func avatar(for memberID: String) -> Data? {
+        if memberID == senderID { return currentUser?.avatarData }
+        return activeCollaborators.first { $0.id == memberID }?.avatarData ?? memberAvatars[memberID]
+    }
+
+    /// Everyone in the roll (members of the scrapbook), with the host and me included.
+    private var memberRows: [EditingProgressRow] {
+        guard let scrapbook else { return [] }
+        var rows: [EditingProgressRow] = []
+        for (index, id) in scrapbook.memberIDs.enumerated() where !rows.contains(where: { $0.id == id }) {
+            let name = scrapbook.memberNames.indices.contains(index) ? scrapbook.memberNames[index] : "Friend"
+            rows.append(EditingProgressRow(id: id, name: id == senderID ? userName : name,
+                                           colorHex: Self.presenceColorHex(for: id), avatarData: avatar(for: id),
+                                           isMe: id == senderID))
+        }
+        if !rows.contains(where: { $0.isMe }) {
+            rows.append(EditingProgressRow(id: senderID, name: userName, colorHex: userColorHex,
+                                           avatarData: avatar(for: senderID), isMe: true))
+        }
+        return rows.sorted { $0.isMe && !$1.isMe }
+    }
+
+    var editingDone: [EditingProgressRow] {
+        let done = Set(scrapbook?.doneEditingMemberIDs ?? [])
+        return memberRows.filter { done.contains($0.id) }
+    }
+
+    var editingInProgress: [EditingProgressRow] {
+        let done = Set(scrapbook?.doneEditingMemberIDs ?? [])
+        return memberRows.filter { !done.contains($0.id) }
+    }
 
     // MARK: - Who's here (change 025)
 
@@ -355,7 +694,7 @@ final class ScrapbookViewModel {
         let me = WhosHereRow(id: senderID, name: userName, colorHex: userColorHex, avatarData: currentUser?.avatarData,
                              pageNumber: currentIndex + 1, isMe: true)
         let others = activeCollaborators.filter { $0.id != senderID }.map {
-            WhosHereRow(id: $0.id, name: $0.name, colorHex: $0.colorHex, avatarData: $0.avatarData,
+            WhosHereRow(id: $0.id, name: $0.name, colorHex: $0.colorHex, avatarData: $0.avatarData ?? memberAvatars[$0.id],
                         pageNumber: $0.currentPageIndex + 1, isMe: false)
         }
         return [me] + others
@@ -426,7 +765,7 @@ final class ScrapbookViewModel {
         modelContext.insert(item)
         item.page = page
         guard save() else { return false }
-        broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
+        broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: pageIndex(of: currentPage), senderID: senderID, item: item.toPayload()))
         return true
     }
 
@@ -722,7 +1061,7 @@ final class ScrapbookViewModel {
     /// both pages of the spread side by side (the half it lands on picks the page).
     func dropFromTray(_ payload: TrayDropPayload, at point: CGPoint, reduceMotion: Bool = false) -> Bool {
         var point = point
-        if zoom == .spread, let left = leftPage, let right = rightPage {
+        if mode == .edit, zoom == .spread, let left = leftPage, let right = rightPage {
             let isRight = point.x >= 0.5
             activatePage(isRight ? right.id : left.id)
             point.x = isRight ? (point.x - 0.5) * 2 : point.x * 2
@@ -766,7 +1105,7 @@ final class ScrapbookViewModel {
         lastLetter = point == nil ? (item.id, now) : nil
         let saved = save()
         if saved {
-            broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
+            broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: pageIndex(of: currentPage), senderID: senderID, item: item.toPayload()))
         }
         return saved
     }
@@ -807,7 +1146,7 @@ final class ScrapbookViewModel {
         item.page = page
         let saved = save()
         if saved {
-            broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
+            broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: pageIndex(of: currentPage), senderID: senderID, item: item.toPayload()))
         }
         return saved
     }
@@ -833,7 +1172,7 @@ final class ScrapbookViewModel {
                 if selectedItemID == id { selectedItemID = nil }
                 modelContext.delete(item)
                 if save() {
-                    broadcast(ScrapbookEvent(type: .itemRemoved, pageIndex: currentIndex, senderID: senderID, itemID: id))
+                    broadcast(ScrapbookEvent(type: .itemRemoved, pageIndex: pageIndex(of: currentPage), senderID: senderID, itemID: id))
                 }
             } else {
                 item.text = text
@@ -841,7 +1180,7 @@ final class ScrapbookViewModel {
                 if save() {
                     broadcast(ScrapbookEvent(
                         type: .itemTextUpdated,
-                        pageIndex: currentIndex,
+                        pageIndex: pageIndex(of: currentPage),
                         senderID: senderID,
                         itemID: item.id,
                         text: text,
@@ -851,14 +1190,17 @@ final class ScrapbookViewModel {
             }
         } else if !text.isEmpty, hasRoom() {
             recordUndo()
-            let item = ScrapbookItem(centerX: 0.5, centerY: 0.4, width: TextItemStyle.defaultSize,
-                                     rotation: 0, zIndex: page.maxZIndex + 1)
+            // On the spine the text stands upright along it (change 026).
+            let isSpine = page.role == ScrapbookPage.Role.spine.rawValue
+            let item = ScrapbookItem(centerX: 0.5, centerY: isSpine ? 0.5 : 0.4,
+                                     width: isSpine ? Self.spineTextSize : TextItemStyle.defaultSize,
+                                     rotation: isSpine ? -.pi / 2 : 0, zIndex: page.maxZIndex + 1)
             item.text = text
             item.textColor = state.color.rawValue
             modelContext.insert(item)
             item.page = page
             if save() {
-                broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
+                broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: pageIndex(of: currentPage), senderID: senderID, item: item.toPayload()))
             }
         }
     }
@@ -911,7 +1253,7 @@ final class ScrapbookViewModel {
         if save() {
             broadcast(ScrapbookEvent(
                 type: .stickerSheetReset,
-                pageIndex: currentIndex,
+                pageIndex: pageIndex(of: currentPage),
                 senderID: senderID,
                 stickerSetID: stickerSetID
             ))
@@ -944,7 +1286,7 @@ final class ScrapbookViewModel {
         sheet.usedStickerIDs.append(sticker.id)
         let saved = save()
         if saved {
-            broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: currentIndex, senderID: senderID, item: item.toPayload()))
+            broadcast(ScrapbookEvent(type: .itemPlaced, pageIndex: pageIndex(of: currentPage), senderID: senderID, item: item.toPayload()))
         }
         return saved
     }
@@ -1025,7 +1367,7 @@ final class ScrapbookViewModel {
             pushUndo(before)
             broadcast(ScrapbookEvent(
                 type: .itemCut,
-                pageIndex: currentIndex,
+                pageIndex: pageIndex(of: currentPage),
                 senderID: senderID,
                 itemID: item.id,
                 maskData: item.maskData,
@@ -1175,7 +1517,7 @@ final class ScrapbookViewModel {
     /// The spread's pages and the sticker sheets as they are now.
     private func snapshot() -> EditorSnapshot {
         EditorSnapshot(
-            pages: currentSpreadPages.map { page in (page.id, page.allItems.map(ItemState.init)) },
+            pages: currentSpreadPages.map { page in (page.id, page.allItems.map { ItemState($0) }) },
             stickerUsage: Dictionary((scrapbook?.stickerSheets ?? []).map { ($0.id, $0.usedStickerIDs) },
                                      uniquingKeysWith: { first, _ in first })
         )
@@ -1376,8 +1718,10 @@ final class ScrapbookViewModel {
 
         switch event.type {
         case .itemPlaced:
-            guard let payload = event.item, pages.indices.contains(event.pageIndex) else { return }
-            let page = pages[event.pageIndex]
+            guard let payload = event.item,
+                  let page = page(atEventIndex: event.pageIndex)
+                    ?? (event.pageIndex < 0 ? ensureCoverPage(event.pageIndex == Self.frontCoverEventIndex ? .front : .spine) : nil)
+            else { return }
             if !page.allItems.contains(where: { $0.id == payload.id }) {
                 let item = ScrapbookItem(payload: payload)
                 modelContext.insert(item)
@@ -1419,8 +1763,7 @@ final class ScrapbookViewModel {
             guard let itemID = event.itemID else { return }
             if let item = (try? modelContext.fetch(FetchDescriptor<ScrapbookItem>(predicate: #Predicate { $0.id == itemID })))?.first {
                 item.maskData = event.maskData
-                if let newPieces = event.newPieces, pages.indices.contains(event.pageIndex) {
-                    let page = pages[event.pageIndex]
+                if let newPieces = event.newPieces, let page = page(atEventIndex: event.pageIndex) {
                     for piecePayload in newPieces {
                         if !page.allItems.contains(where: { $0.id == piecePayload.id }) {
                             let piece = ScrapbookItem(payload: piecePayload)
@@ -1433,8 +1776,7 @@ final class ScrapbookViewModel {
             }
 
         case .itemCutUndone:
-            guard let restoredPayload = event.restoredItem, pages.indices.contains(event.pageIndex) else { return }
-            let page = pages[event.pageIndex]
+            guard let restoredPayload = event.restoredItem, let page = page(atEventIndex: event.pageIndex) else { return }
             if let removedIDs = event.removedPieceIDs {
                 for piece in page.allItems where removedIDs.contains(piece.id) {
                     if selectedItemID == piece.id { selectedItemID = nil }
@@ -1476,8 +1818,9 @@ final class ScrapbookViewModel {
             save()
 
         case .drawingUpdated:
-            guard pages.indices.contains(event.pageIndex) else { return }
-            let page = pages[event.pageIndex]
+            guard let page = page(atEventIndex: event.pageIndex)
+                    ?? (event.pageIndex < 0 ? ensureCoverPage(event.pageIndex == Self.frontCoverEventIndex ? .front : .spine) : nil)
+            else { return }
             if let itemID = event.itemID {
                 let nextData = event.drawingData ?? Data()
                 if let existing = page.allItems.first(where: { $0.id == itemID }) {
@@ -1504,6 +1847,18 @@ final class ScrapbookViewModel {
                 page.drawingData = event.drawingData
                 save()
             }
+
+        case .editingDone:
+            guard let memberID = event.memberID else { return }
+            applyFinishStatus(doneIDs: [memberID], locked: false)
+
+        case .scrapbookLocked:
+            applyFinishStatus(doneIDs: [event.senderID], locked: true)
+
+        case .coverColor:
+            guard let hex = event.coverColor, let scrapbook else { return }
+            scrapbook.coverColorHex = hex
+            save()
 
         case .stickerSheetReset:
             guard let setID = event.stickerSetID, let set = StickerCatalog.set(withID: setID) else { return }

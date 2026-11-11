@@ -18,9 +18,30 @@ final class ScrapbookPage {
     @Relationship(deleteRule: .cascade, inverse: \ScrapbookItem.page)
     var items: [ScrapbookItem]? = []
     var scrapbook: Scrapbook?
+    /// `nil` = a page of the book; `Role.rawValue` = the front cover or the spine (change 026).
+    var role: String?
+
+    enum Role: String {
+        case front, spine
+
+        /// Width / height of the cover side (Figma 340 × 468 front, 74 × 462 spine).
+        var aspectRatio: CGFloat {
+            switch self {
+            case .front: 340 / 468
+            case .spine: 74 / 462
+            }
+        }
+    }
 
     /// Fixed coordinate space for drawings, scaled to the page's size on screen.
     nonisolated static let canvasSize = CGSize(width: 600, height: 800)
+
+    /// The drawing space for a page of any shape: 800 high, width by the page's ratio (600 for a 3:4 page; the front
+    /// cover and the narrow spine, change 026). Height-based so strokes keep their size on the spine.
+    nonisolated static func canvasSize(for pageSize: CGSize) -> CGSize {
+        guard pageSize.height > 0 else { return canvasSize }
+        return CGSize(width: canvasSize.height * pageSize.width / pageSize.height, height: canvasSize.height)
+    }
 
     init(order: Int, background: PageBackground = .cream) {
         self.order = order

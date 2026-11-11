@@ -155,7 +155,8 @@ struct MainShellView: View {
                 navigator: router,
                 sessionStore: sessionStore,
                 scrapbookID: scrapbookID,
-                currentUser: currentUser
+                currentUser: currentUser,
+                roomService: CloudKitRollRoomService()
             ))
         case .editProfile:
             EditProfileView(viewModel: profileViewModel)

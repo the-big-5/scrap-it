@@ -49,9 +49,9 @@ struct DrawingCanvasView: UIViewRepresentable {
     }
 
     private func applyScale(_ canvas: PKCanvasView) {
-        guard pageSize.width > 0 else { return }
-        let scale = pageSize.width / ScrapbookPage.canvasSize.width
-        canvas.contentSize = ScrapbookPage.canvasSize
+        guard pageSize.height > 0 else { return }
+        let scale = pageSize.height / ScrapbookPage.canvasSize.height
+        canvas.contentSize = ScrapbookPage.canvasSize(for: pageSize)
         canvas.minimumZoomScale = scale
         canvas.maximumZoomScale = scale
         if abs(canvas.zoomScale - scale) > 0.0001 {

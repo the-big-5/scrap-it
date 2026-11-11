@@ -1,3 +1,4 @@
+import CloudKit
 import CoreGraphics
 import Foundation
 import SwiftData
@@ -1009,5 +1010,245 @@ struct ScrapbookEditorTests {
         #expect(try context.fetch(FetchDescriptor<CaptureSession>()).isEmpty)
         #expect(try context.fetch(FetchDescriptor<ScrapbookPage>()).isEmpty)
         #expect(list.contains(sessionID))
+    }
+}
+
+// MARK: - Cover and finishing (change 026)
+
+private final class CoverRoomService: RollRoomServicing {
+    var lastErrorDescription: String?
+    var doneUserIDs: [String] = []
+    var locked = false
+    var participants: [RoomParticipant] = []
+    private(set) var markedDone: [String] = []
+    private(set) var lockCount = 0
+
+    func createRoom(_ draft: RoomDraft) async throws -> RoomSnapshot { throw RoomError.unavailable }
+    func joinRoom(code: String, as user: RoomParticipant) async throws -> RoomSnapshot { throw RoomError.unavailable }
+    func acceptShare(_ metadata: CKShare.Metadata, as user: RoomParticipant) async throws -> RoomSnapshot { throw RoomError.unavailable }
+    func fetchRoom(code: String, zoneOwnerName: String?) async throws -> RoomSnapshot {
+        RoomSnapshot(sessionID: UUID(), rollCode: code, name: "Bali '27", hostUserID: "host-1", rollSize: 24, slotsUsed: 2,
+                     filterRaw: RollFilter.colorPrint200.rawValue, statusRaw: SessionStatus.ended.rawValue,
+                     participants: participants, shareURL: nil, zoneOwnerName: zoneOwnerName,
+                     doneEditingUserIDs: doneUserIDs, scrapbookLocked: locked)
+    }
+    func removeParticipant(userID: String, fromRoom code: String) async throws {}
+    func leaveRoom(code: String, zoneOwnerName: String, userID: String) async throws {}
+    func deleteRoom(code: String) async throws {}
+    func listRooms() async throws -> [RoomSnapshot] { [] }
+    func downloadShotPayload(recordName: String) async throws -> Data { throw RoomError.notFound }
+    func markDoneEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws { markedDone.append(userID) }
+    func lockScrapbook(inRoom code: String, zoneOwnerName: String?) async throws { lockCount += 1 }
+}
+
+private final class CoverNavigator: Navigator {
+    var selectedTab: AppTab = .home
+    var path: [AppRoute] = []
+    var isTabBarHidden = false
+    var cameraReturnPhase: CameraReturnPhase = .idle
+    var cameraReturnAngle: Double = 0.0
+}
+
+@MainActor
+struct ScrapbookCoverTests {
+    let container: ModelContainer
+    var context: ModelContext { container.mainContext }
+    let sessionID = UUID()
+    let scrapbook: Scrapbook
+    let host = UserProfile(appleUserID: "host-1", name: "Nabiel")
+    let guest = UserProfile(appleUserID: "guest-2", name: "Brian")
+    private let navigator = CoverNavigator()
+    private let room = CoverRoomService()
+    private let realtime = MockScrapbookRealtimeService()
+
+    init() throws {
+        container = try ModelContainer(
+            for: ScrapIt.schema,
+            configurations: ModelConfiguration(UUID().uuidString, schema: ScrapIt.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        )
+        scrapbook = Scrapbook(title: "Bali '27", memberIDs: ["host-1", "guest-2"], memberNames: ["Nabiel", "Brian"],
+                              sourceSessionID: sessionID)
+        let session = CaptureSession(id: sessionID, name: "Bali '27", rollCode: "N4B13L", hostUserID: "host-1",
+                                     participantIDs: ["host-1", "guest-2"], participantNames: ["Nabiel", "Brian"],
+                                     status: .ended)
+        context.insert(scrapbook)
+        context.insert(session)
+        try context.save()
+    }
+
+    private func makeEditor(as user: UserProfile) -> ScrapbookViewModel {
+        ScrapbookViewModel(modelContext: context, navigator: navigator, sessionStore: SessionStore(modelContext: context),
+                           scrapbookID: scrapbook.id, currentUser: user, realtimeService: realtime,
+                           defaults: UserDefaults(suiteName: UUID().uuidString)!, roomService: room)
+    }
+
+    @Test func hostAndParticipantGetTheirOwnButtons() {
+        let hostVM = makeEditor(as: host)
+        #expect(hostVM.isHost)
+        #expect(hostVM.coverActions == .host)
+        let guestVM = makeEditor(as: guest)
+        #expect(!guestVM.isHost)
+        #expect(guestVM.coverActions == .participant)
+    }
+
+    @Test func doneIsFinalForThePagesAndTheHostCountsAsDone() async throws {
+        let vm = makeEditor(as: host)
+        vm.finishScrapbook()
+        #expect(vm.mode == .cover)
+        #expect(!vm.isBookEditable)
+        #expect(vm.editingDone.map(\.id) == ["host-1"])
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(room.markedDone == ["host-1"])
+        #expect(realtime.broadcastedEvents.contains { $0.type == .editingDone && $0.memberID == "host-1" })
+
+        // The pages can't be edited again, and reading never adds pages.
+        vm.openReadOnlyBook()
+        #expect(vm.mode == .book)
+        vm.openSpread()
+        #expect(vm.mode == .book)
+        let pageCount = vm.pages.count
+        vm.swipeSpread(by: 1)
+        #expect(vm.pages.count == pageCount)
+        vm.closeReadOnlyBook()
+        #expect(vm.mode == .cover)
+
+        // Opening it again starts on the closed book.
+        #expect(makeEditor(as: host).mode == .cover)
+    }
+
+    @Test func participantDoneEditingIsReadOnly() {
+        let vm = makeEditor(as: guest)
+        vm.finishScrapbook()
+        #expect(vm.editingDone.isEmpty)
+        vm.doneEditing()
+        #expect(vm.finishCard == .niceWork)
+        #expect(vm.isReadOnly)
+        #expect(vm.coverActions == .finished)
+        vm.dismissFinishCard()
+        vm.editCover()
+        #expect(vm.mode == .cover)
+        vm.backToHome()
+        #expect(navigator.selectedTab == .home)
+    }
+
+    @Test func saveAsksFirstOnlyWhileSomeoneIsInProgress() async throws {
+        let vm = makeEditor(as: host)
+        vm.finishScrapbook()
+        #expect(vm.editingInProgress.map(\.id) == ["guest-2"])
+        vm.requestSave()
+        #expect(vm.finishCard == .confirmSave)
+        vm.dismissFinishCard()
+        #expect(!vm.isLocked)
+
+        vm.requestSave()
+        vm.saveScrapbook()
+        #expect(vm.isLocked)
+        #expect(vm.finishCard == .complete)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(room.lockCount == 1)
+        #expect(realtime.broadcastedEvents.contains { $0.type == .scrapbookLocked })
+        vm.viewBookshelf()
+        #expect(navigator.selectedTab == .profile)
+        #expect(navigator.path.isEmpty)
+    }
+
+    @Test func saveGoesStraightThroughWhenEveryoneIsDone() {
+        scrapbook.doneEditingMemberIDs = ["guest-2"]
+        let vm = makeEditor(as: host)
+        vm.finishScrapbook()
+        vm.requestSave()
+        #expect(vm.isLocked)
+        #expect(vm.finishCard == .complete)
+    }
+
+    @Test func aFriendLockingTurnsTheEditorReadOnly() async {
+        let vm = makeEditor(as: guest)
+        await vm.connectRealtime()
+        vm.openSpread()
+        #expect(vm.mode == .edit)
+        realtime.simulateIncomingEvent(ScrapbookEvent(type: .scrapbookLocked, pageIndex: 0, senderID: "host-1"))
+        #expect(vm.isLocked)
+        #expect(vm.isReadOnly)
+        #expect(vm.mode == .cover)
+        #expect(vm.coverActions == .finished)
+    }
+
+    @Test func coverColorIsSavedAndShared() async throws {
+        let vm = makeEditor(as: guest)
+        await vm.connectRealtime()
+        #expect(vm.coverColorHex == "#FFFFFF")
+        vm.setCoverColor("#2B3A78")
+        #expect(scrapbook.coverColorHex == "#2B3A78")
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(realtime.broadcastedEvents.contains { $0.type == .coverColor && $0.coverColor == "#2B3A78" })
+
+        realtime.simulateIncomingEvent(ScrapbookEvent(type: .coverColor, pageIndex: -1, senderID: "host-1", coverColor: "#6B2430"))
+        #expect(vm.coverColorHex == "#6B2430")
+    }
+
+    @Test func coverSidesHaveTheirOwnItemsAndTools() async throws {
+        let vm = makeEditor(as: host)
+        await vm.connectRealtime()
+        vm.finishScrapbook()
+        vm.editCover()
+        #expect(vm.mode == .editCover)
+        #expect(vm.isTrayOpen)
+        #expect(vm.availableTools == [.pencil, .sticker, .washi, .letters, .text])
+        let front = try #require(vm.coverPage(.front))
+        #expect(!vm.pages.contains { $0.id == front.id })
+
+        #expect(vm.addLetter(try #require(LetterCatalog.letters.first)))
+        #expect(front.allItems.count == 1)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(realtime.broadcastedEvents.contains { $0.type == .itemPlaced && $0.pageIndex == -1 })
+
+        vm.showSpine()
+        #expect(vm.availableTools == [.pencil, .sticker, .text])
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "Bali with the gang!"
+        vm.commitTextEditor()
+        let spine = try #require(vm.coverPage(.spine))
+        let spineText = try #require(spine.allItems.first)
+        #expect(abs(spineText.rotation + .pi / 2) < 0.0001)
+        #expect(spineText.width == ScrapbookViewModel.spineTextSize)
+
+        vm.finishCoverEdit()
+        #expect(vm.mode == .cover)
+        #expect(!vm.isTrayOpen)
+    }
+
+    @Test func friendsCoverItemsAndStatusesArrive() async {
+        let vm = makeEditor(as: host)
+        await vm.connectRealtime()
+        realtime.simulateIncomingEvent(ScrapbookEvent(
+            type: .itemPlaced, pageIndex: -2, senderID: "guest-2",
+            item: ScrapbookItemPayload(id: UUID(), centerX: 0.5, centerY: 0.5, width: 0.27, rotation: 0, zIndex: 1, text: "Hi")
+        ))
+        #expect(vm.coverPage(.spine)?.allItems.count == 1)
+
+        realtime.simulateIncomingEvent(ScrapbookEvent(type: .editingDone, pageIndex: 0, senderID: "guest-2", memberID: "guest-2"))
+        #expect(vm.editingDone.map(\.id) == ["guest-2"])
+    }
+
+    @Test func editingProgressShowsProfilePhotos() async {
+        let myPhoto = Data("my photo".utf8)
+        let friendPhoto = Data("friend photo".utf8)
+        host.avatarData = myPhoto
+        room.participants = [RoomParticipant(userID: "guest-2", name: "Brian", avatarData: friendPhoto)]
+        let vm = makeEditor(as: host)
+        await vm.refreshFinishStatus()
+        let rows = vm.editingInProgress + vm.editingDone
+        #expect(rows.first { $0.isMe }?.avatarData == myPhoto)
+        #expect(rows.first { $0.id == "guest-2" }?.avatarData == friendPhoto)
+    }
+
+    @Test func statusesAreReadFromTheRoom() async {
+        room.doneUserIDs = ["guest-2"]
+        room.locked = true
+        let vm = makeEditor(as: host)
+        await vm.refreshFinishStatus()
+        #expect(vm.editingDone.map(\.id).contains("guest-2"))
+        #expect(vm.isLocked)
+        #expect(vm.mode == .cover)
     }
 }

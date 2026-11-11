@@ -1,8 +1,13 @@
 import SwiftUI
 import UIKit
 
-/// Who is in the scrapbook and on which page (change 025, Figma 1516:23450).
+/// Who is in the scrapbook and on which page (change 025, Figma 1516:23450); also the Editing Progress sheet of the
+/// cover screen (change 026, Figma 1563:33166) with "Done Editing" / "In Progress" and no page numbers.
 struct WhosHereSheet: View {
+    var title = "Who's here"
+    var firstTitle = "ON THIS PAGE"
+    var secondTitle = "ON OTHER PAGES"
+    var showsPageNumbers = true
     let onThisSpread: [WhosHereRow]
     let onOtherPages: [WhosHereRow]
     let onClose: () -> Void
@@ -10,7 +15,7 @@ struct WhosHereSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
-                Text("Who's here")
+                Text(title)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(DSColor.Brand.primary.color)
                 HStack {
@@ -24,9 +29,9 @@ struct WhosHereSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    section("ON THIS PAGE", rows: onThisSpread)
+                    section(firstTitle, rows: onThisSpread)
                     if !onOtherPages.isEmpty {
-                        section("ON OTHER PAGES", rows: onOtherPages)
+                        section(secondTitle, rows: onOtherPages)
                             .padding(.top, 16)
                     }
                 }
@@ -63,7 +68,7 @@ struct WhosHereSheet: View {
                 .foregroundStyle(DSColor.Brand.primary.color)
                 .lineLimit(1)
             Spacer()
-            if !row.isMe && !onThisSpread.contains(row) {
+            if showsPageNumbers && !row.isMe && !onThisSpread.contains(row) {
                 Text("Page \(row.pageNumber)")
                     .font(.system(size: 14))
                     .foregroundStyle(DSColor.Component.textSecondary.color)

@@ -19,6 +19,15 @@ final class Scrapbook {
     var stickerSheets: [StickerSheet]? = []
     /// Tools whose hint was already shown in this scrapbook (`ScrapbookTool.rawValue`, change 022).
     var shownToolHints: [String] = []
+    /// Cover color as "#RRGGBB" (change 026); the cover starts white.
+    var coverColorHex: String = "#FFFFFF"
+    /// Saved by the host: nobody can change it any more (change 026).
+    var isLocked: Bool = false
+    var lockedAt: Date?
+    /// This phone's user tapped Done in the book view: the pages can't be edited again (change 026).
+    var hasFinishedPages: Bool = false
+    /// Members whose editing is done (participants after Done Editing, the host after Done), from the room (change 026).
+    var doneEditingMemberIDs: [String] = []
 
     init(
         id: UUID = UUID(),
@@ -38,7 +47,13 @@ final class Scrapbook {
         self.sourceSessionID = sourceSessionID
     }
 
+    /// The book's pages, without the cover (change 026).
     var sortedPages: [ScrapbookPage] {
-        (pages ?? []).sorted { $0.order < $1.order }
+        (pages ?? []).filter { $0.role == nil }.sorted { $0.order < $1.order }
+    }
+
+    /// The front cover or the spine (change 026), if created.
+    func coverPage(_ role: ScrapbookPage.Role) -> ScrapbookPage? {
+        (pages ?? []).first { $0.role == role.rawValue }
     }
 }

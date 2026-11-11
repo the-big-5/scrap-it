@@ -21,4 +21,9 @@ extension TextItemStyle {
     static func font(size: CGFloat) -> Font {
         .system(size: size, weight: .semibold, design: .serif)
     }
+
+    /// Text on the front cover and the spine: Architects Daughter (change 026).
+    static func coverFont(size: CGFloat) -> Font {
+        DSTypographyToken(family: .architectsDaughter, weight: .regular, size: size, lineHeight: size * 1.2).font
+    }
 }
