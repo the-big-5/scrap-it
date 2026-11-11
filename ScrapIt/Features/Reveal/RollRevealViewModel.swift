@@ -59,6 +59,7 @@ final class RollRevealViewModel {
     static let printingText = "Printing your photos…"
     /// Shown for a moment once every photo is in [Draft text].
     static let readyText = "Your photos are ready!"
+    static let openHintText = "Swipe or tap to open"
     static let readyTextDuration: Duration = .seconds(2.5)
     static let savedMessage = "Saved to Photos"
     static let saveFailedMessage = "Couldn't save. Allow ScrapIt to add photos in Settings."
@@ -110,6 +111,13 @@ final class RollRevealViewModel {
     }
 
     var canTear: Bool { !isDeveloping }
+
+    var envelopeStatusText: String? {
+        if isDeveloping { return Self.printingText }
+        if isTorn { return nil }
+        if showsReadyText { return Self.readyText }
+        return Self.openHintText
+    }
 
     /// After `readyTextDuration`.
     func hideReadyText() {
@@ -176,7 +184,7 @@ final class RollRevealViewModel {
             arrivalCount += 1
         }
         photos += added
-        if wasPrinting && photos.count >= expectedPhotoCount {
+        if hasLoaded && wasPrinting && photos.count >= expectedPhotoCount {
             showsReadyText = true
         }
         stackOrder += added.map(\.id)

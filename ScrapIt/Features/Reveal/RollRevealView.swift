@@ -41,7 +41,7 @@ struct RollRevealView: View {
                 .offset(y: hasSpilled ? 60 : 0)
                 .position(envelopeCenter)
 
-                if let text = envelopeText {
+                if let text = viewModel.envelopeStatusText {
                     Text(text)
                         .dsTypography(DSTypography.Handwritten.normalRegular)
                         .foregroundStyle(DSColor.Paper.light.color)
@@ -125,19 +125,12 @@ struct RollRevealView: View {
         }
         .task { await viewModel.observePhotos() }
         .task { await viewModel.waitForTearUnlock() }
-        .animation(.easeInOut(duration: 0.3), value: envelopeText)
+        .animation(.easeInOut(duration: 0.3), value: viewModel.envelopeStatusText)
         .task(id: viewModel.showsReadyText) {
             guard viewModel.showsReadyText else { return }
             try? await Task.sleep(for: RollRevealViewModel.readyTextDuration)
             viewModel.hideReadyText()
         }
-    }
-
-    /// "Printing your photos…" while photos arrive, then "Your photos are ready!" for a moment (change 024).
-    private var envelopeText: String? {
-        if viewModel.isDeveloping { return RollRevealViewModel.printingText }
-        if viewModel.showsReadyText && !viewModel.isTorn { return RollRevealViewModel.readyText }
-        return nil
     }
 
     /// Photos fly from the envelope to their spot on the mat, one after another.
