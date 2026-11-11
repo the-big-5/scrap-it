@@ -106,6 +106,34 @@ extension WorkbenchLayout {
         }
     }
 
+    /// Scale for full-bleed camera element covering screen edge-to-edge (change 100).
+    static func fullBleedCameraScale(container: CGSize, layoutScale: CGFloat, angle: Double) -> CGFloat {
+        guard layoutScale > 0 else { return 1.0 }
+        let isLandscapeAngle = abs(abs(angle) - 90.0) < 1.0
+        if isLandscapeAngle {
+            let scaleX = container.height / (cameraSize.width * layoutScale)
+            let scaleY = container.width / (cameraSize.height * layoutScale)
+            return max(scaleX, scaleY) * 1.08
+        } else {
+            let scaleX = container.width / (cameraSize.width * layoutScale)
+            let scaleY = container.height / (cameraSize.height * layoutScale)
+            return max(scaleX, scaleY) * 1.08
+        }
+    }
+
+    /// Scale for floating camera element with margins prior to 3D flip (change 100).
+    static func floatingCameraScale(container: CGSize, layoutScale: CGFloat, angle: Double) -> CGFloat {
+        guard layoutScale > 0 else { return 1.0 }
+        let isLandscapeAngle = abs(abs(angle) - 90.0) < 1.0
+        if isLandscapeAngle {
+            let targetVerticalHeight = max(container.width - 80 * layoutScale, 260)
+            return targetVerticalHeight / (cameraBodyHeight * layoutScale)
+        } else {
+            let targetWidth = max(container.width - 64 * layoutScale, 240)
+            return targetWidth / (cameraSize.width * layoutScale)
+        }
+    }
+
     /// Create Roll / Join a Roll stack center (unchanged from the previous Workbench).
     static let actionButtonsCenter = CGPoint(x: 155, y: 495)
     static let actionButtonSize = CGSize(width: 217, height: 52)

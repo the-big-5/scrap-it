@@ -8,6 +8,7 @@ struct CaptureSessionView: View {
     @State private var deviceOrientation: RollCameraOrientation.DeviceOrientation = .landscapeLeft
     @State private var zoomTextRotation: Double = 0.0
     @State private var motionService = CameraMotionService()
+    @State private var isClosingIrisOnReturn: Bool = false
 
     private var camera: CameraController {
         flowViewModel.camera
@@ -137,6 +138,7 @@ struct CaptureSessionView: View {
             }
         }
         .ignoresSafeArea()
+        .allowsHitTesting(flowViewModel.cameraReturnPhase == .idle && !isClosingIrisOnReturn)
         .navigationBarBackButtonHidden(true)
         .statusBarHidden()
         .background(
@@ -328,13 +330,18 @@ struct CaptureSessionView: View {
 
     private var backButtonView: some View {
         Button {
-            guard flowViewModel.cameraReturnPhase == .idle else { return }
+            guard flowViewModel.cameraReturnPhase == .idle, !isClosingIrisOnReturn else { return }
+            isClosingIrisOnReturn = true
             HapticService.shared.playSnapFeedback()
             let returnAngle = RollCameraOrientation.cameraReturnAngle(
                 deviceOrientation: deviceOrientation,
                 fallbackSide: simulatedLandscapeSide
             )
-            flowViewModel.prepareCameraReturn(angle: returnAngle)
+            Task { @MainActor in
+                // Allow mechanical iris closure (~180ms) before initiating return resize and flip
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                flowViewModel.prepareCameraReturn(angle: returnAngle)
+            }
         } label: {
             ZStack {
                 Circle()
@@ -365,7 +372,7 @@ struct CaptureSessionView: View {
             .frame(width: 60, height: 60)
         }
         .buttonStyle(.plain)
-        .disabled(flowViewModel.cameraReturnPhase != .idle)
+        .disabled(flowViewModel.cameraReturnPhase != .idle || isClosingIrisOnReturn)
         .accessibilityLabel("Return to Homepage")
     }
 
@@ -398,8 +405,8 @@ struct CaptureSessionView: View {
                 // Viewfinder HUD: LIVE badge button & Host Handover banner
                 viewfinderHUD
 
-                // Mechanical Iris Diaphragm Overlay (aperture blades constricting on camera switch)
-                CameraIrisDiaphragmView(isClosed: camera.isSwitchingCamera)
+                // Mechanical Iris Diaphragm Overlay (aperture blades constricting on camera switch or return home)
+                CameraIrisDiaphragmView(isClosed: camera.isSwitchingCamera || isClosingIrisOnReturn)
             }
             .clipShape(RoundedRectangle(cornerRadius: 6.2))
             .padding(.horizontal, 10)

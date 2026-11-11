@@ -144,6 +144,56 @@ struct WorkbenchLayoutTests {
         vm.finishCameraReturn()
         #expect(vm.cameraReturnPhase == .idle)
     }
+
+    @Test func cameraFlipMathResolvesTwoSidedCardProgression() {
+        // Start: camera back face visible at 0°
+        #expect(!CameraFlipMath.isFrontFacing(angle: 0.0))
+        #expect(CameraFlipMath.backAngle(for: 0.0) == 0.0)
+
+        // Mid-flip prior to edge-on boundary
+        #expect(!CameraFlipMath.isFrontFacing(angle: 45.0))
+        #expect(CameraFlipMath.backAngle(for: 45.0) == 45.0)
+        #expect(!CameraFlipMath.isFrontFacing(angle: 89.9))
+
+        // Midpoint boundary: edge-on transition to camera front face
+        #expect(CameraFlipMath.isFrontFacing(angle: 90.0))
+        #expect(CameraFlipMath.frontAngle(for: 90.0) == -90.0)
+
+        // Rotating into view
+        #expect(CameraFlipMath.isFrontFacing(angle: 135.0))
+        #expect(CameraFlipMath.frontAngle(for: 135.0) == -45.0)
+
+        // End of flip: front face fully facing forward
+        #expect(CameraFlipMath.isFrontFacing(angle: 180.0))
+        #expect(CameraFlipMath.frontAngle(for: 180.0) == 0.0)
+    }
+
+    @Test func cameraReturnOrientationAnglesPreserveLocalYAxisAcrossOrientations() {
+        let portraitAngle = RollCameraOrientation.cameraReturnAngle(deviceOrientation: .portrait)
+        let landscapeLeftAngle = RollCameraOrientation.cameraReturnAngle(deviceOrientation: .landscapeLeft)
+        let landscapeRightAngle = RollCameraOrientation.cameraReturnAngle(deviceOrientation: .landscapeRight)
+
+        #expect(portraitAngle == 0.0)
+        #expect(landscapeLeftAngle == 90.0)
+        #expect(landscapeRightAngle == -90.0)
+    }
+
+    @Test func cameraReturnScaleStagesProgressFromFullBleedToFloatingToIdle() {
+        let container = CGSize(width: 393, height: 852)
+        let layoutScale: CGFloat = 1.0
+
+        let portraitFullBleed = WorkbenchLayout.fullBleedCameraScale(container: container, layoutScale: layoutScale, angle: 0.0)
+        let portraitFloating = WorkbenchLayout.floatingCameraScale(container: container, layoutScale: layoutScale, angle: 0.0)
+
+        #expect(portraitFullBleed > portraitFloating)
+        #expect(portraitFloating > 1.0)
+
+        let landscapeFullBleed = WorkbenchLayout.fullBleedCameraScale(container: container, layoutScale: layoutScale, angle: 90.0)
+        let landscapeFloating = WorkbenchLayout.floatingCameraScale(container: container, layoutScale: layoutScale, angle: 90.0)
+
+        #expect(landscapeFullBleed > landscapeFloating)
+        #expect(landscapeFloating > 1.0)
+    }
 }
 
 struct TabBarDragMathTests {
