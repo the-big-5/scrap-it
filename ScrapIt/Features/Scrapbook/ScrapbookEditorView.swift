@@ -192,7 +192,8 @@ struct ScrapbookEditorView: View {
                     onClose: viewModel.closeTray,
                     onSelect: viewModel.selectTrayTool,
                     tools: viewModel.availableTools,
-                    isFixed: true
+                    isFixed: true,
+                    onCloseSubTray: viewModel.closeSubTray
                 ) { tool in
                     subTray(for: tool)
                 }
@@ -549,6 +550,14 @@ struct ScrapbookEditorView: View {
                 .transition(.scale(scale: 0.3, anchor: .bottomLeading).combined(with: .opacity))
             }
         }
+        .overlay(alignment: .top) {
+            // On the two-page view the tool hint shows once, centered over both pages.
+            if viewModel.zoom == .spread, let tool = viewModel.hintTool {
+                hint(for: tool)
+                    .frame(width: viewportWidth)
+                    .allowsHitTesting(false)
+            }
+        }
         .clipShape(Rectangle().inset(by: viewModel.draggedItemID != nil ? -2000 : 0))
         .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
     }
@@ -590,7 +599,8 @@ struct ScrapbookEditorView: View {
     /// The tool using touches on a page, if any.
     @ViewBuilder
     private func pageOverlay(for page: ScrapbookPage, size: CGSize) -> some View {
-        let isActive = page.id == viewModel.currentPageID
+        // The page shows the hint itself only when it's alone (zoomed page, cover); the spread centers it instead.
+        let showsHint = page.id == viewModel.currentPageID && !(viewModel.mode == .edit && viewModel.zoom == .spread)
         if viewModel.isCutting {
             ScissorsToolView(
                 itemAt: { point, size in
@@ -613,7 +623,7 @@ struct ScrapbookEditorView: View {
                 onDropInTrash: { viewModel.endItemDrag(itemID: $0) },
                 onCancelDrag: { viewModel.cancelItemDrag() }
             )
-            .overlay(alignment: .top) { if isActive { hint(for: .scissors) } }
+            .overlay(alignment: .top) { if showsHint { hint(for: .scissors) } }
             .transition(.opacity)
         } else if viewModel.isDrawing {
             // Pencil draws straight on every page on screen, each into its own layer.
@@ -624,11 +634,11 @@ struct ScrapbookEditorView: View {
                                   controller: pencil,
                                   remoteRevision: viewModel.remoteDrawingRevision)
                     .id(layerID)
-                    .overlay(alignment: .top) { if isActive { hint(for: .pencil) } }
+                    .overlay(alignment: .top) { if showsHint { hint(for: .pencil) } }
             }
         } else if let style = viewModel.washiStyleID.flatMap(WashiCatalog.style(withID:)) {
             WashiPullOverlay(style: style, pageSize: size,
-                             hint: isActive && viewModel.hintTool == .washi ? ScrapbookTool.washi.hint(isPad: isPad) : nil) { start, end, seed in
+                             hint: showsHint && viewModel.hintTool == .washi ? ScrapbookTool.washi.hint(isPad: isPad) : nil) { start, end, seed in
                 viewModel.activatePage(page.id)
                 return viewModel.addWashi(from: start, to: end, seed: seed, pageSize: size)
             }

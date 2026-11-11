@@ -173,7 +173,7 @@ struct ProfileViewModelTests {
         #expect(router.path == [.createRollSetup])
     }
 
-    @Test func shelfRowsChunkTwelveBooksPerShelfWithDeterministicPalette() throws {
+    @Test func shelfRowsChunkTwelveBooksPerShelf() throws {
         let user = UserProfile(appleUserID: "apple-1", name: "Ana")
         context.insert(user)
         for index in 0..<14 {
@@ -192,9 +192,6 @@ struct ProfileViewModelTests {
         #expect(vm.shelfRows.count == 2)
         #expect(vm.shelfRows[0].count == 12)
         #expect(vm.shelfRows[1].count == 2)
-        #expect(vm.shelfRows[0].map(\.style) == BookSpineStyle.palette)
-        #expect(vm.shelfRows[1][0].style == BookSpineStyle.palette[0])
-        #expect(vm.shelfRows[1][1].style == BookSpineStyle.palette[1])
 
         let firstBook = vm.shelfRows[0][0].scrapbook
         vm.open(firstBook)

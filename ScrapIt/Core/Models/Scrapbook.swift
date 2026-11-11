@@ -3,6 +3,8 @@ import SwiftData
 
 @Model
 final class Scrapbook {
+    static let defaultCoverColorHex = "#303D6E"
+
     var id: UUID = UUID()
     var title: String = ""
     @Attribute(.externalStorage) var coverPhotoData: Data?
@@ -20,7 +22,14 @@ final class Scrapbook {
     /// Tools whose hint was already shown in this scrapbook (`ScrapbookTool.rawValue`, change 022).
     var shownToolHints: [String] = []
     /// Cover color as "#RRGGBB" (change 026); the cover starts white.
-    var coverColorHex: String = "#FFFFFF"
+    /// Default: the blue of the Figma book (1444:23742), until someone picks a color in Edit Cover.
+    var coverColorHex: String = "#303D6E"
+    /// True once someone picked a cover color in Edit Cover (change 103). Until then the cover shows the default blue,
+    /// so scrapbooks saved with the old white default turn blue.
+    var coverColorPicked: Bool = false
+
+    /// The cover color to draw: the picked color, else the default blue.
+    var displayedCoverColorHex: String { coverColorPicked ? coverColorHex : Self.defaultCoverColorHex }
     /// Saved by the host: nobody can change it any more (change 026).
     var isLocked: Bool = false
     var lockedAt: Date?

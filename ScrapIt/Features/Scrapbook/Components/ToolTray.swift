@@ -14,6 +14,8 @@ struct ToolTray<SubTray: View>: View {
     var tools: [ScrapbookTool] = ScrapbookTool.allCases
     /// Edit Cover (change 026): the main tray stays open, centered, and doesn't scroll or fold away.
     var isFixed = false
+    /// Swipe down on the second tray (Edit Cover): puts the tool away. `nil`: the second tray doesn't react.
+    var onCloseSubTray: (() -> Void)?
     /// Where the closed button sits in the tray's own space (change 025: `.bottomTrailing` when the tray is turned
     /// on its left side in landscape, so the button ends up at the bottom of the screen).
     var closedAlignment: Alignment = .bottomLeading
@@ -31,6 +33,11 @@ struct ToolTray<SubTray: View>: View {
                     if let activeTool, activeTool.hasSubTray {
                         subTray(activeTool)
                             .frame(height: TrayStyle.trayHeight)
+                            .simultaneousGesture(DragGesture(minimumDistance: 20).onEnded { value in
+                                guard let onCloseSubTray, value.translation.height > 30,
+                                      value.translation.height > abs(value.translation.width) else { return }
+                                onCloseSubTray()
+                            })
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                             .zIndex(0)
                     }
