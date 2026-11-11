@@ -12,9 +12,11 @@ Figma node 676:3703
 - Logo is still a placeholder box [Open]
 
 ## Screen: Onboarding Slides [Locked]
-Figma nodes 1248:21648 (OB1), 1249:22041 (OB2), 1255:22152 (OB3); changes 053, 074
+Figma nodes 1248:21648 (OB1), 1249:22041 (OB2), 1255:22152 (OB3); changes 053, 054, 074
 - Presented on app launch when not signed in, and upon sign-out, before displaying the Welcome screen; completing slide 3 smoothly dissolves to Welcome (change 074).
-- 3-slide horizontal paging view with gesture swiping and primary offset pill button progression.
+- 3-slide custom coordinator view with interactive horizontal drag scrubbing and animated button transitions (change 054).
+- Transition animation: playful card shuffle inspired by Spark onboarding. Central illustration cards tilt, scale, and shuffle between slides, while peripheral decorative elements perform 3D flips and coordinates translation. Text crossfades in sync with transition progress (change 054).
+- Element assets: individual transparent layer assets in `Assets.xcassets/Onboarding/` (change 054).
 - Background: Kraft light active (`#F7F2EB`).
 - Slide 1 (OB1): disposable camera and film collage illustration, headline "A film camera experience. Shared with friends.", body "Start a shared roll, take turns capturing your moment, and make every shot count.", button "Continue".
 - Slide 2 (OB2): scrapbook notebook, scissors, and photos collage illustration, headline "Turn your memories into scrapbook.", body "Reveal your photos when the roll is complete, then create and decorate a scrapbook together.", button "Continue".
