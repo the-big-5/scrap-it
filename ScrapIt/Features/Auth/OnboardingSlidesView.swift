@@ -5,6 +5,8 @@ struct OnboardingSlidesView: View {
 
     @State private var currentSlide: Int = 0
 
+    static let slideThreeButtonTitle = "Let's Try It"
+
     private struct SlideContent {
         let imageName: String
         let imageWidth: CGFloat
@@ -37,7 +39,7 @@ struct OnboardingSlidesView: View {
             imageHeight: 298,
             title: "Make memories you can revisit.",
             description: "Keep your completed scrapbooks on your bookshelf and revisit the moments you made together.",
-            buttonTitle: "Lets Try It"
+            buttonTitle: slideThreeButtonTitle
         )
     ]
 

@@ -1,19 +1,19 @@
 # Flows
 ## F1: Sign in [Locked]
 1. User opens app
-2. Not signed in: sees Welcome screen, taps "Sign in with Apple"; Apple verifies the Apple Account (Face ID / passcode). Only on success is the profile created (or loaded). Requested data: full name and email. Apple sends the name and email only on the first authorization; when it does, the profile name (unless customized) and read-only email are set or updated. Without a name, a new profile is called "Friend". After sign-in from Welcome, user is presented with 3 onboarding slides before navigating to Home (change 053)
+2. Not signed in: presented with 3 onboarding slides on launch before reaching the Welcome screen (change 074). Completing slide 3 ("Let's Try It") smoothly dissolves to Welcome. User taps "Sign in with Apple"; Apple verifies the Apple Account (Face ID / passcode). Only on success is the profile created (or loaded). Requested data: full name and email. Apple sends the name and email only on the first authorization; when it does, the profile name (unless customized) and read-only email are set or updated. Without a name, a new profile is called "Friend". After sign-in from Welcome, user navigates directly to Home (changes 053, 074)
 3. Already signed in (saved Apple user ID + local profile):
    - Online: checked with Apple on launch. Authorized → straight to Home. Revoked, not found, transferred, or check error → Welcome
    - Offline: straight to Home with local data; the Apple check runs once the network is back, and anything but authorized → Welcome
    - No local profile → Welcome
 4. After sign-in (and on every launch), scrapbooks and photos from the user's ended rolls are restored in the background, e.g. on a new phone (change 012). No restore UI
-5. Sign out (in Edit Profile via "Log out" and confirmation): returns to Welcome; local data is kept
+5. Sign out (in Edit Profile via "Log out" and confirmation): returns to onboarding slides before Welcome (change 074); local data is kept
 Edge cases:
 - Cancel: stay on Welcome, no message
 - Sign-in fails (including no Apple Account on the device): stay on Welcome with an error message
 - No network: cannot sign in (Welcome shows an offline message and the sign-in button is disabled). Already signed in users can still enter (see step 3)
 - Needs internet: Create Roll, Join Roll (QR, roll code, share link), invite / share link. Works offline: Home, Profile, viewing scrapbooks and photos, editing captions, Sign Out. How online-only features look and behave while offline: [Open]
-- First launch: Welcome
+- First launch: Onboarding slides before Welcome (change 074)
 - Apple ID revoked while the app is running: caught on the next launch (no live sign-out)
 
 ## F2: Join a Roll [Locked]

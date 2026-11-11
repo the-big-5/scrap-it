@@ -21,6 +21,8 @@ struct OnboardingSlidesTests {
 
     @Test
     func testOnboardingSlidesViewCompletion() {
+        #expect(OnboardingSlidesView.slideThreeButtonTitle == "Let's Try It")
+
         var completed = false
         let view = OnboardingSlidesView(onComplete: {
             completed = true
@@ -35,14 +37,17 @@ struct OnboardingSlidesTests {
     @Test
     func testRootViewInitializesWithCorrectOnboardingState() {
         let rootViewDefault = RootView()
-        #expect(rootViewDefault != nil)
+        #expect(rootViewDefault.isShowingOnboarding == true)
+
+        let rootViewWithoutOnboarding = RootView(showOnboarding: false)
+        #expect(rootViewWithoutOnboarding.isShowingOnboarding == false)
 
         let rootViewWithOnboarding = RootView(showOnboarding: true)
-        #expect(rootViewWithOnboarding != nil)
+        #expect(rootViewWithOnboarding.isShowingOnboarding == true)
     }
 
     @Test
-    func testOnboardingLifecycleOnSignInAndSignOut() async throws {
+    func testPreSignInOnboardingFlowAndLifecycle() async throws {
         let network = FakeNetwork(isOnline: true)
         let checker = FakeCredentialChecker(result: .success(.authorized))
         let vm = AuthViewModel(
@@ -52,32 +57,40 @@ struct OnboardingSlidesTests {
             defaults: defaults
         )
 
-        // Initial launch without session
+        // 1. Initial launch without existing session: not authenticated, onboarding shown first
         await vm.restoreExistingSession()
         #expect(vm.currentUser == nil)
         #expect(!vm.isRestoringSession)
 
-        // Welcome screen with sign in callback
-        var didTriggerOnboarding = false
-        let welcomeView = WelcomeSignInView(
-            authViewModel: vm,
-            onSignedIn: {
-                didTriggerOnboarding = true
-            }
-        )
-        #expect(!didTriggerOnboarding)
+        let initialRootView = RootView(authViewModel: vm)
+        #expect(initialRootView.isShowingOnboarding == true)
 
-        // Sign in from Welcome
+        // 2. Onboarding completion callback sets showOnboarding = false
+        var completed = false
+        let slidesView = OnboardingSlidesView(onComplete: {
+            completed = true
+        })
+        #expect(!completed)
+        slidesView.onComplete()
+        #expect(completed)
+
+        // 3. After completing onboarding, RootView presents Welcome without onboarding
+        let postOnboardingRootView = RootView(authViewModel: vm, showOnboarding: false)
+        #expect(postOnboardingRootView.isShowingOnboarding == false)
+
+        // 4. Sign in from Welcome: user transitions directly to authenticated state (Home)
         vm.handleAppleIDCredential(userID: "user_123", fullName: nil)
         #expect(vm.currentUser != nil)
-        welcomeView.onSignedIn?()
-        #expect(didTriggerOnboarding)
+        #expect(vm.isSignedIn)
 
-        // Sign out resets session
+        // 5. Sign out resets session: onboarding is presented again before Welcome
         vm.signOut()
         #expect(vm.currentUser == nil)
+        #expect(!vm.isSignedIn)
+        let postSignOutRootView = RootView(authViewModel: vm, showOnboarding: true)
+        #expect(postSignOutRootView.isShowingOnboarding == true)
 
-        // Cold launch while already signed in
+        // 6. Cold launch with restored session: returning user bypasses onboarding to Home
         defaults.set("user_123", forKey: AuthViewModel.savedUserIDKey)
         let launchVM = AuthViewModel(
             modelContext: context,
@@ -87,8 +100,7 @@ struct OnboardingSlidesTests {
         )
         await launchVM.restoreExistingSession()
         #expect(launchVM.currentUser != nil)
-        // RootView initialized for returning user starts with showOnboarding = false
-        let returningRootView = RootView(authViewModel: launchVM, showOnboarding: false)
+        let returningRootView = RootView(authViewModel: launchVM)
         #expect(returningRootView != nil)
     }
 }
