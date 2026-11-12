@@ -1,7 +1,54 @@
+import CloudKit
 import Foundation
 import SwiftData
 import Testing
 @testable import ScrapIt
+
+@MainActor
+private final class MockWorkbenchRoomService: RollRoomServicing {
+    var lastErrorDescription: String?
+    var fetchResults: [String: Result<RoomSnapshot, Error>] = [:]
+    var handoverCalls: [(code: String, zoneOwnerName: String?, leavingUserID: String, nextHostUserID: String)] = []
+    var leaveCalls: [(code: String, zoneOwnerName: String, userID: String)] = []
+    var deleteCalls: [String] = []
+
+    func createRoom(_ draft: RoomDraft) async throws -> RoomSnapshot { throw RoomError.unavailable }
+    func joinRoom(code: String, as user: RoomParticipant) async throws -> RoomSnapshot { throw RoomError.unavailable }
+    func acceptShare(_ metadata: CKShare.Metadata, as user: RoomParticipant) async throws -> RoomSnapshot { throw RoomError.unavailable }
+
+    func fetchRoom(code: String, zoneOwnerName: String?) async throws -> RoomSnapshot {
+        switch fetchResults[code] {
+        case .success(let snapshot):
+            return snapshot
+        case .failure(let error):
+            throw error
+        case nil:
+            throw RoomError.notFound
+        }
+    }
+
+    func removeParticipant(userID: String, fromRoom code: String) async throws {}
+
+    func leaveRoom(code: String, zoneOwnerName: String, userID: String) async throws {
+        leaveCalls.append((code, zoneOwnerName, userID))
+    }
+
+    func leaveAsHostHandover(
+        code: String,
+        zoneOwnerName: String?,
+        leavingUserID: String,
+        nextHostUserID: String
+    ) async throws {
+        handoverCalls.append((code, zoneOwnerName, leavingUserID, nextHostUserID))
+    }
+
+    func deleteRoom(code: String) async throws {
+        deleteCalls.append(code)
+    }
+
+    func listRooms() async throws -> [RoomSnapshot] { [] }
+    func downloadShotPayload(recordName: String) async throws -> Data { throw RoomError.unavailable }
+}
 
 @MainActor
 struct WorkbenchViewModelTests {
@@ -29,9 +76,11 @@ struct WorkbenchViewModelTests {
 
     private func makeViewModel(
         router: AppRouter? = nil,
+        currentUser: UserProfile? = nil,
+        roomService: MockWorkbenchRoomService? = nil,
         defaults: UserDefaults? = nil,
         delay: Duration = .milliseconds(10)
-    ) -> (WorkbenchViewModel, AppRouter) {
+    ) -> (WorkbenchViewModel, AppRouter, SessionStore) {
         let resolvedRouter = router ?? AppRouter()
         let store = SessionStore(modelContext: context)
         let deleted = DeletedScrapbookList(defaults: defaults ?? makeDefaults().0)
@@ -39,14 +88,17 @@ struct WorkbenchViewModelTests {
             modelContext: context,
             navigator: resolvedRouter,
             sessionStore: store,
+            currentUser: currentUser,
+            roomService: roomService,
             deletedScrapbooks: deleted,
-            toolboxTransitionDelay: delay
+            toolboxTransitionDelay: delay,
+            rollsTransitionDelay: delay
         )
-        return (vm, resolvedRouter)
+        return (vm, resolvedRouter, store)
     }
 
     @Test func activateToolboxHidesTabBarAndPushesCollection() async throws {
-        let (vm, router) = makeViewModel(delay: .milliseconds(20))
+        let (vm, router, _) = makeViewModel(delay: .milliseconds(20))
 
         vm.activateToolbox()
         #expect(vm.isToolboxActive)
@@ -62,8 +114,38 @@ struct WorkbenchViewModelTests {
         #expect(router.path == [.deskCollection(.scrapbooks)])
     }
 
+    @Test func activateRollsHidesTabBarPushesCollectionAndCancelsCleanly() async throws {
+        let (vm, router, _) = makeViewModel(delay: .milliseconds(40))
+
+        vm.activateRolls()
+        #expect(vm.isRollsActive)
+        #expect(router.isTabBarHidden)
+
+        // Mutually exclusive with camera and toolbox
+        vm.toggleCamera()
+        vm.activateToolbox()
+        #expect(!vm.isCameraActive)
+        #expect(!vm.isToolboxActive)
+
+        for _ in 0..<100 where vm.isRollsActive {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(!vm.isRollsActive)
+        #expect(!router.isTabBarHidden)
+        #expect(router.path == [.deskCollection(.rolls)])
+
+        // Cancellation aborts navigation
+        router.popToRoot()
+        vm.activateRolls()
+        vm.cancelRollsTransition()
+        #expect(!vm.isRollsActive)
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(router.path.isEmpty)
+    }
+
     @Test func cameraAndToolboxMutuallyExcludeAndCancelStopsNavigation() async throws {
-        let (vm, router) = makeViewModel(delay: .milliseconds(80))
+        let (vm, router, _) = makeViewModel(delay: .milliseconds(80))
 
         vm.toggleCamera()
         #expect(vm.isCameraActive)
@@ -87,7 +169,7 @@ struct WorkbenchViewModelTests {
     }
 
     @Test func previewPhotosAreDeterministicAndBoundedOneToFour() throws {
-        let (vm, _) = makeViewModel()
+        let (vm, _, _) = makeViewModel()
         let emptyScrapbook = Scrapbook(title: "Empty")
         context.insert(emptyScrapbook)
         #expect(vm.previewPhotos(for: emptyScrapbook).isEmpty)
@@ -128,7 +210,7 @@ struct WorkbenchViewModelTests {
     }
 
     @Test func folderThemesCycleBurgundyKraftNavyAndDateFormatsDDMMYYYY() {
-        let (vm, _) = makeViewModel()
+        let (vm, _, _) = makeViewModel()
         #expect(vm.folderTheme(at: 0) == .burgundy)
         #expect(vm.folderTheme(at: 1) == .kraft)
         #expect(vm.folderTheme(at: 2) == .navy)
@@ -149,7 +231,7 @@ struct WorkbenchViewModelTests {
         let (defaults, suite) = makeDefaults()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
 
-        let (vm, router) = makeViewModel(defaults: defaults)
+        let (vm, router, _) = makeViewModel(defaults: defaults)
         router.push(.deskCollection(.scrapbooks))
         vm.closeCollection()
         #expect(router.path.isEmpty)
@@ -193,5 +275,146 @@ struct WorkbenchViewModelTests {
         let remainingPhotos = try context.fetch(FetchDescriptor<ScrapPhoto>())
         #expect(remainingSessions.isEmpty)
         #expect(remainingPhotos.isEmpty)
+    }
+
+    @Test func activeRollsRefreshOpenAndHostSafeLeaveHandover() async throws {
+        let user = UserProfile(appleUserID: "me-1", name: "Lepin")
+        context.insert(user)
+        let roomService = MockWorkbenchRoomService()
+        let (vm, router, store) = makeViewModel(currentUser: user, roomService: roomService)
+
+        let waiting = CaptureSession(
+            name: "Waiting Roll",
+            rollCode: "WAIT01",
+            ckRecordName: "RollSession",
+            hostUserID: "me-1",
+            participantIDs: ["me-1", "friend-2"],
+            participantNames: ["Lepin", "Biel"],
+            rollSize: 24,
+            slotsUsed: 0,
+            filter: .cinematicBW400,
+            status: .waiting,
+            startTime: Date(timeIntervalSince1970: 1_795_000_000)
+        )
+        let live = CaptureSession(
+            name: "Live Roll",
+            rollCode: "LIVE02",
+            ckRecordName: "RollSession",
+            hostUserID: "friend-2",
+            participantIDs: ["me-1", "friend-2", "friend-3"],
+            participantNames: ["Lepin", "Biel", "Sanny"],
+            rollSize: 36,
+            slotsUsed: 12,
+            filter: .colorPrint200,
+            status: .live,
+            startTime: Date(timeIntervalSince1970: 1_795_100_000)
+        )
+        live.ckZoneOwnerName = "owner-zone"
+        let ended = CaptureSession(
+            name: "Finished Roll",
+            rollCode: "DONE03",
+            hostUserID: "me-1",
+            participantIDs: ["me-1"],
+            participantNames: ["Lepin"],
+            rollSize: 24,
+            slotsUsed: 24,
+            filter: .colorPrint200,
+            status: .ended
+        )
+        context.insert(waiting)
+        context.insert(live)
+        context.insert(ended)
+        try context.save()
+
+        #expect(vm.activeRolls.map(\.rollCode) == ["LIVE02", "WAIT01"])
+        #expect(vm.canisterAsset(for: .cinematicBW400) == "FilterCanisterBW")
+        #expect(vm.canisterAsset(for: .colorPrint200) == "FilterCanisterColor")
+
+        // Refresh syncs remote host change & slot counts
+        roomService.fetchResults["WAIT01"] = .success(RoomSnapshot(
+            sessionID: waiting.id,
+            rollCode: "WAIT01",
+            name: "Waiting Roll",
+            hostUserID: "friend-2",
+            rollSize: 24,
+            slotsUsed: 3,
+            filterRaw: RollFilter.cinematicBW400.rawValue,
+            statusRaw: SessionStatus.waiting.rawValue,
+            participants: [
+                RoomParticipant(userID: "me-1", name: "Lepin"),
+                RoomParticipant(userID: "friend-2", name: "Biel"),
+            ],
+            shareURL: nil,
+            zoneOwnerName: nil,
+            rollKey: nil
+        ))
+        // Live roll ended remotely while user was away
+        roomService.fetchResults["LIVE02"] = .success(RoomSnapshot(
+            sessionID: live.id,
+            rollCode: "LIVE02",
+            name: "Live Roll",
+            hostUserID: "friend-2",
+            rollSize: 36,
+            slotsUsed: 36,
+            filterRaw: RollFilter.colorPrint200.rawValue,
+            statusRaw: SessionStatus.ended.rawValue,
+            participants: [
+                RoomParticipant(userID: "me-1", name: "Lepin"),
+                RoomParticipant(userID: "friend-2", name: "Biel"),
+            ],
+            shareURL: nil,
+            zoneOwnerName: "owner-zone",
+            rollKey: nil
+        ))
+        await vm.refreshActiveRolls()
+        #expect(waiting.hostUserID == "friend-2")
+        #expect(waiting.slotsUsed == 3)
+        // Un-finalized remotely ended roll remains visible until tapped so Reveal opens
+        #expect(vm.activeRolls.contains(where: { $0.id == live.id }))
+
+        // Tapping waiting roll opens lobby
+        await vm.openRoll(waiting)
+        #expect(store.activeSession?.id == waiting.id)
+        #expect(router.path.last == .createRollLobby)
+
+        // Tapping remotely ended roll opens Roll Reveal and marks ended
+        router.popToRoot()
+        await vm.openRoll(live)
+        guard case .rollReveal = router.path.last else {
+            Issue.record("Expected rollReveal route when opening remotely ended roll")
+            return
+        }
+        #expect(live.status == .ended)
+
+        // Tapping local live offline roll falls back to captureSession
+        let localLive = CaptureSession(
+            name: "Local Shoot",
+            rollCode: "LOCL04",
+            hostUserID: "me-1",
+            participantIDs: ["me-1", "friend-9"],
+            participantNames: ["Lepin", "Alex"],
+            rollSize: 24,
+            slotsUsed: 4,
+            filter: .cinematicBW400,
+            status: .live
+        )
+        localLive.ckRecordName = "RollSession"
+        roomService.fetchResults["LOCL04"] = .failure(RoomError.offline)
+        context.insert(localLive)
+        try context.save()
+
+        router.popToRoot()
+        await vm.openRoll(localLive)
+        #expect(router.path.last == .captureSession)
+
+        // Host leaving roll with remaining participant hands over host without deleting room
+        vm.requestLeaveRoll(localLive)
+        vm.confirmLeaveRoll()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(roomService.handoverCalls.count == 1)
+        #expect(roomService.handoverCalls.first?.leavingUserID == "me-1")
+        #expect(roomService.handoverCalls.first?.nextHostUserID == "friend-9")
+        #expect(roomService.deleteCalls.isEmpty)
+        #expect(!vm.activeRolls.contains(where: { $0.id == localLive.id }))
     }
 }

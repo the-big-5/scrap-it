@@ -22,12 +22,15 @@ struct MainShellView: View {
         self.onSignOut = onSignOut
         let appRouter = AppRouter()
         let store = SessionStore(modelContext: modelContext)
+        let roomService = CloudKitRollRoomService()
         _router = State(initialValue: appRouter)
         _sessionStore = State(initialValue: store)
         _workbenchViewModel = State(initialValue: WorkbenchViewModel(
             modelContext: modelContext,
             navigator: appRouter,
-            sessionStore: store
+            sessionStore: store,
+            currentUser: currentUser,
+            roomService: roomService
         ))
         _profileViewModel = State(initialValue: ProfileViewModel(
             modelContext: modelContext,
@@ -37,7 +40,7 @@ struct MainShellView: View {
         ))
         _archiveSync = State(initialValue: ScrapbookArchiveSync(
             modelContext: modelContext,
-            roomService: CloudKitRollRoomService()
+            roomService: roomService
         ))
     }
 
@@ -173,6 +176,8 @@ struct MainShellView: View {
             switch kind {
             case .scrapbooks:
                 scrapbooksCollectionView
+            case .rolls:
+                rollsCollectionView
             }
         }
     }
@@ -220,6 +225,86 @@ struct MainShellView: View {
             Button("Remove from Device", role: .destructive, action: workbenchViewModel.confirmRemoveFromDevice)
         } message: {
             Text("This removes the scrapbook and its photos from your device storage. Collaborators keep their shared copy.")
+        }
+    }
+
+    private var rollsCollectionView: some View {
+        let rolls = workbenchViewModel.activeRolls
+
+        return DeskCollectionView(
+            title: "Resume Roll",
+            isEmpty: rolls.isEmpty,
+            horizontalPadding: 0,
+            onBack: workbenchViewModel.closeCollection
+        ) {
+            LazyVStack(spacing: 10) {
+                ForEach(rolls, id: \.id) { session in
+                    RollStripCard(
+                        title: session.name,
+                        joinedCount: workbenchViewModel.joinedCount(for: session),
+                        slotsUsed: session.slotsUsed,
+                        rollSize: session.rollSize,
+                        formattedDate: workbenchViewModel.formattedRollDate(for: session),
+                        canisterAsset: workbenchViewModel.canisterAsset(for: session.filter),
+                        isHost: workbenchViewModel.isHost(of: session),
+                        onTap: {
+                            Task { await workbenchViewModel.openRoll(session) }
+                        },
+                        onLeave: { workbenchViewModel.requestLeaveRoll(session) },
+                        onDelete: { workbenchViewModel.requestDeleteRoll(session) }
+                    )
+                }
+            }
+        } emptyState: {
+            DeskEmptyStateView(
+                title: "No roll in progress...yet!",
+                message: "Your next little moments are waiting to be captured. Start a roll and make memories with your friends.",
+                actionTitle: "Create Roll",
+                onAction: workbenchViewModel.startCreateRollFromCollection
+            ) {
+                RollEmptyIllustration()
+            }
+        }
+        .onAppear { workbenchViewModel.reloadRolls() }
+        .task { await workbenchViewModel.refreshActiveRolls() }
+        .confirmationDialog(
+            "Leave this roll?",
+            isPresented: Binding(
+                get: { workbenchViewModel.rollPendingLeave != nil },
+                set: { if !$0 { workbenchViewModel.rollPendingLeave = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Leave Roll", role: .destructive, action: workbenchViewModel.confirmLeaveRoll)
+        } message: {
+            if let session = workbenchViewModel.rollPendingLeave,
+               workbenchViewModel.isHost(of: session),
+               session.participantIDs.contains(where: { $0 != currentUser.appleUserID }) {
+                Text("Host control will pass to another participant so everyone else can finish this roll.")
+            } else {
+                Text("This removes the roll from your Resume Roll list.")
+            }
+        }
+        .confirmationDialog(
+            "Delete this room?",
+            isPresented: Binding(
+                get: { workbenchViewModel.rollPendingDelete != nil },
+                set: { if !$0 { workbenchViewModel.rollPendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Room", role: .destructive, action: workbenchViewModel.confirmDeleteRoll)
+        } message: {
+            Text("Everyone in the room will be removed.")
+        }
+        .alert(
+            workbenchViewModel.rollNoticeMessage ?? "",
+            isPresented: Binding(
+                get: { workbenchViewModel.rollNoticeMessage != nil },
+                set: { if !$0 { workbenchViewModel.rollNoticeMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
         }
     }
 }

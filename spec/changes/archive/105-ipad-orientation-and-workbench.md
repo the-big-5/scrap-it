@@ -1,5 +1,5 @@
 # 105: iPad Orientation Support & iPad 13" Landscape Workbench
-Status: Approved
+Status: Done
 
 ## Why
 Although `ScrapIt.xcodeproj` (`INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad`) declares all 4 interface orientations for iPad and `AppDelegate.application(_:supportedInterfaceOrientationsFor:)` delegates to `OrientationLock.mask`, `OrientationLock` currently hardcodes `mask = .portrait`, returns `.portrait` from `mask(isCaptureSessionVisible:)`, and resets to `.portrait` regardless of device idiom. On iPad, the app stays locked in portrait everywhere (outside explicit spread edits).

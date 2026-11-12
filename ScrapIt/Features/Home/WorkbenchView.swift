@@ -6,6 +6,7 @@ struct WorkbenchView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel: WorkbenchViewModel
     @State private var toolboxRattle = ToolboxRattleState()
+    @State private var rollsBounce = RollClusterBounceState()
 
     init(modelContext: ModelContext, navigator: any Navigator, sessionStore: SessionStore) {
         _viewModel = State(
@@ -37,6 +38,7 @@ struct WorkbenchView: View {
         }
         .onDisappear {
             viewModel.cancelToolboxTransition()
+            viewModel.cancelRollsTransition()
         }
     }
 
@@ -45,11 +47,12 @@ struct WorkbenchView: View {
             let layout = WorkbenchLayout(container: proxy.size)
             let isActive = viewModel.isCameraActive
             let isToolboxActive = viewModel.isToolboxActive
-            let isBlurred = isActive || isToolboxActive
+            let isRollsActive = viewModel.isRollsActive
+            let isBlurred = isActive || isToolboxActive || isRollsActive
 
             ZStack(alignment: .topLeading) {
                 // Desk: every object is placed in the active variant coordinates.
-                // Blurs and dims as one flattened sheet when the camera menu or toolbox opens.
+                // Blurs and dims as one flattened sheet when the camera menu, toolbox, or rolls open.
                 desk(layout, containerSize: proxy.size)
                     .drawingGroup()
                     // Opaque blur: the screen edges do not fade to the background color.
@@ -64,11 +67,26 @@ struct WorkbenchView: View {
                         .zIndex(1)
                 }
 
-                toolbox(layout, isActive: isToolboxActive, isObscuredByCamera: isActive)
-                    .zIndex(isToolboxActive ? 3 : 0)
+                rolls(
+                    layout,
+                    isActive: isRollsActive,
+                    isObscured: isActive || isToolboxActive
+                )
+                .zIndex(isRollsActive ? 3 : 0.25)
 
-                camera(layout, isActive: isActive, isObscuredByToolbox: isToolboxActive)
-                    .zIndex(isToolboxActive ? 0.5 : 2)
+                toolbox(
+                    layout,
+                    isActive: isToolboxActive,
+                    isObscured: isActive || isRollsActive
+                )
+                .zIndex(isToolboxActive ? 3 : 0)
+
+                camera(
+                    layout,
+                    isActive: isActive,
+                    isObscured: isToolboxActive || isRollsActive
+                )
+                .zIndex((isToolboxActive || isRollsActive) ? 0.5 : 2)
 
                 if isActive {
                     actionButtons(layout)
@@ -83,6 +101,7 @@ struct WorkbenchView: View {
             .clipped()
             .animation(.spring(response: 0.40, dampingFraction: 0.78), value: isActive)
             .animation(.spring(response: 0.38, dampingFraction: 0.74), value: isToolboxActive)
+            .animation(.spring(response: 0.40, dampingFraction: 0.76), value: isRollsActive)
         }
         .background(Color(red: 0.604, green: 0.333, blue: 0.192)) // #9A5531, Figma frame fill behind the desk
     }
@@ -128,11 +147,6 @@ struct WorkbenchView: View {
                 .position(x: matFrame.midX, y: matFrame.midY)
                 .allowsHitTesting(false)
 
-            ForEach(WorkbenchLayout.iPadCanisters, id: \.asset) { item in
-                landscapeImage(item, layout)
-                    .allowsHitTesting(false)
-            }
-
             landscapeImage(WorkbenchLayout.iPadBookBottom, layout)
                 .shadow(color: .black.opacity(0.25), radius: layout.length(4), x: 0, y: layout.length(4))
                 .allowsHitTesting(false)
@@ -174,7 +188,7 @@ struct WorkbenchView: View {
             label()
         }
         .buttonStyle(.plain)
-        .disabled(viewModel.isCameraActive || viewModel.isToolboxActive)
+        .disabled(viewModel.isCameraActive || viewModel.isToolboxActive || viewModel.isRollsActive)
         .accessibilityLabel("Tutorial Book")
         .accessibilityHint("Tap to open tutorial")
     }
@@ -184,11 +198,66 @@ struct WorkbenchView: View {
         return CGPoint(x: frame.midX, y: frame.midY)
     }
 
+    // MARK: - Film Rolls (Figma 853:1703 / 1563:34278 Idle -> 1235:21168 Centered Active)
+
+    private func rolls(_ layout: WorkbenchLayout, isActive: Bool, isObscured: Bool) -> some View {
+        InteractiveRollsView(
+            placements: layout.activeRollPlacements,
+            layout: layout,
+            isActive: isActive,
+            isObscured: isObscured,
+            isDisabled: viewModel.isCameraActive || viewModel.isToolboxActive || viewModel.isRollsActive || viewModel.cameraReturnPhase != .idle,
+            bounce: rollsBounce
+        ) {
+            HapticService.shared.playSnapFeedback()
+            withAnimation(.spring(response: 0.40, dampingFraction: 0.74)) {
+                viewModel.activateRolls()
+            }
+        }
+        .task(id: isActive) {
+            if isActive {
+                await playRollsClusterAnimation()
+            } else {
+                rollsBounce = RollClusterBounceState()
+            }
+        }
+    }
+
+    @MainActor
+    private func playRollsClusterAnimation() async {
+        guard !reduceMotion else { return }
+
+        try? await Task.sleep(for: .milliseconds(90))
+        if !Task.isCancelled {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.56)) {
+                rollsBounce = RollClusterBounceState(scale: 1.07, spread: 1.0, wiggleDegrees: 3.5)
+            }
+            HapticService.shared.playRatchetTick()
+        }
+
+        try? await Task.sleep(for: .milliseconds(160))
+        if !Task.isCancelled {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.60)) {
+                rollsBounce = RollClusterBounceState(scale: 1.02, spread: 0.4, wiggleDegrees: -2.0)
+            }
+            HapticService.shared.playRatchetTick()
+        }
+
+        try? await Task.sleep(for: .milliseconds(160))
+        if !Task.isCancelled {
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.72)) {
+                rollsBounce = RollClusterBounceState()
+            }
+        } else {
+            rollsBounce = RollClusterBounceState()
+        }
+    }
+
     // MARK: - Toolbox (Figma 920:3092 / 1563:34910 Idle -> Centered Active)
 
     /// Spring-rotates and moves smoothly from its resting corner on the desk to screen center
     /// just like the camera, while the loose tools inside follow with secondary inertia.
-    private func toolbox(_ layout: WorkbenchLayout, isActive: Bool, isObscuredByCamera: Bool) -> some View {
+    private func toolbox(_ layout: WorkbenchLayout, isActive: Bool, isObscured: Bool) -> some View {
         let activeSize = layout.activeToolboxSize
         let baseSize = layout.size(activeSize)
         let rattleScale = layout.length(activeSize.width / WorkbenchLayout.toolboxSize.width)
@@ -224,10 +293,10 @@ struct WorkbenchView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Toolbox")
         .accessibilityHint("Tap to browse your scrapbooks")
-        .disabled(viewModel.isCameraActive || viewModel.cameraReturnPhase != .idle)
+        .disabled(viewModel.isCameraActive || viewModel.isRollsActive || viewModel.cameraReturnPhase != .idle)
         .allowsHitTesting(!isActive)
-        .blur(radius: isObscuredByCamera ? 12 : 0)
-        .opacity(isObscuredByCamera ? 0.65 : 1)
+        .blur(radius: isObscured ? 12 : 0)
+        .opacity(isObscured ? 0.65 : 1)
         .offset(
             x: rattleScale * toolboxRattle.boxOffset.width,
             y: rattleScale * toolboxRattle.boxOffset.height
@@ -323,7 +392,7 @@ struct WorkbenchView: View {
 
     /// Spring-rotates and moves from its spot on the cutting mat to the center (Figma CameraClick).
     /// Hidden during camera return transition while CameraReturnTransitionOverlay animates back to idle (change 086).
-    private func camera(_ layout: WorkbenchLayout, isActive: Bool, isObscuredByToolbox: Bool) -> some View {
+    private func camera(_ layout: WorkbenchLayout, isActive: Bool, isObscured: Bool) -> some View {
         let size = layout.activeCameraSize
         let targetPosition = layout.point(isActive ? layout.activeCameraActiveCenter : layout.activeCameraIdleCenter)
         let targetRotation = isActive ? layout.activeCameraActiveRotation : layout.activeCameraIdleRotation
@@ -348,9 +417,9 @@ struct WorkbenchView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Disposable Camera")
         .accessibilityHint(isActive ? "Camera menu active" : "Tap to open roll menu")
-        .disabled(viewModel.isCameraActive || isObscuredByToolbox || viewModel.cameraReturnPhase != .idle)
-        .blur(radius: isObscuredByToolbox ? 8 : 0)
-        .opacity(viewModel.cameraReturnPhase == .idle ? (isObscuredByToolbox ? 0.45 : 1) : 0)
+        .disabled(viewModel.isCameraActive || isObscured || viewModel.cameraReturnPhase != .idle)
+        .blur(radius: isObscured ? 8 : 0)
+        .opacity(viewModel.cameraReturnPhase == .idle ? (isObscured ? 0.45 : 1) : 0)
         .position(targetPosition)
     }
 

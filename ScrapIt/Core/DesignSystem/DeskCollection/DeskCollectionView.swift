@@ -4,6 +4,7 @@ import SwiftUI
 struct DeskCollectionView<Content: View, EmptyState: View>: View {
     let title: String
     let isEmpty: Bool
+    var horizontalPadding: CGFloat = 23
     let onBack: () -> Void
     @ViewBuilder let content: () -> Content
     @ViewBuilder let emptyState: () -> EmptyState
@@ -22,7 +23,7 @@ struct DeskCollectionView<Content: View, EmptyState: View>: View {
                 } else {
                     ScrollView {
                         content()
-                            .padding(.horizontal, 23)
+                            .padding(.horizontal, horizontalPadding)
                             .padding(.top, 24)
                             .padding(.bottom, 32)
                     }

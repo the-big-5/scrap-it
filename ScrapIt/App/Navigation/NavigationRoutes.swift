@@ -7,6 +7,7 @@ enum AppTab: String {
 
 enum DeskCollectionKind: Hashable {
     case scrapbooks
+    case rolls
 }
 
 enum AppRoute: Hashable {
