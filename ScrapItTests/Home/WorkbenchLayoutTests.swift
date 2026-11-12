@@ -85,6 +85,26 @@ struct WorkbenchLayoutTests {
         #expect(WorkbenchLayout.toolboxActiveScale > 0 && WorkbenchLayout.toolboxActiveScale <= 1)
     }
 
+    @Test func rollCanistersSitInsideDesignFramesForPortraitAndIPadLandscape() {
+        let portraitBounds = CGRect(origin: .zero, size: WorkbenchLayout.designSize)
+        let portraitRolls = WorkbenchLayout.rollPlacements
+        #expect(portraitRolls.count == 3)
+        #expect(Set(portraitRolls.map(\.asset)).count == 3)
+        for roll in portraitRolls {
+            #expect(portraitBounds.contains(roll.idleCenter))
+            #expect(portraitBounds.contains(roll.activeCenter))
+        }
+
+        let iPadBounds = CGRect(origin: .zero, size: WorkbenchLayout.iPadLandscapeDesignSize)
+        let iPadRolls = WorkbenchLayout.iPadRollPlacements
+        #expect(iPadRolls.count == 3)
+        #expect(Set(iPadRolls.map(\.asset)).count == 3)
+        for roll in iPadRolls {
+            #expect(iPadBounds.contains(roll.idleCenter))
+            #expect(iPadBounds.contains(roll.activeCenter))
+        }
+    }
+
     @Test(arguments: screens)
     func zoomedCameraScaleSizesProperlyForLandscapeAndPortraitAngles(_ screen: CGSize) {
         let layoutScale = screen.width / WorkbenchLayout.designSize.width

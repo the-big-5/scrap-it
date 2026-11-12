@@ -33,6 +33,17 @@ struct LandscapeDeskItem: Equatable {
     }
 }
 
+/// One interactive film canister placed in idle and centered active positions (Figma 853:1703 -> 1235:21168 / 1563:34278).
+struct WorkbenchRollPlacement: Equatable {
+    let asset: String
+    let idleCenter: CGPoint
+    let idleSize: CGSize
+    let idleRotation: Double
+    let activeCenter: CGPoint
+    let activeSize: CGSize
+    let activeRotation: Double
+}
+
 /// Places the Workbench on any screen using uniform width scaling and vertical centering:
 /// - `.portrait` (Figma "Home" 853:1703, 402×874) for iPhone and iPad Portrait.
 /// - `.iPadLandscape` (Figma "IPAD - Home" 1563:34278, 1210×834) for iPad Landscape.
@@ -138,6 +149,10 @@ struct WorkbenchLayout: Equatable {
         variant == .iPadLandscape ? Self.iPadActionButtonSize : Self.actionButtonSize
     }
 
+    var activeRollPlacements: [WorkbenchRollPlacement] {
+        variant == .iPadLandscape ? Self.iPadRollPlacements : Self.rollPlacements
+    }
+
     private var cameraBodyScaleFactor: CGFloat {
         activeCameraSize.width / Self.cameraSize.width
     }
@@ -200,9 +215,6 @@ extension WorkbenchLayout {
         DeskItem("DeskWoodGrain", 0, 0, 402, 874),
         DeskItem("DeskRuler", 173, 615, 229, 259),
         DeskItem("DeskBookBottom", 0, 509, 259.139, 365),
-        DeskItem("DeskFilmRoll4", 272, 454, 130, 118),
-        DeskItem("DeskFilmRoll3", 243, 516, 159, 165.032),
-        DeskItem("DeskFilmRoll2", 170, 457, 167.989, 161.748),
         DeskItem("DeskPaperBall1", 0, 174, 44, 67),
         DeskItem("DeskPaperBall2", 338, 806, 64, 68),
         DeskItem("DeskStationery1", 281, 364, 92, 80),
@@ -312,6 +324,37 @@ extension WorkbenchLayout {
     /// Create Roll / Join a Roll stack center in the 402×874 design.
     static let actionButtonsCenter = CGPoint(x: 155, y: 495)
     static let actionButtonSize = CGSize(width: 217, height: 52)
+
+    /// Interactive film canisters in Portrait (idle: Figma 853:1703 -> active cluster: Figma 1235:21168).
+    static let rollPlacements: [WorkbenchRollPlacement] = [
+        WorkbenchRollPlacement(
+            asset: "DeskFilmRollYellow",
+            idleCenter: CGPoint(x: 337, y: 513),
+            idleSize: CGSize(width: 124, height: 92.5),
+            idleRotation: 0,
+            activeCenter: CGPoint(x: 228.59, y: 406.16),
+            activeSize: CGSize(width: 131, height: 98),
+            activeRotation: -26.63
+        ),
+        WorkbenchRollPlacement(
+            asset: "DeskFilmRollGreen",
+            idleCenter: CGPoint(x: 322.5, y: 598.5),
+            idleSize: CGSize(width: 114, height: 91),
+            idleRotation: 45,
+            activeCenter: CGPoint(x: 246.84, y: 492.67),
+            activeSize: CGSize(width: 113.753, height: 90.761),
+            activeRotation: 20.07
+        ),
+        WorkbenchRollPlacement(
+            asset: "DeskFilmRollRed",
+            idleCenter: CGPoint(x: 254, y: 538),
+            idleSize: CGSize(width: 90, height: 117.5),
+            idleRotation: 62,
+            activeCenter: CGPoint(x: 156.16, y: 470.30),
+            activeSize: CGSize(width: 90.083, height: 117.499),
+            activeRotation: 27.64
+        ),
+    ]
 }
 
 // MARK: - iPad Landscape (1210×834, Figma 1563:34278)
@@ -319,11 +362,35 @@ extension WorkbenchLayout {
 extension WorkbenchLayout {
     static let iPadCuttingMatRect = CGRect(x: 0, y: 91, width: 1210, height: 652)
 
-    /// Film canisters sitting on the mat in 1563:34278 (reusing existing unclipped assets).
-    static let iPadCanisters: [LandscapeDeskItem] = [
-        LandscapeDeskItem("DeskFilmRoll4", centerX: 895.5, centerY: 541, width: 252, height: 229, rotation: 0),
-        LandscapeDeskItem("DeskFilmRoll2", centerX: 727, centerY: 600, width: 314, height: 302, rotation: 12),
-        LandscapeDeskItem("DeskFilmRoll3", centerX: 858, centerY: 705, width: 303, height: 314.5, rotation: 0),
+    /// Interactive film canisters in iPad Landscape (idle: 1563:34278 -> centered active cluster).
+    static let iPadRollPlacements: [WorkbenchRollPlacement] = [
+        WorkbenchRollPlacement(
+            asset: "DeskFilmRollYellow",
+            idleCenter: CGPoint(x: 895.5, y: 541),
+            idleSize: CGSize(width: 238, height: 177.5),
+            idleRotation: 0,
+            activeCenter: CGPoint(x: 633.8, y: 333.5),
+            activeSize: CGSize(width: 203, height: 152),
+            activeRotation: -26.63
+        ),
+        WorkbenchRollPlacement(
+            asset: "DeskFilmRollGreen",
+            idleCenter: CGPoint(x: 858, y: 705),
+            idleSize: CGSize(width: 215, height: 171.5),
+            idleRotation: 45,
+            activeCenter: CGPoint(x: 662.1, y: 467.6),
+            activeSize: CGSize(width: 176, height: 141),
+            activeRotation: 20.07
+        ),
+        WorkbenchRollPlacement(
+            asset: "DeskFilmRollRed",
+            idleCenter: CGPoint(x: 727, y: 600),
+            idleSize: CGSize(width: 173, height: 225.5),
+            idleRotation: 74,
+            activeCenter: CGPoint(x: 521.5, y: 433.0),
+            activeSize: CGSize(width: 140, height: 182),
+            activeRotation: 27.64
+        ),
     ]
 
     /// Blue memories book (Figma 1563:34908 `buku bawah 1`), unclipped asset.

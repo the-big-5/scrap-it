@@ -1,5 +1,5 @@
 # 088: Profile Bookshelf, Empty-State Layout Fix, Profile Settings, and Native Tab Bar
-Status: Approved
+Status: Done
 
 ## Why
 1. **Empty Profile Layout Bug:** In `ProfileView`, `.background(DSColor.Kraft.lightActive.color.ignoresSafeArea())` sits directly on a `ScrollView` whose content lacks `.frame(maxWidth: .infinity)`. When `scrapbooks.isEmpty`, the `ScrollView` shrinks horizontally to the width of the empty-state text, leaving white vertical bars on the left and right edges on all iPhone sizes (verified on iPhone 16 Pro Max and iPhone 13 Mini).
