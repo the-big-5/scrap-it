@@ -508,7 +508,7 @@ struct RollRoomTests {
 
         vm.returnToHomepage()
 
-        #expect(OrientationLock.mask == .portrait)
+        #expect(OrientationLock.mask == OrientationLock.defaultMask())
         #expect(navigator.path.isEmpty)
         #expect(!vm.isInviteSheetPresented)
     }
@@ -520,7 +520,7 @@ struct RollRoomTests {
 
         vm.closeLobby()
 
-        #expect(OrientationLock.mask == .portrait)
+        #expect(OrientationLock.mask == OrientationLock.defaultMask())
         #expect(navigator.path.isEmpty)
     }
 
