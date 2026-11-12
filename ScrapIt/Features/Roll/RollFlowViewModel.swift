@@ -768,6 +768,9 @@ final class RollFlowViewModel {
         camera.setFilter(activeSession?.filter ?? .colorPrint200)
         Task { await camera.startSession() }
         cloudService.updateQueuedCount()
+        if let session = activeSession {
+            beginLivePolling(session: session)
+        }
         if let rollCode = activeSession?.rollCode {
             let realtimeService = self.realtimeService
             Task { [weak self] in
@@ -795,6 +798,7 @@ final class RollFlowViewModel {
 
     func cameraDidDisappear() {
         camera.stopSession()
+        cloudService.stopLiveSessionPolling()
         let realtimeService = self.realtimeService
         Task {
             await realtimeService.disconnect()

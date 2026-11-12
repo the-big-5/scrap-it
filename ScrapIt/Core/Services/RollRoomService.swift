@@ -71,6 +71,13 @@ protocol RollRoomServicing: AnyObject {
     func updateParticipant(_ user: RoomParticipant, inRoom code: String, zoneOwnerName: String?) async throws
     func removeParticipant(userID: String, fromRoom code: String) async throws
     func leaveRoom(code: String, zoneOwnerName: String, userID: String) async throws
+    /// Passes `hostUserID` to `nextHostUserID` and removes the leaving host's participant record while keeping the room zone alive for others.
+    func leaveAsHostHandover(
+        code: String,
+        zoneOwnerName: String?,
+        leavingUserID: String,
+        nextHostUserID: String
+    ) async throws
     func deleteRoom(code: String) async throws
     /// Every room this user owns or joined, with key and shot index (change 012 restore).
     func listRooms() async throws -> [RoomSnapshot]
@@ -101,6 +108,12 @@ extension RollRoomServicing {
 
 extension RollRoomServicing {
     func updateParticipant(_ user: RoomParticipant, inRoom code: String, zoneOwnerName: String?) async throws {}
+    func leaveAsHostHandover(
+        code: String,
+        zoneOwnerName: String?,
+        leavingUserID: String,
+        nextHostUserID: String
+    ) async throws {}
     func markDoneEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws {}
     func lockScrapbook(inRoom code: String, zoneOwnerName: String?) async throws {}
 }
@@ -350,6 +363,31 @@ final class CloudKitRollRoomService: RollRoomServicing {
             _ = try? await database.deleteRecord(withID: location.participantRecordID(userID: userID))
             // Deleting a shared zone from the shared database leaves the share.
             _ = try await database.deleteRecordZone(withID: location.zoneID)
+        } catch {
+            throw Self.roomError(from: error)
+        }
+    }
+
+    func leaveAsHostHandover(
+        code: String,
+        zoneOwnerName: String?,
+        leavingUserID: String,
+        nextHostUserID: String
+    ) async throws {
+        let location = RollRoomLocation(rollCode: code, zoneOwnerName: zoneOwnerName)
+        let database = location.database(in: container)
+        do {
+            let sessionRecord = try await database.record(for: location.sessionRecordID)
+            sessionRecord["hostUserID"] = nextHostUserID
+            _ = try await database.modifyRecords(
+                saving: [sessionRecord],
+                deleting: [location.participantRecordID(userID: leavingUserID)],
+                savePolicy: .changedKeys
+            )
+            // Keep the creator's zone & share alive for remaining members; only non-owners drop shared zone access.
+            if !location.isOwner {
+                _ = try? await container.sharedCloudDatabase.deleteRecordZone(withID: location.zoneID)
+            }
         } catch {
             throw Self.roomError(from: error)
         }

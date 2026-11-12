@@ -25,17 +25,31 @@ Figma nodes 1248:21648 (OB1), 1249:22041 (OB2), 1255:22152 (OB3); changes 053, 0
 - Large Primary button (`DSColor.Paper.light` pill with 1.5pt ink border, 7pt black shadow).
 
 ## Screen: Home [Locked]
-Figma node 853:1703 (Idle) & 1062:3371 (CameraClick)
+Figma nodes 853:1703 (Portrait Idle), 1062:3371 (CameraClick), 1230:20656 (ToolboxClick), 1235:21168 (RollsClick), and 1563:34278 (iPad 13" Landscape Idle); changes 086, 100, 104, 105, 106.
 - Overhead desk workbench flat-lay: wood desk, green cutting mat with measurement numbers and ticks, red toolbox, blue book, spiral "TUTORIAL" book, film canisters, ruler, crumpled paper, stationery.
-- Built from separate assets (one per Figma layer, folder `Assets.xcassets/Workbench/`), placed at their Figma frames. Layout: one uniform scale (Figma frame width = screen width), desk centered vertically; no status bar / tab bar printed in the assets.
+- Adaptive layout (`WorkbenchLayout`, change 105): `.portrait` (`402 × 874`, `853:1703`) for iPhone and iPad Portrait; `.iPadLandscape` (`1210 × 834`, `1563:34278`) when `idiom == .pad && width > height` (full-bleed `DeskWoodLandscape`, vector `LandscapeCuttingMatView` numbered `1...27`, `DeskBookBottomLandscape`, reused `InteractiveToolboxView`, `DeskDisposableCamera`, `DeskBookTutorial`, and `InteractiveRollsView`). Both scale uniformly by width (`origin.y` centered vertically); no status bar / tab bar printed in the assets.
 - Interactive disposable camera resting at -14.77° on the cutting mat (Figma position).
 - Camera return transition (changes 086, 100): exiting the capture session presents `CameraReturnTransitionOverlay` in portrait shell overlay; closes the mechanical iris diaphragm over the viewfinder, smoothly resizes from full-bleed to a floating camera card, performs a 3D horizontal Y-axis flip (preserving exit orientation: 0° portrait, ±90° landscape) to reveal the front disposable camera element, pops navigation silently underneath, fades out the dark background to reveal the workbench, and spring-animates the camera down to its idle spot on the cutting mat (-14.77°), restoring the floating tab bar.
 - Camera tap interaction: camera rotates to 0.77° and centers with spring animation; the whole desk blurs as one page (flattened, then blurred) and dims; "Create Roll" and "Join a Roll" text buttons spring up from bottom with solid 7pt offset drop shadows. Tapping the blurred background or the round "<" close button at top left (Figma "Toolbar - Top") dismisses. Tab bar hidden while active.
+- Toolbox tap interaction (Figma 1230:20656 / 1230:20860, change 104): persistent layered `InteractiveToolboxView` (`DeskToolboxBase` + 8 loose tool sprites) glides and scales to screen center across blurred/dimmed desk while hiding the tab bar, plays a rhythmic ~`0.90` s rattle with secondary tool inertia and haptics (`Reduce Motion` supported), and auto-pushes **"Resume Editing"** (`.deskCollection(.scrapbooks)`).
+- Film canisters tap interaction (Figma 1235:21168, change 106): tapping any of the 3 resting film canisters (`DeskFilmRollYellow`, `DeskFilmRollGreen`, `DeskFilmRollRed` on both Portrait and iPad Landscape) hides the tab bar, blurs and dims the desk, glides and fans the 3 canisters into the centered `1235:21168` cluster with spring bounce and haptics (`~0.85` s), and auto-pushes **"Resume Roll"** (`.deskCollection(.rolls)`).
 - Tutorial book: the book image is the button (open stub for tutorial flow).
 - Floating 2-tab navigation bar: Home (plus.circle.fill), Profile (books.vertical.fill). Tap a tab, or drag along the bar: the selection pill follows the finger and snaps to the nearest tab on release, with a selection haptic.
 
 ## Screen: Camera Roll (Create / Join) [Locked]
 Integrated directly into the Workbench active popup state (Figma node 1062:3371).
+
+## Screen: Resume Editing [Draft]
+Figma nodes 1537:25855 (populated) & 1537:25830 (empty); change 104.
+- Uses `DeskCollectionView` (`DSColor.Kraft.lightActive` background, `BackCircleButton`, centered `"Resume Editing"` title).
+- Populated (`1537:25855`): 2-column grid of tactile `FolderPreviewCard` items (newest first), cycling 3 folder themes (Burgundy, Kraft/Tan, Navy/Slate), formatted `dd/MM/yyyy` creation dates, and `0...4` real peeking photos seeded stably per `scrapbook.id`. Long-press offers local-only removal with confirmation dialog.
+- Empty (`1537:25830`): `DeskEmptyStateView` with `ToolboxEmptyIllustration`, `"No scrapbook in progress...yet!"`, `"Every scrapbook starts with a roll. Gather your friends and capture moments together."`, and `"Create Roll"` primary pill (`DSButton`) → `CreateRollSetupView`.
+
+## Screen: Resume Roll [Draft]
+Figma nodes 1537:26016 (populated) & 1537:25997 (empty); change 106.
+- Uses `DeskCollectionView` (`DSColor.Kraft.lightActive`, `BackCircleButton`, centered `"Resume Roll"` title).
+- Populated (`1537:26016`): vertical list of `RollStripCard` rows (newest `startTime` first), each pairing an upright filter canister (`FilterCanisterBW` or `FilterCanisterColor`) with a trailing-bleeding `#2A241F` film strip bordered by perforated black sprocket rails showing roll title, `person.2` `{N} joined`, `camera` `{slotsUsed}/{rollSize} shots`, and `dd/MM/yyyy` date. Long-press offers `Leave Roll` (safe host handover when others remain) and (when host) `Delete Roll` with confirmations.
+- Empty (`1537:25997`): `DeskEmptyStateView` with `RollEmptyIllustration` (camera, 200/400 canisters, winding amber film leader, 3 yellow star characters), `"No roll in progress...yet!"`, `"Your next little moments are waiting to be captured. Start a roll and make memories with your friends."`, and `"Create Roll"` primary pill (`DSButton`) → `CreateRollSetupView`.
 
 ## Screen: Create Roll Setup [Locked]
 Figma node 984:3556
@@ -112,8 +126,8 @@ Figma nodes 1458:26041 (reference landscape, front camera on left) and 1531:2344
 
 ## Screen: Roll Reveal [Draft] (change 021; Figma 1323:41568, 1323:41482, 793:3352 grid only, 1444:23620)
 Shown once after End Roll. No back button, no tab bar.
-- Envelope: cutting mat (teal mat for every stage; Figma's olive mat on 1323:41482 not used [Open]), closed kraft envelope rotated −3°, paper label: roll name (Architects Daughter 28) and "1 photo" / "N photos" (Architects Daughter 16; the photos on this phone, no "/24"), updating as photos arrive (can lag a little behind friends' uploads [Open], see tech.md End Roll sync); while photos are missing (photos on this phone < the roll's shots used, first 10 s): "Printing your photos…" under the envelope (Architects Daughter 16, `Paper.light` with a soft shadow), the tear strip only gives a little and springs back, each new photo bounces the envelope and rolls the count up (numeric text); when all are in: "Your photos are ready!" for 2.5 s [Draft text] (change 024). Reduce Motion: no bounce, no rolling
-- Tear: swipe across the top flap strip (about 110 pt or a fast swipe); the strip follows the finger and flies off, heavy haptic; the photos fly out to the mat one after another and the envelope fades
+- Envelope: cutting mat (teal mat for every stage; Figma's olive mat on 1323:41482 not used [Open]), closed kraft envelope rotated −3°, paper label: roll name (Architects Daughter 28) and "1 photo" / "N photos" (Architects Daughter 16; the photos on this phone, no "/24"), updating as photos arrive (can lag a little behind friends' uploads [Open], see tech.md End Roll sync); translucent dashed tear-guide pill overlay (`285 × 20` pt `#D9D9D9` at 60%, Figma 1335:66589, change 075) with idle shimmer and sliding finger cue while unlocked; while photos are missing (photos on this phone < the roll's shots used, first 10 s): "Printing your photos…" under the envelope (Architects Daughter 16, `Paper.light` with a soft shadow), the tear strip only gives a little and springs back with gentle lock wiggle/nudge if tapped or dragged early, each new photo bounces the envelope and rolls the count up (numeric text); when all are in: "Your photos are ready!" for 2.5 s [Draft text] (change 024), then `"Swipe or tap to open"` until torn (change 075). Reduce Motion: no bounce, rolling, shimmer, or wiggle
+- Tear: swipe across the top flap strip (about 110 pt or a fast swipe, progressive peel + step haptics every ~`20` pt, change 075) OR tap anywhere on the unlocked envelope; the strip flies off, heavy haptic; the photos fly out to the mat one after another and the envelope fades
 - Scattered: photos with a 1.5 pt white border, long side 150 pt, ±14° rotation, overlapping; drag moves a photo and brings it to the front; photos arriving later land on the mat
 - "Tidy Up" (top right, 44 pt pill) → 2-column grid on Kraft light-active, 175 × 233 cells, 18 pt corners, capture time badge ("16:45"), scrolls; the button then reads "Scatter"
 - "Start Scrapbook" (bottom, large pill) on both views → scrapbook editor
@@ -201,6 +215,8 @@ Figma page "Design System #2" (628:4011), Atoms and Molecules only. Code: `Core/
 All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, transparent):
 - HeroCamera (678:4897): Welcome and Camera Roll camera
 - Workbench (folder `Workbench/`, Figma 853:1703): DeskWood (JPEG), DeskMatShadow, DeskShading, DeskCuttingMat, DeskMeasurements, DeskWoodGrain, DeskToolbox, DeskBookBottom, DeskBookTutorial, DeskRuler, DeskFilmRoll2..4, DeskPaperBall1..2, DeskStationery1..5. Exports are cut at the Figma frame edge; those parts are never on screen
+- Workbench interactive & iPad landscape additions (changes 104, 105, 106): `Workbench/DeskToolboxBase` + 8 loose tool sprites (`DeskToolboxRuler`, `DeskToolboxPencils`, `DeskToolboxCutter`, `DeskToolboxScissors`, `DeskToolboxEraser`, `DeskToolboxTapePink`, `DeskToolboxTapeBlue`, `DeskToolboxNotes`); `Workbench/DeskWoodLandscape`, `Workbench/DeskBookBottomLandscape` (`1563:34278`); `Workbench/DeskFilmRollYellow`, `Workbench/DeskFilmRollGreen`, `DeskFilmRollRed` (`1235:21168`).
+- DeskCollection (folder `DeskCollection/`, changes 104, 106): folder `Back`, `Flap`, and `FolderEdgeHighlight` layers for Burgundy/Kraft/Navy (`1537:25855`), `ToolboxEmptyNotebook/Pencil/Ruler/Scissors/Starburst/PhotoBack/PhotoFront` (`1537:25830`), and `RollEmptyLeader`, `RollEmptyStarLeft`, `RollEmptyStarTop`, `RollEmptyStarRight` (`1537:25997`).
 - DeskDisposableCamera (catalog root, reusable): Workbench camera
 - Flow headers: CreateRollHeaderDecoration, ShareRoomHeaderDecoration
 - FilterCanisterBW (725:6301), FilterCanisterColor (725:6480): Choose filter
