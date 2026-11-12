@@ -69,10 +69,10 @@ final class HapticService {
 
     // MARK: - Analog Camera Haptic Patterns
 
-    /// Crisp micro-tick emitted when rolling knurled ribs
+    /// Strong punchy micro-tick emitted when stepping knurled ribs
     func playRatchetTick() {
-        let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.45)
-        let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.8)
+        let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.95)
+        let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.90)
         let event = CHHapticEvent(eventType: .hapticTransient, parameters: [intensity, sharpness], relativeTime: 0)
         playPattern(events: [event])
     }

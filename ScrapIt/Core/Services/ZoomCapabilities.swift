@@ -66,7 +66,7 @@ nonisolated struct ZoomCapabilities: Equatable, Sendable {
         let maxZoom = max(minZoom, min(maxDisplayZoom, maxDeviceFactor / base))
 
         var presets: [CGFloat] = []
-        for lens in lenses.sorted() where lens >= minZoom - 0.01 && lens <= maxZoom + 0.01 {
+        for lens in lenses.sorted() where lens >= minZoom - 0.01 && lens <= min(2.01, maxZoom + 0.01) {
             if let last = presets.last, lens - last < mergeTolerance { continue }
             presets.append(lens)
         }
