@@ -1,5 +1,9 @@
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var trayPillWidth: CGFloat? = nil
+}
+
 /// A leather tray that scrolls sideways. The leather and its content move together (not the content inside
 /// a still leather), and the tray grows with its content when it doesn't fit the screen (brief K2).
 ///
@@ -14,28 +18,51 @@ struct TrayScroll<Content: View, Probe: View>: View {
     var isFixed = false
     @ViewBuilder let content: () -> Content
     @ViewBuilder var probe: () -> Probe
+    @Environment(\.trayPillWidth) private var trayPillWidth
 
     static var contentTop: CGFloat { TrayStyle.stitchInset }
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .center, spacing: spacing) {
-                    content()
+        if let pillWidth = trayPillWidth {
+            let innerWidth = max(0, pillWidth - TrayStyle.stitchInset * 2)
+            ZStack(alignment: .top) {
+                TrayBackground(shape: RoundedRectangle(cornerRadius: 22))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .center, spacing: spacing) {
+                        content()
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(minWidth: innerWidth, alignment: .center)
+                    .frame(height: contentBottom - Self.contentTop)
+                    .clipped()
+                    .background { probe() }
                 }
-                .padding(.horizontal, 20)
-                .frame(minWidth: geometry.size.width, alignment: isFixed ? .center : .leading)
-                .frame(height: contentBottom - Self.contentTop)
+                .frame(width: innerWidth, height: contentBottom - Self.contentTop)
                 .clipped()
                 .padding(.top, Self.contentTop)
-                .frame(height: TrayStyle.trayHeight, alignment: .top)
-                .background(TrayBackground(shape: RoundedRectangle(cornerRadius: 22)))
-                .background { probe() }
+                .scrollDisabled(isFixed)
             }
-            .scrollClipDisabled()
-            .scrollDisabled(isFixed)
+            .frame(width: pillWidth, height: TrayStyle.trayHeight)
+        } else {
+            GeometryReader { geometry in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .center, spacing: spacing) {
+                        content()
+                    }
+                    .padding(.horizontal, 20)
+                    .frame(minWidth: geometry.size.width, alignment: isFixed ? .center : .leading)
+                    .frame(height: contentBottom - Self.contentTop)
+                    .clipped()
+                    .padding(.top, Self.contentTop)
+                    .frame(height: TrayStyle.trayHeight, alignment: .top)
+                    .background(TrayBackground(shape: RoundedRectangle(cornerRadius: 22)))
+                    .background { probe() }
+                }
+                .scrollClipDisabled()
+                .scrollDisabled(isFixed)
+            }
+            .frame(height: TrayStyle.trayHeight)
         }
-        .frame(height: TrayStyle.trayHeight)
     }
 }
 

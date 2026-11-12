@@ -299,6 +299,13 @@ struct WorkbenchLayoutTests {
         #expect(abs((pos.x + rx) - container.width / 2) < 0.001)
         #expect(abs((pos.y + ry) - container.height / 2) < 0.001)
     }
+
+    @Test func scrapbookEditorOrientationMasksMatchIdiom() {
+        #expect(ScrapbookEditorLayout.orientationMask(isPad: true, allowsLandscape: false) == .all)
+        #expect(ScrapbookEditorLayout.orientationMask(isPad: true, allowsLandscape: true) == .all)
+        #expect(ScrapbookEditorLayout.orientationMask(isPad: false, allowsLandscape: false) == .portrait)
+        #expect(ScrapbookEditorLayout.orientationMask(isPad: false, allowsLandscape: true) == [.portrait, .landscapeLeft, .landscapeRight])
+    }
 }
 
 struct TabBarDragMathTests {

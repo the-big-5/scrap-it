@@ -22,9 +22,17 @@ struct ToolTray<SubTray: View>: View {
     /// Turns the closed button back upright when the whole tray is turned on its side (change 025), so the pen
     /// stands up as in Figma 1563:30642 / 1563:30756.
     var closedButtonRotation: Angle = .zero
+    /// Compact floating pill width on iPad (PencilKit-style tray). `nil` keeps iPhone full-width behavior.
+    var pillWidth: CGFloat? = nil
+    /// Drag callbacks for moving/minimizing the open iPad floating pill in editor coordinate space.
+    var onTrayDragChanged: ((CGSize) -> Void)? = nil
+    var onTrayDragEnded: ((CGSize, CGSize) -> Void)? = nil
     @ViewBuilder let subTray: (ScrapbookTool) -> SubTray
 
-    private var closedAnchor: UnitPoint { closedAlignment == .bottomTrailing ? .bottomTrailing : .bottomLeading }
+    private var closedAnchor: UnitPoint {
+        if pillWidth != nil { return .center }
+        return closedAlignment == .bottomTrailing ? .bottomTrailing : .bottomLeading
+    }
 
     var body: some View {
         ZStack(alignment: closedAlignment) {
@@ -42,17 +50,42 @@ struct ToolTray<SubTray: View>: View {
                             .zIndex(0)
                     }
                     mainTray
+                        .simultaneousGesture(pillWidth != nil && !isFixed ? iPadTrayDragGesture : nil)
                         .zIndex(1)
                 }
+                .overlay(alignment: .top) {
+                    if pillWidth != nil && !isFixed {
+                        Capsule()
+                            .fill(Color.white.opacity(0.55))
+                            .frame(width: 36, height: 4)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 28)
+                            .contentShape(Rectangle())
+                            .offset(y: -4)
+                            .gesture(iPadTrayDragGesture)
+                    }
+                }
+                .environment(\.trayPillWidth, pillWidth)
                 .transition(.scale(scale: 0.25, anchor: closedAnchor).combined(with: .opacity))
             } else {
                 closedButton
+                    .simultaneousGesture(pillWidth != nil && !isFixed ? iPadTrayDragGesture : nil)
                     .transition(.scale(scale: 0.8, anchor: closedAnchor).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, pillWidth == nil ? 6 : 0)
         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isOpen)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: activeTool)
+    }
+
+    private var iPadTrayDragGesture: some Gesture {
+        DragGesture(minimumDistance: 10, coordinateSpace: .named(StickerDragController.coordinateSpace))
+            .onChanged { value in
+                onTrayDragChanged?(value.translation)
+            }
+            .onEnded { value in
+                onTrayDragEnded?(value.translation, value.predictedEndTranslation)
+            }
     }
 
     private var closedButton: some View {
@@ -85,7 +118,7 @@ struct ToolTray<SubTray: View>: View {
 
     private var mainTray: some View {
         let area = TrayStyle.trayHeight - TrayStyle.stitchInset * 2
-        return TrayScroll(spacing: 16, isFixed: isFixed) {
+        return TrayScroll(spacing: pillWidth == nil ? 16 : 14, isFixed: isFixed || pillWidth != nil) {
             ForEach(tools) { tool in
                 let isActive = activeTool == tool
                 Button {
