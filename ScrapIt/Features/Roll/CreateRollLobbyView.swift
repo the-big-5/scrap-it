@@ -73,13 +73,19 @@ struct CreateRollLobbyView: View {
                     .presentationDetents([.medium, .large])
             }
         }
-        // An alert, not a confirmation dialog: on recent iOS a dialog can show as a popover without Cancel.
-        .alert("Delete this room?", isPresented: $flowViewModel.isDeleteRoomConfirmationPresented) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete Room", role: .destructive) { flowViewModel.deleteRoll() }
-        } message: {
-            Text("Everyone in the room will be removed.")
+        // Delete Roll card (change 081, Figma 1600:50620) instead of the system alert.
+        .overlay {
+            if flowViewModel.isDeleteRoomConfirmationPresented {
+                DeleteRollCard(
+                    onKeep: { flowViewModel.isDeleteRoomConfirmationPresented = false },
+                    onDelete: {
+                        flowViewModel.isDeleteRoomConfirmationPresented = false
+                        flowViewModel.deleteRoll()
+                    }
+                )
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: flowViewModel.isDeleteRoomConfirmationPresented)
         .alert(
             flowViewModel.shareErrorMessage ?? "",
             isPresented: Binding(
@@ -109,8 +115,10 @@ struct CreateRollLobbyView: View {
 
             Menu {
                 if isHost {
-                    // Edit Room has no action yet [Open].
-                    Button("Edit Room", systemImage: "square.and.pencil") { flowViewModel.editRoom() }
+                    // Edit Roll, only until the roll starts (change 081).
+                    if flowViewModel.activeSession?.status == .waiting {
+                        Button("Edit Room", systemImage: "square.and.pencil") { flowViewModel.editRoom() }
+                    }
                     shareRoomButton
                     Button("Delete Room", systemImage: "trash", role: .destructive) {
                         flowViewModel.requestDeleteRoom()
@@ -199,12 +207,15 @@ struct CreateRollLobbyView: View {
 
     @ViewBuilder
     private var bottom: some View {
-        if isHost {
+        if flowViewModel.activeSession?.status == .live {
+            // A started roll, reopened from Resume Roll: back into the camera, no start step (change 081).
+            Button("Continue Roll", action: flowViewModel.continueRoll)
+                .buttonStyle(OffsetPillButtonStyle())
+        } else if isHost {
             Button("Start Roll") {
                 flowViewModel.startRollCapture()
             }
             .buttonStyle(OffsetPillButtonStyle())
-            .disabled(flowViewModel.activeSession?.status == .live)
         } else {
             Text("Waiting for the host to start...")
                 .font(.system(size: 20, weight: .regular))

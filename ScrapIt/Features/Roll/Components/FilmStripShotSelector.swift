@@ -3,7 +3,8 @@ import SwiftData
 import SwiftUI
 
 struct FilmStripShotSelector: View {
-    @Binding var selectedCount: Int
+    /// `nil` until the user picks (change 081).
+    @Binding var selectedCount: Int?
     private let counts = RollFlowViewModel.availableShotCounts
 
     var body: some View {

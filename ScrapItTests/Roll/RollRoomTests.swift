@@ -118,16 +118,23 @@ struct RollRoomTests {
         context.insert(guest)
     }
 
-    private func makeViewModel(online: Bool = true) -> RollFlowViewModel {
+    private func makeViewModel(online: Bool = true, store: SessionStore? = nil) -> RollFlowViewModel {
         let cloud = CloudKitSessionService(modelContext: context)
         cloud.isOnline = online
         return RollFlowViewModel(
             modelContext: context,
             navigator: navigator,
-            sessionStore: SessionStore(modelContext: context),
+            sessionStore: store ?? SessionStore(modelContext: context),
             cloudService: cloud,
             roomService: rooms
         )
+    }
+
+    /// Create Roll needs a name and a shot count since change 081; tests that don't care get defaults.
+    private func createLobby(_ vm: RollFlowViewModel, as user: UserProfile) {
+        if vm.draftRollName.isEmpty { vm.draftRollName = "Roll" }
+        if vm.draftShotCount == nil { vm.draftShotCount = 36 }
+        vm.createLobbySession(currentUser: user)
     }
 
     private func waitUntil(_ condition: () -> Bool) async {
@@ -185,7 +192,7 @@ struct RollRoomTests {
         vm.draftRollName = "Bali '27"
         vm.draftShotCount = 24
 
-        vm.createLobbySession(currentUser: host)
+        createLobby(vm, as: host)
         await waitUntil { vm.inviteContent != nil }
 
         #expect(rooms.created.first?.name == "Bali '27")
@@ -201,7 +208,7 @@ struct RollRoomTests {
     @Test func failedInviteLinkShowsAnErrorAndCanRetry() async {
         rooms.createError = .unavailable
         let vm = makeViewModel()
-        vm.createLobbySession(currentUser: host)
+        createLobby(vm, as: host)
         await waitUntil { vm.inviteLinkError != nil }
 
         #expect(vm.inviteContent == nil)
@@ -422,7 +429,7 @@ struct RollRoomTests {
 
     @Test func hostDeletesTheRoll() async {
         let vm = makeViewModel()
-        vm.createLobbySession(currentUser: host)
+        createLobby(vm, as: host)
         await waitUntil { vm.inviteContent != nil }
         let code = vm.activeSession?.rollCode
 
@@ -437,7 +444,7 @@ struct RollRoomTests {
 
     @Test func closeKeepsTheRoomAndGoesHome() async {
         let vm = makeViewModel()
-        vm.createLobbySession(currentUser: host)
+        createLobby(vm, as: host)
         await waitUntil { vm.inviteContent != nil }
 
         vm.closeLobby()
@@ -455,13 +462,21 @@ struct RollRoomTests {
     ])
     func removedOrDeletedSendsTheParticipantHome(_ error: RoomError, _ message: String) async {
         hostRoom()
-        let vm = makeViewModel()
+        let store = SessionStore(modelContext: context)
+        let vm = makeViewModel(store: store)
         await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
 
         rooms.fetchError = error
         await vm.refreshLobby()
 
-        #expect(vm.roomExitMessage == message)
+        // A deleted roll shows the Roll Deleted card instead of a message (change 081).
+        if message == RollFlowViewModel.roomDeletedMessage {
+            #expect(store.showsRollDeletedCard)
+            #expect(vm.roomExitMessage == nil)
+        } else {
+            #expect(vm.roomExitMessage == message)
+            #expect(!store.showsRollDeletedCard)
+        }
         #expect(navigator.path.isEmpty)
         #expect(vm.activeSession == nil)
     }
@@ -475,6 +490,107 @@ struct RollRoomTests {
         await vm.refreshLobby()
 
         #expect(navigator.path == [.createRollLobby, .captureSession])
+    }
+
+    @Test func aStartedRollReopenedWaitsForContinueRoll() async {
+        hostRoom()
+        let vm = makeViewModel()
+        await vm.joinRollWithCode(code: "N4B13L", currentUser: guest)
+
+        // Reopened from Resume Roll after it started: the lobby stays until Continue Roll (change 081).
+        vm.activeSession?.status = .live
+        rooms.rooms["N4B13L"]?.statusRaw = SessionStatus.live.rawValue
+        await vm.refreshLobby()
+        #expect(navigator.path == [.createRollLobby])
+
+        vm.continueRoll()
+        #expect(navigator.path == [.createRollLobby, .captureSession])
+        #expect(navigator.cameraIntroPhase == .idle)
+    }
+
+    // MARK: - Create and edit roll (change 081)
+
+    @Test func nextNeedsANameAndAShotCount() {
+        let vm = makeViewModel()
+        vm.startCreateRollWizard()
+        #expect(vm.draftShotCount == nil)
+        #expect(!vm.canProceedFromSetup)
+
+        vm.draftRollName = "   "
+        vm.draftShotCount = 48
+        #expect(!vm.canProceedFromSetup)
+        vm.proceedToFilterStep()
+        #expect(navigator.path == [.createRollSetup])
+
+        vm.draftRollName = "Bali '27"
+        #expect(vm.canProceedFromSetup)
+        vm.proceedToFilterStep()
+        #expect(navigator.path == [.createRollSetup, .createRollFilter])
+    }
+
+    @Test func guidanceFollowsTheShotCount() {
+        #expect(RollFlowViewModel.friendsGuide(for: nil) == nil)
+        #expect(RollFlowViewModel.friendsGuide(for: 24) == "suitable for 2-3 friends")
+        #expect(RollFlowViewModel.friendsGuide(for: 36) == "suitable for 4-6 friends")
+        #expect(RollFlowViewModel.friendsGuide(for: 48) == "suitable for 7-8 friends")
+        #expect(RollFlowViewModel.friendsGuide(for: 72) == "suitable for 8+ friends")
+    }
+
+    @Test func editRollSavesNameShotsAndFilter() async throws {
+        let vm = makeViewModel()
+        createLobby(vm, as: host)
+        await waitUntil { vm.inviteContent != nil }
+        let session = try #require(vm.activeSession)
+        let lobbyPath = navigator.path
+
+        vm.editRoom()
+        #expect(vm.isEditingRoll)
+        #expect(vm.draftRollName == session.name)
+        #expect(vm.draftShotCount == session.rollSize)
+        #expect(navigator.path == lobbyPath + [.editRollSetup])
+
+        // ‹ leaves without saving.
+        vm.draftRollName = "Nope"
+        vm.cancelEditRoll()
+        #expect(session.name == "Roll")
+        #expect(navigator.path == lobbyPath)
+
+        vm.editRoom()
+        vm.draftRollName = "Bali '27"
+        vm.draftShotCount = 72
+        vm.draftFilter = .cinematicBW400
+        vm.proceedToFilterStep()
+        vm.saveRollEdits()
+        // Let the CloudKit publish read the roll before the test's store goes away.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(session.name == "Bali '27")
+        #expect(session.rollSize == 72)
+        #expect(session.filter == .cinematicBW400)
+        #expect(!vm.isEditingRoll)
+        #expect(navigator.path == lobbyPath)
+    }
+
+    @Test func aStartedRollCantBeEdited() async throws {
+        let vm = makeViewModel()
+        createLobby(vm, as: host)
+        await waitUntil { vm.inviteContent != nil }
+        let session = try #require(vm.activeSession)
+        session.status = .live
+        let path = navigator.path
+
+        vm.editRoom()
+        #expect(!vm.isEditingRoll)
+        #expect(navigator.path == path)
+    }
+
+    @Test func deletingTheRollShowsRollDeleted() async {
+        let store = SessionStore(modelContext: context)
+        let vm = makeViewModel(store: store)
+        createLobby(vm, as: host)
+        await waitUntil { vm.inviteContent != nil }
+
+        vm.deleteRoll()
+        #expect(store.showsRollDeletedCard)
     }
 
     @Test func newParticipantsAppearOnRefresh() async {
@@ -578,7 +694,7 @@ struct RollRoomTests {
     @Test func failedInviteLinkMessageHasNoTechnicalDetail() async {
         rooms.createError = .unavailable
         let vm = makeViewModel()
-        vm.createLobbySession(currentUser: host)
+        createLobby(vm, as: host)
         await waitUntil { vm.inviteLinkError != nil }
         #expect(vm.inviteLinkError == RollFlowViewModel.inviteLinkFailedMessage)
     }
@@ -608,7 +724,7 @@ struct RollRoomTests {
 
     @Test func shareRoomOpensTheShareSheetOnceTheLinkExists() async {
         let vm = makeViewModel()
-        vm.createLobbySession(currentUser: host)
+        createLobby(vm, as: host)
         await waitUntil { vm.inviteContent != nil }
 
         await vm.shareRoom(currentUser: host)
@@ -621,7 +737,7 @@ struct RollRoomTests {
     @Test func shareRoomWithoutALinkShowsAnError() async {
         rooms.createError = .unavailable
         let vm = makeViewModel()
-        vm.createLobbySession(currentUser: host)
+        createLobby(vm, as: host)
         await waitUntil { vm.inviteLinkError != nil }
 
         await vm.shareRoom(currentUser: host)
@@ -632,7 +748,7 @@ struct RollRoomTests {
 
     @Test func deleteRoomAsksBeforeDeleting() async {
         let vm = makeViewModel()
-        vm.createLobbySession(currentUser: host)
+        createLobby(vm, as: host)
         await waitUntil { vm.inviteContent != nil }
         let code = vm.roomCode
 
@@ -671,7 +787,7 @@ struct RollRoomTests {
         guest.avatarData = avatarBytes
 
         let hostVM = makeViewModel()
-        hostVM.createLobbySession(currentUser: host)
+        createLobby(hostVM, as: host)
         await waitUntil { hostVM.inviteContent != nil }
 
         #expect(hostVM.lobbyParticipants.first?.avatarData != nil)
@@ -686,7 +802,7 @@ struct RollRoomTests {
 
     @Test func reenteringLobbySyncsUpdatedProfileNameAndAvatar() async {
         let vm = makeViewModel()
-        vm.createLobbySession(currentUser: host)
+        createLobby(vm, as: host)
         await waitUntil { vm.inviteContent != nil }
         #expect(vm.lobbyParticipants.first?.name == "Nabiel")
         #expect(vm.lobbyParticipants.first?.avatarData == nil)

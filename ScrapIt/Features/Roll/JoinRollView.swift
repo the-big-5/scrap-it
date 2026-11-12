@@ -29,12 +29,9 @@ struct JoinRollView: View {
                 }
                 .padding(.top, 4)
 
-                Image("InviteHandshake")
-                    .resizable()
-                    .scaledToFit()
+                InviteFriendsIllustration()
                     .frame(maxWidth: 376)
                     .padding(.top, 4)
-                    .accessibilityHidden(true)
 
                 Text("Turn on AirDrop to accept the invite")
                     .font(.system(size: 20, weight: .regular))
@@ -64,7 +61,9 @@ struct JoinRollView: View {
 
                 Spacer()
 
-                Button("Join") {
+                // Disabled until the code is complete, so the only message left is a roll that isn't found
+                // (change 081, Figma 1663:46361).
+                Button("Join Roll") {
                     isCodeFocused = false
                     Task {
                         await flowViewModel.submitJoinCode(
@@ -72,7 +71,8 @@ struct JoinRollView: View {
                         )
                     }
                 }
-                .buttonStyle(OffsetPillButtonStyle())
+                .buttonStyle(.ds(.primary, size: .large, fullWidth: true))
+                .disabled(!flowViewModel.canSubmitJoinCode)
                 .padding(.bottom, 24)
             }
             .padding(.horizontal, 22)

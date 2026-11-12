@@ -55,32 +55,36 @@ Figma nodes 1537:26016 (populated) & 1537:25997 (empty); change 106.
 Figma node 984:3556
 - Warm gradient header with stationery decorations (CreateRollHeaderDecoration).
 - "Name your roll" input field.
-- "Choose your shots" film strip selector: 24, 36 (default), 48, 72 with friendship guidance ("4-6 friends").
-- Pill button "Next".
+- "Choose your shots" film strip selector: 24, 36, 48, 72, nothing picked at first; guidance under it per pick: "suitable for 2-3 friends" (24), "4-6" (36), "7-8" (48), "8+" (72), nothing before a pick (change 081).
+- "Next" (design-system primary button), disabled in the Figma disabled look until the name has text and a count is picked (change 081).
 
 ## Screen: Create Roll Filter [Locked]
-Figma node 1187:8489 (replaces 675:5759, change 017)
-- Header decoration and "Choose your filter".
+Figma node 1571:48191 (change 081; replaces 1187:8489)
+- ‹ and title "Create Roll" ("Edit Roll" when editing, 1600:49849), "Pick a filter", no header decoration.
 - Film canister picker ("Cinematic 400 Pro 35 Black & White" vs "200 Color Print") with shot badge.
-- Each canister's film strip: 4 sample photos (96 × 84 pt frames, horizontal scroll), filtered with that canister's real camera look. Only the selected canister's strip shows its photos; the other strip stays dark
-- Pill button "Next".
+- Each canister's film strip: 4 sample photos (96 × 84 pt frames, horizontal scroll), filtered with that canister's real camera look. Both strips show their photos; the picked film's photos run by themselves like a carousel (still with Reduce Motion) and its canister grows. The strip takes the screen's width, the photos are cut at its edge (change 081)
+- "Done" (design-system primary button): creates the roll, or saves the edits (change 081).
+
+## Screen: Edit Roll [Locked]
+Figma nodes 1599:49098 (menu), 1599:49590 (setup), 1600:49849 (filter); change 081
+- Host only, before the roll starts (Edit Room isn't in the menu after): ‹, "Edit Roll" (34 bold), "Capture moments with limited shots, revealed when the roll is complete.", "Name your roll" field and "Pick how many photos to shot" strip with the roll's values, the same guidance and Next rule; Next → the filter step titled "Edit Roll" → Done saves name, shots and filter to the room
 
 ## Screen: Create Roll Lobby [Locked]
 Figma nodes 1282:21858 (host, change 019), 1187:9657 / 1187:9798 (participant + menu, change 019), 1011:6043 (Remove)
 - Header decoration (ShareRoomHeaderDecoration), roll title (40 Bold), stats row: "N joined" (person.2, bold) and "N shots" (camera)
 - Toolbar: X (close to the Workbench) on the left, "⋯" menu on the right (same round button; the label keeps its 3 pt offset shadow inside its frame so it does not flicker when the menu closes)
-  - Host: Edit Room (`square.and.pencil`, shown, no action yet [Open]), Share Room (`square.and.arrow.up`), Delete Room (`trash`, red) → alert "Delete this room?" / "Everyone in the room will be removed." with Cancel and Delete Room [Draft text]
+  - Host: Edit Room (`square.and.pencil`, only before the roll starts → Edit Roll), Share Room (`square.and.arrow.up`), Delete Room (`trash`, red) → the Delete Roll card (Figma 1600:50620): star card with washi and the squinting star, "Delete Roll?" / "This roll will be gone for good and you won't be able to get it back.", "Keep Roll" (dark) and "Delete Roll" (light, red text) (change 081)
   - Participant: two rows only, Share Room on top, then Leave Room (`rectangle.portrait.and.arrow.right`, the HIG leave symbol instead of Figma's trash; red)
 - Avatar grid, 3 per row: 100pt circles showing the participant's shared profile photo thumbnail when set, or initials (surface/ink or burgundy/paper, alternating by user [Draft]), name, "(Host)" / "(You)" (change 044).
 - Host: "+" tile after the avatars (100 pt circle `Paper.normalHover`, SF Symbol `plus` 44 pt light in `Paper.darker`, Figma 1300:26199). Figma's "+" is a 75 pt text character (visible ≈ 38–40 pt); the 44 pt symbol gives the same visible size, centered and the same on every iPhone (user decision)
-- Host: long-press another avatar → "Remove"; only the "Start Roll" pill at the bottom (the "Delete roll" text button moved into the menu)
+- Host: long-press another avatar → "Remove"; only the "Start Roll" pill at the bottom (the "Delete roll" text button moved into the menu). A started roll reopened from Resume Roll shows "Continue Roll" instead, for host and participants (Figma 1672:29659, change 081)
 - Participant: "Waiting for the host to start..." (20pt, Paper dark active) instead of the buttons
-- Message on the Workbench after removal / deletion [Draft]: "The host removed you from the roll" / "This roll was deleted"
+- Message on the Workbench after removal [Draft]: "The host removed you from the roll". After deletion, the "Roll Deleted" card (Figma 1600:50745): happy star, "Roll Deleted" / "All set. Start a new roll whenever you're ready.", no buttons, gone after about 2.5 s or on a tap (change 081)
 
 ## Screen: Invite Friends Sheet [Locked]
 Figma nodes 1300:26163 (options), 1300:26710 (room code); change 019. Host "+" tile and the camera screen's info button open it on the options page
 - Medium-detent sheet, title "Invite Friends"
-- Options page: X (close), `InviteHandshake` illustration (two phones on an orange burst), pills "Invite via AirDrop" and "Invite via Room Code"
+- Options page: X (close), the invite illustration (Figma 1599:49022: two phones with the two star characters, change 081), pills "Invite via AirDrop" and "Invite via Room Code"
 - Invite via AirDrop: system share sheet with every built-in destination but AirDrop and the known messaging / social apps hidden (no public API opens AirDrop directly; unknown third-party extensions can't be hidden)
 - Room code page: ← back to options, "Share this code with your friends to join the roll.", `InviteStars` illustration, the code in large spaced letters; long-press copies it ("Copied" + haptic) [Draft]
 - No invite link yet / link failed: alert "Couldn't create the invite link. Check iCloud and your connection, then try again."
@@ -90,10 +94,10 @@ Figma 768:1623, from the lobby's "⋯" → Share Room (host and participant): Ai
 
 ## Screen: Join a Roll [Locked]
 Figma node 1187:9697 (change 019)
-- Back button, title "Join Roll", `InviteHandshake` illustration, "Turn on AirDrop to accept the invite", divider, "Enter code" with 6 boxes (49×58) left-aligned with the label, "Join" pill. No header decoration
+- Back button, title "Join Roll", the invite illustration (change 081), "Turn on AirDrop to accept the invite", divider, "Enter code" with 6 boxes (49×58) left-aligned with the label, "Join Roll" button (design-system primary), disabled until all 6 characters are in (Figma 1663:46361, change 081). No header decoration
 - One hidden text field holds the code; the boxes display it, the next box is outlined while typing; tapping a box opens the keyboard
 - Joining overlay (change 024): full screen on `Paper.light`; `FilterCanisterColor` / `FilterCanisterBW` (switching every 2.4 s cycle) bobs and pulls `FilmStripAmber` out of its slit and back; status text 17 pt semibold `Brand.primary` [Draft text]: "Finding the roll…" (0 s), "Loading the film…" (3 s), "Almost there…" (8 s); "Cancel" (`Brand.tertiary`) at the bottom. Also for invite links. Reduce Motion: canister still, film strip fades
-- Messages under the boxes, short only [Draft]: "Enter all 6 characters of the code", "No roll found for this code", "This roll has ended", "You're offline. Connect to the internet to join.", "Couldn't join. Make sure you're signed in to iCloud and try again." Cleared when the code changes
+- Messages under the boxes, short only [Draft]: "No roll found for this code", "This roll has ended", "You're offline. Connect to the internet to join.", "Couldn't join. Make sure you're signed in to iCloud and try again." Cleared when the code changes. No "Enter all 6 characters" since the button waits for the full code (change 081)
 
 ## Screen: Capture session [Locked]
 Figma nodes 1458:26041 (reference landscape, front camera on left) and 1531:23441 (portrait orientation) (changes 041, 072). Camera behavior from the camera POC (FilterCam), change 008.

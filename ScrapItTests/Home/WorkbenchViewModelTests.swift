@@ -405,7 +405,8 @@ struct WorkbenchViewModelTests {
 
         router.popToRoot()
         await vm.openRoll(localLive)
-        #expect(router.path.last == .captureSession)
+        // A started roll opens its lobby, with Continue Roll (change 081).
+        #expect(router.path.last == .createRollLobby)
 
         // Host leaving roll with remaining participant hands over host without deleting room
         vm.requestLeaveRoll(localLive)

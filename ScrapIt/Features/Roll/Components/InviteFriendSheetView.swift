@@ -48,13 +48,10 @@ struct InviteFriendSheetView: View {
                 flowViewModel.isInviteSheetPresented = false
             })
 
-            Image("InviteHandshake")
-                .resizable()
-                .scaledToFit()
+            InviteFriendsIllustration()
                 .frame(maxWidth: 376)
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
-                .accessibilityHidden(true)
 
             Spacer(minLength: 16)
 

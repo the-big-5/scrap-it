@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Pick a filter (change 081, Figma 1571:48191 / 1600:49849): "Create Roll", or "Edit Roll" when the host edits
+/// the open roll; Done creates the roll, or saves the edits.
 struct CreateRollFilterView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -11,21 +13,11 @@ struct CreateRollFilterView: View {
             DSColor.Kraft.lightActive.color
                 .ignoresSafeArea()
 
-            // Header decoration from Figma node 675:5759
-            Image("CreateRollHeaderDecoration")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 206)
-                .clipped()
-                .allowsHitTesting(false)
-                .ignoresSafeArea(edges: .top)
-
             VStack(alignment: .leading, spacing: 0) {
                 // Top navigation bar with Back button and Title
                 ZStack {
-                    Text("Create Roll")
-                        .font(.system(size: 18, weight: .bold))
+                    Text(flowViewModel.isEditingRoll ? "Edit Roll" : "Create Roll")
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(DSColor.Brand.primary.color)
 
                     HStack {
@@ -39,11 +31,11 @@ struct CreateRollFilterView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 24)
 
-                // Subtitle
-                Text("Choose a filter")
-                    .font(.system(size: 20, weight: .semibold))
+                Text("Pick a filter")
+                    .font(.system(size: 20))
                     .foregroundStyle(DSColor.Brand.primary.color)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, 33)
+                    .padding(.top, 25)
                     .padding(.bottom, 16)
 
                 // Filter options
@@ -64,13 +56,14 @@ struct CreateRollFilterView: View {
 
                 Spacer()
 
-                // Primary Next Button
-                Button("Next") {
-                    flowViewModel.createLobbySession(
-                        currentUser: currentUser
-                    )
+                Button("Done") {
+                    if flowViewModel.isEditingRoll {
+                        flowViewModel.saveRollEdits()
+                    } else {
+                        flowViewModel.createLobbySession(currentUser: currentUser)
+                    }
                 }
-                .buttonStyle(OffsetPillButtonStyle())
+                .buttonStyle(.ds(.primary, size: .large, fullWidth: true))
                 .padding(.horizontal, 22)
                 .padding(.bottom, 24)
             }

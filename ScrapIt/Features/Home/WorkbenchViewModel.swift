@@ -359,7 +359,7 @@ final class WorkbenchViewModel {
                 deleteLocalSession(session)
                 try? modelContext.save()
                 reloadRolls()
-                rollNoticeMessage = RollFlowViewModel.roomDeletedMessage
+                sessionStore.showsRollDeletedCard = true
                 return
             } catch RoomError.removed {
                 deleteLocalSession(session)
@@ -379,10 +379,9 @@ final class WorkbenchViewModel {
 
         sessionStore.activeSession = session
         switch session.status {
-        case .waiting:
+        case .waiting, .live:
+            // A started roll opens its lobby too, with Continue Roll (change 081).
             navigator?.push(.createRollLobby)
-        case .live:
-            navigator?.push(.captureSession)
         case .ended:
             handleRemotelyEndedRoll(session, service: service)
         }
@@ -442,6 +441,7 @@ final class WorkbenchViewModel {
         deleteLocalSession(session)
         try? modelContext.save()
         reloadRolls()
+        sessionStore.showsRollDeletedCard = true
 
         if isCloudRoom {
             let service = resolvedRoomService

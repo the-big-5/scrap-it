@@ -92,6 +92,13 @@ struct MainShellView: View {
                     .transition(.opacity)
             }
         }
+        // Roll Deleted (change 081, Figma 1600:50745), for the host and the people in the deleted roll.
+        .overlay {
+            if sessionStore.showsRollDeletedCard {
+                RollDeletedCard { sessionStore.showsRollDeletedCard = false }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: sessionStore.showsRollDeletedCard)
         .animation(.easeInOut(duration: 0.25), value: rollViewModel?.isJoining)
         .animation(.easeInOut(duration: 0.25), value: router.isFadingToReveal)
         .onChange(of: router.path) { _, newPath in
@@ -157,6 +164,8 @@ struct MainShellView: View {
             CreateRollSetupView(flowViewModel: activeRollViewModel())
         case .createRollFilter:
             CreateRollFilterView(currentUser: currentUser, flowViewModel: activeRollViewModel())
+        case .editRollSetup:
+            EditRollSetupView(flowViewModel: activeRollViewModel())
         case .createRollLobby:
             CreateRollLobbyView(currentUser: currentUser, flowViewModel: activeRollViewModel())
         case .joinRoll:
@@ -293,18 +302,16 @@ struct MainShellView: View {
                 Text("This removes the roll from your Resume Roll list.")
             }
         }
-        .confirmationDialog(
-            "Delete this room?",
-            isPresented: Binding(
-                get: { workbenchViewModel.rollPendingDelete != nil },
-                set: { if !$0 { workbenchViewModel.rollPendingDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete Room", role: .destructive, action: workbenchViewModel.confirmDeleteRoll)
-        } message: {
-            Text("Everyone in the room will be removed.")
+        // Delete Roll card (change 081, Figma 1600:50620) instead of the system dialog.
+        .overlay {
+            if workbenchViewModel.rollPendingDelete != nil {
+                DeleteRollCard(
+                    onKeep: { workbenchViewModel.rollPendingDelete = nil },
+                    onDelete: workbenchViewModel.confirmDeleteRoll
+                )
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: workbenchViewModel.rollPendingDelete != nil)
         .alert(
             workbenchViewModel.rollNoticeMessage ?? "",
             isPresented: Binding(
