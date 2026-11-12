@@ -78,20 +78,39 @@ struct ScrapbookEditorTests {
         #expect(vm.spreads.map(\.count) == [2, 2])
     }
 
-    @Test func swipingPastTheLastSpreadAddsTwoEmptyPages() {
+    @Test func pastTheLastSpreadAddPageAddsTwoEmptyPages() {
         let vm = makeEditor()
         let first = vm.currentSpreadPages.map(\.id)
+        let mode = vm.mode
         vm.swipeSpread(by: -1)
         #expect(vm.spreadIndex == 0)
 
+        // Past the last spread: the Add page spread, nothing added yet, nothing to open.
         vm.swipeSpread(by: 1)
-        #expect(vm.pages.count == 4)
+        #expect(vm.isAtAddPageSpread)
         #expect(vm.spreadIndex == 1)
+        #expect(vm.pages.count == 2)
+        #expect(vm.currentSpreadPages.isEmpty)
+        vm.openSpread()
+        #expect(vm.mode == mode)
+        vm.swipeSpread(by: 1)
+        #expect(vm.spreadIndex == 1)
+
+        // Back without adding: nothing added; at the end again it's there again.
+        vm.swipeSpread(by: -1)
+        #expect(vm.pages.count == 2)
+        #expect(!vm.isAtAddPageSpread)
+        vm.swipeSpread(by: 1)
+        #expect(vm.isAtAddPageSpread)
+
+        // "+ Add page": two empty pages, on screen now.
+        vm.addPages()
+        #expect(vm.pages.count == 4)
+        #expect(!vm.isAtAddPageSpread)
         #expect(vm.currentPage?.id == vm.leftPage?.id)
         #expect(!first.contains(vm.leftPage?.id ?? UUID()))
 
         vm.swipeSpread(by: -1)
-        #expect(vm.spreadIndex == 0)
         #expect(vm.currentSpreadPages.map(\.id) == first)
         #expect(vm.pages.count == 4)
     }
@@ -1261,6 +1280,49 @@ struct ScrapbookCoverTests {
         #expect(vm.placeSticker(sticker, center: CGPoint(x: 37, y: 200), width: 90, rotation: 0, pageFrame: frame))
         let item = try #require(vm.coverPage(.spine)?.allItems.first { $0.kind == .sticker })
         #expect(item.width < item.widthRange.upperBound)
+    }
+
+    @Test func editCoverUndoCoversBothSidesAndTheColor() throws {
+        let vm = makeEditor(as: host)
+        vm.finishScrapbook()
+        vm.editCover()
+        #expect(!vm.canUndo)
+        let blue = vm.coverColorHex
+
+        // A text on the front, then the spine.
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "Bali"
+        vm.commitTextEditor()
+        vm.showSpine()
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "Gang"
+        vm.commitTextEditor()
+        #expect(vm.coverPage(.front)?.allItems.count == 1)
+        #expect(vm.coverPage(.spine)?.allItems.count == 1)
+
+        // The color picker: many changes while dragging, one step.
+        vm.coverColorPickerOpened()
+        vm.setCoverColor("#FF0000")
+        vm.setCoverColor("#00FF00")
+        vm.undo()
+        #expect(vm.coverColorHex == blue)
+        vm.redo()
+        #expect(vm.coverColorHex == "#00FF00")
+        vm.undo()
+
+        vm.undo()
+        #expect(vm.coverPage(.spine)?.allItems.isEmpty == true)
+        vm.showFront()
+        vm.undo()
+        #expect(vm.coverPage(.front)?.allItems.isEmpty == true)
+        #expect(!vm.canUndo)
+
+        // Opening Edit Cover again starts a new history.
+        vm.redo()
+        vm.finishCoverEdit()
+        vm.editCover()
+        #expect(!vm.canUndo)
+        #expect(!vm.canRedo)
     }
 
     @Test func closingTheSecondTrayKeepsTheCoverTrayOpen() {

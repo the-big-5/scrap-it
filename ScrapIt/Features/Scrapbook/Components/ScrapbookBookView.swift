@@ -102,6 +102,12 @@ struct ScrapbookBookView: View {
             }
             .matchedGeometryEffect(id: Self.spreadMatchID, in: namespace)
             .frame(width: pageSize.width * 2, height: pageSize.height)
+            .overlay(alignment: .trailing) {
+                if turn == 0 && viewModel.isAtAddPageSpread {
+                    addPagePrompt
+                        .frame(width: pageSize.width, height: pageSize.height)
+                }
+            }
 
             if turn < 0 {
                 // Turning forward: the right page swings over the spine to the left; its back is the next left page.
@@ -144,8 +150,28 @@ struct ScrapbookBookView: View {
         .accessibilityHint("Tap to decorate. Swipe for other pages.")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { viewModel.openSpread() }
+        .accessibilityAction(named: "Add page") { viewModel.addPages() }
         .accessibilityAdjustableAction { direction in
             viewModel.swipeSpread(by: direction == .increment ? 1 : -1)
+        }
+    }
+
+    /// Past the last spread (change 121, Figma 1662:27296): the pages are only added when asked.
+    private var addPagePrompt: some View {
+        VStack(spacing: 4) {
+            Text("Need more space?")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.black)
+            Button(action: viewModel.addPages) {
+                Label("Add page", systemImage: "plus")
+                    .font(.system(size: 15))
+                    .foregroundStyle(DSColor.Kraft.light.color)
+                    .padding(.horizontal, 14)
+                    .frame(height: 33)
+                    .background(DSColor.Brand.primary.color, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -218,6 +244,8 @@ struct ScrapbookBookView: View {
                 var progress = value.translation.width / (pageWidth * 2)
                 // No previous spread: the left page doesn't lift.
                 if viewModel.spreadIndex == 0 { progress = min(progress, 0) }
+                // On the Add page spread the right page doesn't lift: "+ Add page" is the only way on (change 121).
+                if viewModel.isAtAddPageSpread { progress = max(progress, 0) }
                 turn = max(-1, min(1, progress))
             }
             .onEnded { value in

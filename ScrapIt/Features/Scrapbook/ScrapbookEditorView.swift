@@ -163,23 +163,46 @@ struct ScrapbookEditorView: View {
                 CoverCuttingMat()
 
                 VStack(spacing: 0) {
-                    ZStack {
-                        Text("Edit Cover")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(DSColor.Brand.primary.color)
-                        HStack {
-                            Spacer()
-                            if viewModel.coverSide == .front {
-                                SpreadEditorButton(icon: .system("arrow.right"), accessibilityLabel: "Spine",
-                                                   action: viewModel.showSpine)
-                            } else {
-                                SpreadEditorButton(icon: .system("checkmark"), accessibilityLabel: "Done",
-                                                   action: viewModel.finishCoverEdit)
-                            }
+                    // Figma 1444:23793 / 1515:27196 (change 121): ‹ back to the front on the spine; Editing
+                    // Progress, Undo, Redo and ✓ on both sides.
+                    HStack(spacing: 8) {
+                        if viewModel.coverSide == .spine {
+                            BackCircleButton(action: viewModel.showFront)
+                                .accessibilityLabel("Back to the front cover")
                         }
+                        Spacer()
+                        SpreadEditorButton(icon: .asset("ScrapbookPeople", template: false), width: 46,
+                                           accessibilityLabel: "Editing progress") {
+                            viewModel.isEditingProgressPresented = true
+                        }
+                        undoButton
+                        redoButton
+                        SpreadEditorButton(icon: .system("checkmark"), accessibilityLabel: "Done",
+                                           action: viewModel.finishCoverEdit)
                     }
-                    .padding(.horizontal, 22)
+                    .padding(.horizontal, 16)
                     .padding(.top, 4)
+                    if viewModel.coverSide == .front {
+                        // Figma 1444:23788: the way to the spine, labeled.
+                        Button(action: viewModel.showSpine) {
+                            HStack(spacing: 6) {
+                                Text("Edit book spine")
+                                Image(systemName: "arrow.forward")
+                            }
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(DSColor.Paper.light.color)
+                            .padding(.horizontal, 14)
+                            .frame(height: 52)
+                            .background(DSColor.Brand.primary.color, in: Capsule())
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.horizontal, 23)
+                        .padding(.top, 39)
+                        // Room between the button and the cover (asked while testing).
+                        .padding(.bottom, 24)
+                    }
                     Spacer(minLength: 0)
                     coverSideCell(scale: scale)
                     // Room for the color picker above the tray, so the cover sits higher (change 026).
@@ -187,7 +210,8 @@ struct ScrapbookEditorView: View {
                 }
                 .zIndex(viewModel.draggedItemID != nil ? 2 : 0)
 
-                CoverColorButton(colorHex: viewModel.coverColorHex, onChange: viewModel.setCoverColor)
+                CoverColorButton(colorHex: viewModel.coverColorHex, onChange: viewModel.setCoverColor,
+                                 onOpen: viewModel.coverColorPickerOpened)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 20)
                     .padding(.bottom, TrayStyle.trayHeight + 24)

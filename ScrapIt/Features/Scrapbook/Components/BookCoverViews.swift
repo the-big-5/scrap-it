@@ -118,10 +118,13 @@ struct CoverCuttingMat: View {
 struct CoverColorButton: View {
     let colorHex: String
     let onChange: (String) -> Void
+    /// The picker opened (one undo step per opening, change 121).
+    var onOpen: () -> Void = {}
     @State private var isPickerPresented = false
 
     var body: some View {
         Button {
+            onOpen()
             isPickerPresented = true
         } label: {
             ZStack {
