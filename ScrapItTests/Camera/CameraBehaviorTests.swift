@@ -253,16 +253,20 @@ struct CameraBehaviorTests {
 
     // MARK: - Orientation
 
-    @Test func captureSessionAllowsAllOrientationsOthersPortrait() {
-        #expect(OrientationLock.mask(isCaptureSessionVisible: true) == .portrait)
-        #expect(OrientationLock.mask(isCaptureSessionVisible: false) == .portrait)
+    @Test func captureSessionIsPortraitWhileOutsideRespectsDeviceDefault() {
+        #expect(OrientationLock.defaultMask(for: .phone) == .portrait)
+        #expect(OrientationLock.defaultMask(for: .pad) == .all)
+        #expect(OrientationLock.mask(isCaptureSessionVisible: true, idiom: .phone) == .portrait)
+        #expect(OrientationLock.mask(isCaptureSessionVisible: false, idiom: .phone) == .portrait)
+        #expect(OrientationLock.mask(isCaptureSessionVisible: true, idiom: .pad) == .portrait)
+        #expect(OrientationLock.mask(isCaptureSessionVisible: false, idiom: .pad) == .all)
     }
 
-    @Test func resetToPortraitSetsMaskToPortrait() {
+    @Test func resetToPortraitSetsDeviceDefaultMask() {
         OrientationLock.set(.landscape)
         #expect(OrientationLock.mask == .landscape)
         OrientationLock.resetToPortrait()
-        #expect(OrientationLock.mask == .portrait)
+        #expect(OrientationLock.mask == OrientationLock.defaultMask())
     }
 
     // MARK: - Shots counter (taken / total)
