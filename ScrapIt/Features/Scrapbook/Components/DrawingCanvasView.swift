@@ -5,15 +5,17 @@ import SwiftUI
 /// `ScrapbookPage.canvasSize` and is zoomed to the page's size, so drawings fit every iPhone and the covers.
 /// The pencil tray replaces the system tool picker. Finger and Apple Pencil both draw.
 struct DrawingCanvasView: UIViewRepresentable {
-    let drawingData: Data?
-    /// The page this canvas draws on (change 025: one canvas per page of the spread).
-    let pageID: UUID
+    /// The pages this canvas draws on, left to right, and their layers' drawings (change 025: one canvas per page;
+    /// change 104: one canvas over both pages of the spread, so a stroke can cross the gutter).
+    let pageIDs: [UUID]
+    let drawingData: [Data?]
+    /// The size of one page.
     let pageSize: CGSize
     let controller: PencilController
     var remoteRevision: Int = 0
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(controller: controller, pageID: pageID, lastRemoteRevision: remoteRevision)
+        Coordinator(controller: controller, lastRemoteRevision: remoteRevision)
     }
 
     func makeUIView(context: Context) -> PKCanvasView {
@@ -29,8 +31,8 @@ struct DrawingCanvasView: UIViewRepresentable {
         canvas.showsHorizontalScrollIndicator = false
         canvas.contentInsetAdjustmentBehavior = .never
         canvas.delegate = context.coordinator
-        let drawing = drawingData.flatMap { try? PKDrawing(data: $0) } ?? PKDrawing()
-        controller.attach(canvas, drawing: drawing, pageID: pageID)
+        controller.attach(canvas, pageIDs: pageIDs, drawings: drawings,
+                          pageWidth: ScrapbookPage.canvasSize(for: pageSize).width)
         applyScale(canvas)
         return canvas
     }
@@ -39,19 +41,23 @@ struct DrawingCanvasView: UIViewRepresentable {
         applyScale(canvas)
         if context.coordinator.lastRemoteRevision != remoteRevision {
             context.coordinator.lastRemoteRevision = remoteRevision
-            let drawing = drawingData.flatMap { try? PKDrawing(data: $0) } ?? PKDrawing()
-            controller.replaceDrawing(drawing, pageID: pageID)
+            controller.replaceDrawings(drawings, canvas: canvas)
         }
     }
 
     static func dismantleUIView(_ canvas: PKCanvasView, coordinator: Coordinator) {
-        coordinator.controller.detach(pageID: coordinator.pageID, canvas: canvas)
+        coordinator.controller.detach(canvas: canvas)
+    }
+
+    private var drawings: [PKDrawing] {
+        drawingData.map { data in data.flatMap { try? PKDrawing(data: $0) } ?? PKDrawing() }
     }
 
     private func applyScale(_ canvas: PKCanvasView) {
         guard pageSize.height > 0 else { return }
         let scale = pageSize.height / ScrapbookPage.canvasSize.height
-        canvas.contentSize = ScrapbookPage.canvasSize(for: pageSize)
+        let page = ScrapbookPage.canvasSize(for: pageSize)
+        canvas.contentSize = CGSize(width: page.width * CGFloat(pageIDs.count), height: page.height)
         canvas.minimumZoomScale = scale
         canvas.maximumZoomScale = scale
         if abs(canvas.zoomScale - scale) > 0.0001 {
@@ -62,17 +68,15 @@ struct DrawingCanvasView: UIViewRepresentable {
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         let controller: PencilController
-        let pageID: UUID
         var lastRemoteRevision: Int
 
-        init(controller: PencilController, pageID: UUID, lastRemoteRevision: Int) {
+        init(controller: PencilController, lastRemoteRevision: Int) {
             self.controller = controller
-            self.pageID = pageID
             self.lastRemoteRevision = lastRemoteRevision
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            controller.drawingDidChange(canvasView.drawing, pageID: pageID)
+            controller.drawingDidChange(canvasView.drawing, canvas: canvasView)
         }
     }
 }

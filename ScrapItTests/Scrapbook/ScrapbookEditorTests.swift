@@ -753,6 +753,20 @@ struct ScrapbookEditorTests {
         #expect(vm.currentPage?.sortedItems.last?.drawingData == Data("second".utf8))
     }
 
+    @Test func aStrokeOnBothPagesOfTheSpreadIsOneUndoStep() throws {
+        let vm = makeEditor()
+        vm.selectTrayTool(.pencil)
+        let pageIDs = vm.currentSpreadPages.map(\.id)
+        try #require(pageIDs.count == 2)
+        vm.updateDrawings([pageIDs[0]: Data("left".utf8), pageIDs[1]: Data("right".utf8)])
+        #expect(vm.drawingData(onPage: pageIDs[0]) == Data("left".utf8))
+        #expect(vm.drawingData(onPage: pageIDs[1]) == Data("right".utf8))
+
+        vm.undo()
+        #expect(pageIDs.allSatisfy { vm.drawingData(onPage: $0)?.isEmpty != false })
+        #expect(!vm.canUndo)
+    }
+
     @Test func anEmptyLayerIsRemovedWhenPencilCloses() {
         let vm = makeEditor()
         vm.selectTrayTool(.pencil)
@@ -868,6 +882,33 @@ struct ScrapbookEditorTests {
                            pageSize: pageSize)
         #expect(item.page?.id == left.id)
         #expect(item.centerX == 1)
+    }
+
+    @Test func bothPagesOfTheSpreadShareOneLayerOrder() throws {
+        let vm = makeEditor()
+        vm.openSpread()
+        let right = try #require(vm.rightPage)
+        vm.addPhoto(stillPhoto.id, at: CGPoint(x: 0.8, y: 0.5))
+        let photo = try #require(vm.leftPage?.allItems.first)
+
+        // A text added on the right page goes in front of the left page's photo.
+        vm.activatePage(right.id)
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "Bali"
+        vm.commitTextEditor()
+        let text = try #require(right.allItems.first)
+        #expect(text.zIndex > photo.zIndex)
+
+        // Selecting the photo brings it in front of both pages; moving it to the right page keeps it there.
+        vm.selectItem(photo.id)
+        #expect(photo.zIndex > text.zIndex)
+        vm.commitTransform(itemID: photo.id, translation: CGSize(width: 80, height: 0), scale: 1, rotationDelta: 0,
+                           pageSize: CGSize(width: 200, height: 266))
+        #expect(photo.page?.id == right.id)
+        #expect(photo.zIndex > text.zIndex)
+
+        vm.sendToBack(photo.id)
+        #expect(photo.zIndex < text.zIndex)
     }
 
     @Test func undoAndRedoCoverEveryChange() throws {
