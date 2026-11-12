@@ -59,12 +59,8 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
     private var simulatedLandscapeDelta: CGFloat = 0
     /// `AVCaptureSlider` "Zoom" (iOS 18+).
     private var zoomSlider: AnyObject?
-    /// Watches the camera's real `videoZoomFactor`, so the screen follows every zoom change.
-    private var zoomObservation: NSKeyValueObservation?
     private var lastReportedZoom: CGFloat?
-    /// Change 018: the back camera's lens is locked between zooms (virtual multi-lens cameras only).
-    private var managesLensSwitching = false
-    private var lensLockWorkItem: DispatchWorkItem?
+    private var lastAboveOneZoomTime: CFAbsoluteTime = 0
 
     // Only touched on the main thread.
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
@@ -138,8 +134,8 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
         }
         session.addInput(input)
         videoInput = input
-        applyLensSwitchingRule(to: device)
-        observeZoom(of: input.device)
+        configureLensSwitching(for: device)
+        lastReportedZoom = nil
 
         videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         videoOutput.alwaysDiscardsLateVideoFrames = true
@@ -229,30 +225,49 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
 
     private func applyZoom(_ zoom: CGFloat, ramp: Bool) {
         guard let device = videoInput?.device, device.position == .back, zoomCapabilities.isZoomable else { return }
-        setVideoZoomFactor(zoomCapabilities.deviceFactor(forDisplayZoom: zoom), on: device, ramp: ramp)
-        currentDisplayZoom = zoomCapabilities.clamped(zoom)
+        let targetDisplayZoom = zoomCapabilities.clamped(zoom)
+        let now = CFAbsoluteTimeGetCurrent()
+        let isDownwardBoundaryStep = currentDisplayZoom >= 1.0
+            && targetDisplayZoom < 1.0
+            && (currentDisplayZoom - targetDisplayZoom) <= 0.15
+            && (now - lastAboveOneZoomTime) >= 0.08
+        let isUpwardBoundaryStep = currentDisplayZoom < 1.0
+            && targetDisplayZoom >= 1.0
+            && targetDisplayZoom <= 1.25
+            && (targetDisplayZoom - currentDisplayZoom) <= 0.35
+        if currentDisplayZoom > 1.05 || targetDisplayZoom > 1.05 {
+            lastAboveOneZoomTime = now
+        }
+        let shouldRamp = ramp || isDownwardBoundaryStep || isUpwardBoundaryStep
+        let rate: Float
+        if ramp {
+            rate = 4
+        } else if isDownwardBoundaryStep || isUpwardBoundaryStep {
+            rate = 1.5
+        } else {
+            rate = (targetDisplayZoom >= 0.8 && targetDisplayZoom <= 1.25) ? 1.5 : 30.0
+        }
+        setVideoZoomFactor(zoomCapabilities.deviceFactor(forDisplayZoom: targetDisplayZoom), on: device, ramp: shouldRamp, rate: rate)
+        currentDisplayZoom = targetDisplayZoom
         if #available(iOS 18.0, *) {
             updateZoomSliderValue()
         }
     }
 
-    private func setVideoZoomFactor(_ factor: CGFloat, on device: AVCaptureDevice, ramp: Bool) {
+    private func setVideoZoomFactor(_ factor: CGFloat, on device: AVCaptureDevice, ramp: Bool, rate: Float = 4) {
         let factor = min(max(factor, device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
         do {
             try device.lockForConfiguration()
-            unlockLensForZoom(on: device)
             if ramp {
-                device.ramp(toVideoZoomFactor: factor, withRate: 4)
+                device.ramp(toVideoZoomFactor: factor, withRate: rate)
             } else {
                 if device.isRampingVideoZoom {
-                    device.cancelVideoZoomRamp()
+                    device.ramp(toVideoZoomFactor: factor, withRate: rate)
+                } else {
+                    device.videoZoomFactor = factor
                 }
-                device.videoZoomFactor = factor
             }
             device.unlockForConfiguration()
-            if managesLensSwitching, videoInput?.device == device {
-                scheduleLensLock(for: device)
-            }
         } catch {
             // Device busy; skip this zoom change.
         }
@@ -284,19 +299,6 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
         let zoom = zoomCapabilities.quantized(CGFloat(value))
         applyZoom(zoom, ramp: false)
         report(zoom)
-    }
-
-    private func observeZoom(of device: AVCaptureDevice) {
-        lastReportedZoom = nil
-        zoomObservation = device.observe(\.videoZoomFactor, options: [.new]) { [weak self] device, _ in
-            let factor = device.videoZoomFactor
-            self?.sessionQueue.async { self?.reportZoom(deviceFactor: factor, of: device) }
-        }
-    }
-
-    private func reportZoom(deviceFactor: CGFloat, of device: AVCaptureDevice) {
-        guard videoInput?.device == device, device.position == .back, zoomCapabilities.isZoomable else { return }
-        report(zoomCapabilities.quantized(zoomCapabilities.displayZoom(forDeviceFactor: deviceFactor)))
     }
 
     private func report(_ zoom: CGFloat) {
@@ -357,8 +359,8 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
         }
         session.addInput(input)
         videoInput = input
-        applyLensSwitchingRule(to: device)
-        observeZoom(of: input.device)
+        configureLensSwitching(for: device)
+        lastReportedZoom = nil
         photoOutput.isLivePhotoCaptureEnabled = photoOutput.isLivePhotoCaptureSupported
         updateConnections(for: position)
         session.commitConfiguration()
@@ -465,53 +467,23 @@ nonisolated final class CameraEngine: NSObject, @unchecked Sendable {
 
     // MARK: - Helpers
 
-    /// Change 018: no automatic lens switching (close-focus macro, light) on the back camera. The lens is locked,
-    /// unlocked only while the zoom changes (`setVideoZoomFactor`), and locked again shortly after.
-    private func applyLensSwitchingRule(to device: AVCaptureDevice) {
-        lensLockWorkItem?.cancel()
-        let rule = LensSwitchingRule.resolve(
-            isBackCamera: device.position == .back,
-            isVirtualDevice: device.isVirtualDevice,
-            supportsSwitchingBehavior: device.primaryConstituentDeviceSwitchingBehavior != .unsupported
-        )
-        managesLensSwitching = rule == .lockedBetweenZooms
-        if managesLensSwitching {
-            scheduleLensLock(for: device)
+    /// Configure lens switching on virtual back cameras so optical switching is fully automatic and symmetric.
+    private func configureLensSwitching(for device: AVCaptureDevice) {
+        guard device.position == .back, device.isVirtualDevice,
+              device.primaryConstituentDeviceSwitchingBehavior != .unsupported else { return }
+        do {
+            try device.lockForConfiguration()
+            device.setPrimaryConstituentDeviceSwitchingBehavior(.auto, restrictedSwitchingBehaviorConditions: [])
+            device.unlockForConfiguration()
+        } catch {
+            // Device busy: will be configured on next opportunity.
         }
     }
 
-    /// Lets the zoom switch lenses. Call inside `lockForConfiguration`, before changing the zoom.
-    private func unlockLensForZoom(on device: AVCaptureDevice) {
-        guard managesLensSwitching, videoInput?.device == device,
-              device.primaryConstituentDeviceSwitchingBehavior != .restricted else { return }
-        device.setPrimaryConstituentDeviceSwitchingBehavior(.restricted, restrictedSwitchingBehaviorConditions: .videoZoomChanged)
-    }
-
-    /// Locks the current lens once the zoom (and a ramp) has settled.
-    private func scheduleLensLock(for device: AVCaptureDevice) {
-        lensLockWorkItem?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            guard let self, self.managesLensSwitching, self.videoInput?.device == device else { return }
-            if device.isRampingVideoZoom {
-                self.scheduleLensLock(for: device)
-                return
-            }
-            do {
-                try device.lockForConfiguration()
-                device.setPrimaryConstituentDeviceSwitchingBehavior(.locked, restrictedSwitchingBehaviorConditions: [])
-                device.unlockForConfiguration()
-            } catch {
-                // Device busy: stays unlocked until the next zoom.
-            }
-        }
-        lensLockWorkItem = item
-        sessionQueue.asyncAfter(deadline: .now() + LensSwitchingRule.lockDelay, execute: item)
-    }
-
-    /// Back camera uses a virtual (multi-lens) device so zoom switches lenses smoothly.
+    /// Back camera uses a virtual dual-wide or dual camera device without telephoto.
     private static func camera(at position: AVCaptureDevice.Position) -> AVCaptureDevice? {
         let types: [AVCaptureDevice.DeviceType] = position == .back
-            ? [.builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera]
+            ? [.builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera]
             : [.builtInWideAngleCamera]
         let devices = AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .video, position: position).devices
         for type in types {

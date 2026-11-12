@@ -17,124 +17,85 @@ struct CameraBehaviorTests {
         )
         return container.mainContext
     }
-    /// Triple-camera-like phone: lenses 0.5×, 1×, 4×; device max 270 (135×) capped at 4×.
-    static let tripleCamera = ZoomCapabilities.make(
+    /// Dual-wide camera phone (change 060): lenses 0.5×, 1×, 2×; device max 270 capped at 4× without telephoto.
+    static let dualWideCamera = ZoomCapabilities.make(
         hasUltraWide: true,
-        switchOverFactors: [2.0, 8.0],
-        secondaryNativeFactors: [],
+        switchOverFactors: [2.0],
+        secondaryNativeFactors: [2.0],
         minDeviceFactor: 1.0,
         maxDeviceFactor: 270.0
     )
 
     private func approx(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.0001 }
 
-    // MARK: - Zoom wheel
+    // MARK: - Zoom wheel (Discrete stepping & sensor allocation)
 
-    @Test func dragLeftZoomsIn() {
-        var model = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 1)
+    @Test func discreteZoomStopStepIndexMapping() {
+        let stopAtOne = ZoomStop.from(factor: 1.0)
+        #expect(stopAtOne.stepIndex == 5)
+        #expect(stopAtOne.rawValue == 1.0)
 
-        let update = model.drag(by: -16, velocity: 50)
+        let stopAtHalf = ZoomStop.from(factor: 0.5)
+        #expect(stopAtHalf.stepIndex == 0)
+        #expect(stopAtHalf.rawValue == 0.5)
 
-        #expect(approx(model.zoom, 1.1))
-        #expect(update.steps == 1)
+        let stopAtFour = ZoomStop.from(factor: 4.0)
+        #expect(stopAtFour.stepIndex == 35)
+        #expect(stopAtFour.rawValue == 4.0)
     }
 
-    @Test func dragRightZoomsOut() {
-        var model = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 2)
-
-        _ = model.drag(by: 16, velocity: 50)
-
-        #expect(model.zoom < 2)
+    @Test func dragLeftSteppingProgression() {
+        var current = ZoomStop.from(factor: 1.0)
+        let next = current.nextClamped()
+        #expect(approx(CGFloat(next.rawValue), 1.1))
+        current = next
+        #expect(current.stepIndex == 6)
     }
 
-    @Test func scaleIsLogarithmic() {
-        var model = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 1)
-        let at1 = model.travel
-        model.sync(to: 2)
-        let at2 = model.travel
-        model.sync(to: 4)
-        let at4 = model.travel
-
-        #expect(abs((at2 - at1) - (at4 - at2)) < 0.0001)
-        #expect(abs((at2 - at1) - ZoomWheelModel.pointsPerDoubling) < 0.0001)
+    @Test func dragRightSteppingProgression() {
+        var current = ZoomStop.from(factor: 2.0)
+        let prev = current.previousClamped()
+        #expect(approx(CGFloat(prev.rawValue), 1.9))
+        current = prev
+        #expect(current.stepIndex == 14)
     }
 
-    @Test func fastDragCoversMoreSteps() {
-        var slow = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 1.5)
-        var fast = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 1.5)
+    @Test func discreteStepBoundaryEndstops() {
+        let atMin = ZoomStop.from(factor: 0.5)
+        #expect(atMin.previousClamped() == atMin)
 
-        _ = slow.drag(by: -20, velocity: 60)
-        _ = fast.drag(by: -20, velocity: 1500)
-
-        #expect(fast.zoom > slow.zoom)
-        #expect(ZoomWheelModel.gain(forSpeed: 60) == 1)
-        #expect(ZoomWheelModel.gain(forSpeed: 100_000) == ZoomWheelModel.maxGain)
+        let atMax = ZoomStop.from(factor: 4.0)
+        #expect(atMax.nextClamped() == atMax)
     }
 
-    @Test func slowDragStopsAtLensThenNeedsExtraDrag() {
-        var model = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 1.5)
+    @Test func sensorSwitchingBoundaryAtOnePointZero() {
+        let caps = Self.dualWideCamera
+        // 0.9x is in the Ultra Wide range (< 2.0 device factor)
+        let factorAtPointNine = caps.deviceFactor(forDisplayZoom: 0.9)
+        #expect(factorAtPointNine < 2.0, "0.9x must use ultra wide sensor")
 
-        let hit = model.drag(by: 80, velocity: 50)
-        #expect(hit.hitLens)
-        #expect(approx(model.zoom, 1.0))
-
-        _ = model.drag(by: 5, velocity: 50)
-        #expect(approx(model.zoom, 1.0), "Detent holds")
-
-        _ = model.drag(by: 20, velocity: 50)
-        #expect(approx(model.zoom, 0.9))
+        // 1.0x is on the Main sensor (>= 2.0 device factor)
+        let factorAtOne = caps.deviceFactor(forDisplayZoom: 1.0)
+        #expect(factorAtOne >= 2.0, "1.0x must use main sensor")
     }
 
-    @Test func fastDragPassesLensWithoutStopping() {
-        var model = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 1.5)
+    @Test func ribOffsetMovesWithFinger() {
+        let stop1 = ZoomStop.from(factor: 1.0)
+        let stop2 = ZoomStop.from(factor: 1.1)
 
-        let update = model.drag(by: 30, velocity: 1500)
+        let angle1 = stop1.rotationAngleDegrees
+        let angle2 = stop2.rotationAngleDegrees
 
-        #expect(update.hitLens)
-        #expect(model.zoom < 1.0)
-    }
-
-    @Test func endstopsClampAndThudOnce() {
-        var model = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 0.5)
-
-        let first = model.drag(by: 50, velocity: 50)
-        let second = model.drag(by: 10, velocity: 50)
-        #expect(first.hitEndstop)
-        #expect(!second.hitEndstop)
-        #expect(approx(model.zoom, 0.5))
-
-        _ = model.drag(by: -5_000, velocity: 100_000)
-        #expect(approx(model.zoom, 4), "Max is 4x")
-    }
-
-    @Test func zoomAlwaysOnTenths() {
-        var model = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 1)
-        for _ in 0..<40 {
-            _ = model.drag(by: -3.7, velocity: 80)
-            let tenths = model.zoom * 10
-            #expect(abs(tenths - tenths.rounded()) < 0.0001)
-        }
-    }
-
-    @Test func ribsMoveWithTheFinger() {
-        var model = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 1)
-        let before = model.ribOffset(spacing: 16)
-
-        _ = model.drag(by: -5, velocity: 50)
-
-        #expect(model.ribOffset(spacing: 16) < before, "Finger moves left, ribs move left")
-    }
-
-    @Test func tapJumpsToNextLens() {
-        let model = ZoomWheelModel(capabilities: Self.tripleCamera, zoom: 1)
-
-        #expect(model.nextLens(zoomingIn: true) == 4)
-        #expect(model.nextLens(zoomingIn: false) == 0.5)
+        #expect(angle2 > angle1, "Angle increases as zoom factor increases")
+        let ribSpacing: CGFloat = 16.0
+        let offset1 = -CGFloat(angle1) * (ribSpacing / 18.0)
+        let offset2 = -CGFloat(angle2) * (ribSpacing / 18.0)
+        #expect(offset2 < offset1, "Ribs shift left when zooming in (dragging left)")
     }
 
     @Test func frontCameraIsNotZoomable() {
-        let model = ZoomWheelModel(capabilities: .none, zoom: 1)
-        #expect(!model.isZoomable)
+        let caps = ZoomCapabilities.none
+        #expect(!caps.isZoomable)
     }
 
     // MARK: - Physical buttons

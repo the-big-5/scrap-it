@@ -497,8 +497,7 @@ struct CaptureSessionView: View {
                 capabilities: camera.zoomCapabilities,
                 zoomFactor: camera.zoomFactor,
                 isEnabled: !camera.isUsingFrontCamera,
-                onZoomChanged: { camera.setZoomFactor($0) },
-                onLensSelected: { camera.rampZoom(to: $0) }
+                onZoomChanged: { camera.setZoomFactor($0) }
             )
             .frame(width: 160, height: 60)
             .position(x: 86, y: 49)

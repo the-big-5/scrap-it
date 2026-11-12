@@ -92,12 +92,12 @@ Figma nodes 1458:26041 (reference landscape, front camera on left) and 1531:2344
   - Right deck: Circular shutter well (154×154) with silver spherical shutter dome (inner 130×130 dome depresses on tap while outer green ring stays fixed), Flip camera button in recessed well (72×72), and circular analog shots-left dial (83×83, outer frame with 55.865 inner drum, mechanical odometer digit tumblers, rotating face; displays a continuous rotating amber progress arc around the 83×83 rim during sync with a gentle sync pulse and single sharp mechanical decrement snap, change 058).
   - Legacy bottom controls shelf removed.
 - Live preview shows the roll's filter in real time (Cinematic 400 B&W = Noir, 200 Color Print = Digicam, change 016); no filter switching on this screen
-- Knurled zoom wheel (172×44, look from 007):
-  - Back camera range: 0.5× (phones with ultra wide) or 1× up to 4× (or the device maximum if lower), in 0.1 steps
-  - Drag **left** to zoom in; ribs roll with the finger; logarithmic scale; faster drags cover more steps
-  - Light detent and snap haptic at lens values; hard endstop thud at min and max (no bounce); ratchet tick per 0.1 step
-  - Tap left / right half: jump to the next lens value in / out
-  - Follows zoom from Camera Control; front camera: fixed 1×, wheel disabled
+- Knurled zoom wheel (172×44, look from 007; refactored in change 060):
+  - Back camera range: 0.5× (phones with ultra wide) or 1.0× up to 4.0× (36 discrete steps in 0.1× increments via `ZoomStop`)
+  - Drag **left** to zoom in, drag **right** to zoom out; ribs translate in 1:1 discrete steps (every 6.0 pt of drag translation) across `-60°` to `+60°`
+  - Ratchet tick haptic (`HapticService.playRatchetTick()`) on each discrete 0.1× step; silent hard endstops at min and max (zero haptic pulses when dragging against a reached boundary)
+  - No tap-to-step or tap-to-jump gestures on the wheel
+  - Follows zoom from Camera Control; front camera: fixed 1.0×, wheel disabled
 - Camera Control (iOS 18+): click = take a photo; light press + slide = one "Zoom" slider (same range and 0.1 steps as the wheel, lens values marked), synced both ways with the wheel; no front camera option; disabled on the front camera
 - Volume buttons (`AVCaptureEventInteraction`, only on this screen): volume up = cycle flash; volume down = take a photo on phones with Camera Control, flip camera on phones without it
 - "Turn On Camera Adjustments" pop-up on phones with Camera Control: ~1 s after the camera opens, at most once per app launch, until the control has been seen opening or the user picks "Already On" / "Don't Remind Me" ("Later" asks again next launch). Text [Draft]: "To zoom and switch cameras with a light press on Camera Control, turn on Camera Adjustments in Settings › Camera › Camera Control."
