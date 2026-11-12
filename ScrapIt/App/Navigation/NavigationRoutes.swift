@@ -13,6 +13,8 @@ enum DeskCollectionKind: Hashable {
 enum AppRoute: Hashable {
     case createRollSetup
     case createRollFilter
+    /// Host, before the roll starts: Edit Room → Edit Roll (change 081); then `.createRollFilter` in edit mode.
+    case editRollSetup
     case createRollLobby
     case joinRoll
     case captureSession
@@ -25,7 +27,7 @@ enum AppRoute: Hashable {
 
     var isRollRoute: Bool {
         switch self {
-        case .createRollSetup, .createRollFilter, .createRollLobby, .joinRoll, .captureSession:
+        case .createRollSetup, .createRollFilter, .editRollSetup, .createRollLobby, .joinRoll, .captureSession:
             return true
         case .scrapbook, .editProfile, .rollReveal, .deskCollection:
             return false

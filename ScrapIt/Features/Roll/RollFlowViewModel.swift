@@ -32,8 +32,11 @@ final class RollFlowViewModel {
 
     // Create Roll draft fields
     var draftRollName: String = ""
-    var draftShotCount: Int = 36
+    /// Nothing picked at first (change 081): Next waits for a deliberate choice.
+    var draftShotCount: Int?
     var draftFilter: RollFilter = .colorPrint200
+    /// The setup and filter steps edit the open roll instead of creating one (change 081).
+    private(set) var isEditingRoll = false
     /// Sample photos per filter, rendered with the camera pipeline (change 017).
     private(set) var filterSamples: [RollFilter: [CGImage]] = [:]
 
@@ -236,13 +239,35 @@ final class RollFlowViewModel {
     }
 
     func startCreateRollWizard() {
-        draftRollName = ""
-        draftShotCount = 36
-        draftFilter = .colorPrint200
+        resetDrafts()
         navigator?.push(.createRollSetup)
     }
 
+    private func resetDrafts() {
+        draftRollName = ""
+        draftShotCount = nil
+        draftFilter = .colorPrint200
+        isEditingRoll = false
+    }
+
+    /// Next on Create / Edit Roll (change 081): a name with more than spaces, and a shot count.
+    var canProceedFromSetup: Bool {
+        !draftRollName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draftShotCount != nil
+    }
+
+    /// Guidance under the shot strip (change 081); nothing before a pick.
+    static func friendsGuide(for shots: Int?) -> String? {
+        switch shots {
+        case 24: "suitable for 2-3 friends"
+        case 36: "suitable for 4-6 friends"
+        case 48: "suitable for 7-8 friends"
+        case 72: "suitable for 8+ friends"
+        default: nil
+        }
+    }
+
     func proceedToFilterStep() {
+        guard canProceedFromSetup else { return }
         navigator?.push(.createRollFilter)
     }
 
@@ -264,6 +289,9 @@ final class RollFlowViewModel {
         joinCode = cleaned
     }
 
+    /// Join Roll waits for all 6 characters (change 081, Figma 1663:46361).
+    var canSubmitJoinCode: Bool { joinCode.count == Self.joinCodeLength }
+
     func joinCodeCharacter(at index: Int) -> String {
         let characters = Array(joinCode)
         return index < characters.count ? String(characters[index]) : ""
@@ -274,15 +302,15 @@ final class RollFlowViewModel {
     func createLobbySession(
         currentUser: UserProfile
     ) {
-        let trimmedName = draftRollName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedName = trimmedName.isEmpty ? "Untitled Roll" : trimmedName
+        guard canProceedFromSetup, let shotCount = draftShotCount else { return }
+        let resolvedName = draftRollName.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let session = CaptureSession(
             name: resolvedName,
             hostUserID: currentUser.appleUserID,
             participantIDs: [currentUser.appleUserID],
             participantNames: [currentUser.name],
-            rollSize: draftShotCount,
+            rollSize: shotCount,
             slotsUsed: 0,
             filter: draftFilter,
             status: .waiting
@@ -292,6 +320,8 @@ final class RollFlowViewModel {
         try? modelContext.save()
         sessionStore.activeSession = session
         lobbyParticipants = [participant(currentUser)]
+        // The next Create Roll starts empty again (change 081).
+        resetDrafts()
 
         navigator?.push(.createRollLobby)
 
@@ -340,6 +370,13 @@ final class RollFlowViewModel {
         if navigator?.cameraIntroPhase == .idle {
             navigator?.push(.captureSession)
         }
+    }
+
+    /// Continue Roll (change 081): a started roll reopened from Resume Roll goes back into the camera without the
+    /// start step and its intro (change 110 plays only on Start Roll).
+    func continueRoll() {
+        guard let session = activeSession, session.status == .live else { return }
+        navigator?.push(.captureSession)
     }
 
     // MARK: - Join roll
@@ -606,8 +643,11 @@ final class RollFlowViewModel {
                     snapshot.participants[index] = local
                 }
             }
+            // Only a roll that starts while waiting here moves people to the camera; a started roll reopened from
+            // Resume Roll waits for Continue Roll (change 081).
+            let wasWaiting = session.status == .waiting
             apply(snapshot, to: session)
-            if session.status == .live, navigator?.path.last == .createRollLobby {
+            if wasWaiting, session.status == .live, navigator?.path.last == .createRollLobby {
                 beginLivePolling(session: session)
                 navigator?.beginCameraIntro(filter: session.filter)
                 if navigator?.cameraIntroPhase == .idle {
@@ -663,8 +703,36 @@ final class RollFlowViewModel {
     func showRoomCode() { invitePage = .code }
     func showInviteOptions() { invitePage = .options }
 
-    /// Edit Room: shown in the menu, no action yet [Open].
-    func editRoom() {}
+    /// Edit Room (host, before the roll starts, change 081): Edit Roll with the roll's name, shots and filter.
+    func editRoom() {
+        guard let session = activeSession, session.status == .waiting else { return }
+        draftRollName = session.name
+        draftShotCount = session.rollSize
+        draftFilter = session.filter
+        isEditingRoll = true
+        navigator?.push(.editRollSetup)
+    }
+
+    /// ‹ on Edit Roll: back to the lobby, nothing saved.
+    func cancelEditRoll() {
+        resetDrafts()
+        if navigator?.path.last == .editRollSetup { navigator?.path.removeLast() }
+    }
+
+    /// Done on the Edit Roll filter: saves and syncs, then back to the lobby.
+    func saveRollEdits() {
+        guard isEditingRoll, canProceedFromSetup, let shotCount = draftShotCount,
+              let session = activeSession, session.status == .waiting else { return }
+        session.name = draftRollName.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.rollSize = shotCount
+        session.filterRaw = draftFilter.rawValue
+        try? modelContext.save()
+        resetDrafts()
+        if let navigator, let lobby = navigator.path.lastIndex(of: .createRollLobby) {
+            navigator.path = Array(navigator.path[...lobby])
+        }
+        Task { await cloudService.publishRollDetails(session: session) }
+    }
 
     /// Share Room (host and participant): the system share sheet with the invite link.
     func shareRoom(currentUser: UserProfile) async {
@@ -701,6 +769,7 @@ final class RollFlowViewModel {
         let isCloudRoom = session.ckRecordName != nil
         discardLocalSession(session)
         closeLobby()
+        sessionStore.showsRollDeletedCard = true
         if isCloudRoom {
             Task { try? await roomService.deleteRoom(code: code) }
         }
@@ -746,7 +815,12 @@ final class RollFlowViewModel {
             discardLocalSession(session)
         }
         closeLobby()
-        roomExitMessage = message
+        // A deleted roll shows the Roll Deleted card, as for the host (change 081).
+        if message == Self.roomDeletedMessage {
+            sessionStore.showsRollDeletedCard = true
+        } else {
+            roomExitMessage = message
+        }
     }
 
     private func discardLocalSession(_ session: CaptureSession) {

@@ -11,6 +11,8 @@ final class SessionStore {
     /// Shown by the app shell after leaving a roll room (removed, deleted, invite failed; change 011).
     /// Lives here because the Roll ViewModel is released once the roll screens close.
     var roomExitMessage: String?
+    /// The "Roll Deleted" card on the Workbench, for the host who deleted the roll and the people in it (change 081).
+    var showsRollDeletedCard = false
 
     private let modelContext: ModelContext
 

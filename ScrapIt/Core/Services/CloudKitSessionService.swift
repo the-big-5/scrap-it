@@ -81,6 +81,26 @@ final class CloudKitSessionService {
         }
     }
 
+    /// Edit Roll (change 081): the host's new name, shots and filter, for everyone in the lobby.
+    func publishRollDetails(session: CaptureSession) async {
+        guard isOnline, session.ckRecordName != nil else { return }
+        // Read before waiting on CloudKit: the roll can be deleted meanwhile.
+        let name = session.name
+        let rollSize = session.rollSize
+        let filterRaw = session.filterRaw
+        let location = roomLocation(for: session)
+        let database = location.database(in: CKContainer.app)
+        do {
+            let record = try await database.record(for: location.sessionRecordID)
+            record["name"] = name as CKRecordValue
+            record["rollSize"] = rollSize as CKRecordValue
+            record["filterRaw"] = filterRaw as CKRecordValue
+            try await database.save(record)
+        } catch {
+            print("🚨 [CloudKitSessionService] publishRollDetails failed: \(error)")
+        }
+    }
+
     // MARK: - Atomic Slot Claim (First Write Wins on Last-Slot Race)
 
     func claimSlotAtomically(

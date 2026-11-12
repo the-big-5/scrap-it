@@ -88,44 +88,33 @@ struct CreateRollSetupView: View {
 
                     FilmStripShotSelector(selectedCount: $flowViewModel.draftShotCount)
 
-                    HStack {
-                        Spacer()
-                        Text(friendsGuide(for: flowViewModel.draftShotCount))
-                            .font(.system(size: 15, weight: .regular))
-                            .italic()
-                            .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
-                        Spacer()
+                    // Guidance for the picked count; nothing before a pick (change 081).
+                    if let guide = RollFlowViewModel.friendsGuide(for: flowViewModel.draftShotCount) {
+                        HStack {
+                            Spacer()
+                            Text(guide)
+                                .font(.system(size: 15, weight: .regular))
+                                .italic()
+                                .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+                            Spacer()
+                        }
+                        .padding(.top, 10)
                     }
-                    .padding(.top, 10)
                 }
                 .padding(.horizontal, 20)
 
                 Spacer()
 
-                // Primary Next Button
+                // Next waits for a name and a shot count, in the disabled color until then (change 081).
                 Button("Next") {
                     flowViewModel.proceedToFilterStep()
                 }
-                .buttonStyle(OffsetPillButtonStyle())
+                .buttonStyle(.ds(.primary, size: .large, fullWidth: true))
+                .disabled(!flowViewModel.canProceedFromSetup)
                 .padding(.horizontal, 22)
                 .padding(.bottom, 24)
             }
         }
         .navigationBarBackButtonHidden(true)
-    }
-
-    private func friendsGuide(for shots: Int) -> String {
-        switch shots {
-        case 24:
-            return "2-4 friends"
-        case 36:
-            return "4-6 friends"
-        case 48:
-            return "6-8 friends"
-        case 72:
-            return "8-12 friends"
-        default:
-            return "A small circle"
-        }
     }
 }
