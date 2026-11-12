@@ -9,6 +9,8 @@ struct ScrapbookEditorView: View {
     @State private var pencil = PencilController()
     /// Each page's frame in the screen's coordinate space, to drop a sticker on the page under it (change 025).
     @State private var pageScreenFrames: [UUID: CGRect] = [:]
+    /// Landscape: the Dynamic Island (top of the phone) is on the left, where the buttons go (change 113).
+    @State private var isIslandOnLeading = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The spread zooms from the book into the editor and back (change 025).
     @Namespace private var spreadNamespace
@@ -306,6 +308,11 @@ struct ScrapbookEditorView: View {
             ZStack {
                 DSColor.Brand.primary.color
                     .ignoresSafeArea()
+                    // Interface landscape right = the phone's top on the left.
+                    .background(InterfaceOrientationReader { orientation in
+                        if orientation == .landscapeRight { isIslandOnLeading = true }
+                        if orientation == .landscapeLeft { isIslandOnLeading = false }
+                    })
 
                 if isLandscape {
                     landscapeLayout(geometry)
@@ -422,7 +429,9 @@ struct ScrapbookEditorView: View {
     /// Landscape: always the spread (no zoom). Buttons run down the notch side, the tray stands up on the other.
     private func landscapeLayout(_ geometry: GeometryProxy) -> some View {
         let insets = geometry.safeAreaInsets
-        let buttonsOnLeading = insets.leading >= insets.trailing
+        // Buttons on the Dynamic Island side, the tray on the other (Figma 1563:31649 / 1563:30868). The safe area
+        // can't tell: it is the same on both sides in landscape (change 113).
+        let buttonsOnLeading = isIslandOnLeading
         let fullHeight = geometry.size.height + insets.top + insets.bottom
         let pageWidth = fullHeight * 3 / 4
         let trayDepth = TrayStyle.trayHeight * 2 - TrayStyle.overlap + 10
@@ -476,7 +485,8 @@ struct ScrapbookEditorView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity,
                            alignment: buttonsOnLeading ? .bottomTrailing : .bottomLeading)
                     .padding(.horizontal, trayDepth + 12)
-                    .padding(.bottom, 12)
+                    // About 60 pt above the screen's bottom edge, clear of the home indicator (change 113).
+                    .padding(.bottom, max(60 - insets.bottom, 12))
                     .transition(.opacity)
                     .zIndex(1)
             }
