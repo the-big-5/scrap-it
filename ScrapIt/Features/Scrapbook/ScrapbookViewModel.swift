@@ -763,7 +763,7 @@ final class ScrapbookViewModel {
             centerY: point.map { Double($0.y) } ?? min(max(0.5 + .random(in: -0.08...0.08), 0.1), 0.9),
             width: 0.45,
             rotation: .random(in: -6...6) * .pi / 180,
-            zIndex: page.maxZIndex + 1,
+            zIndex: frontZIndex(on: page),
             loopEnabled: !reduceMotion
         )
         modelContext.insert(item)
@@ -808,9 +808,35 @@ final class ScrapbookViewModel {
         selectedItemID = id
         guard let id, let item = item(id), let page = item.page else { return }
         activatePage(page.id)
-        if item.zIndex < page.maxZIndex || page.allItems.filter({ $0.zIndex == item.zIndex }).count > 1 {
-            item.zIndex = page.maxZIndex + 1
+        // In front of both pages of the spread: they share one layer order (change 104).
+        let layer = layerPages(of: page).flatMap(\.allItems)
+        let top = layer.map(\.zIndex).max() ?? 0
+        if item.zIndex < top || layer.filter({ $0.zIndex == item.zIndex }).count > 1 {
+            item.zIndex = top + 1
         }
+    }
+
+    /// The items of a spread's pages back to front in one layer order (change 104): by layer, the left page's item
+    /// first on a tie.
+    func layerOrder(of pages: [ScrapbookPage]) -> [SpreadItem] {
+        pages.enumerated()
+            .flatMap { index, page in page.allItems.map { SpreadItem(pageIndex: index, page: page, item: $0) } }
+            .sorted { ($0.item.zIndex, $0.pageIndex) < ($1.item.zIndex, $1.pageIndex) }
+    }
+
+    /// The pages sharing one layer order with `page`: both pages of its spread (change 104), or a cover side alone.
+    func layerPages(of page: ScrapbookPage) -> [ScrapbookPage] {
+        spreads.first { $0.contains { $0.id == page.id } } ?? [page]
+    }
+
+    /// In front of everything on the page's spread.
+    private func frontZIndex(on page: ScrapbookPage) -> Int {
+        (layerPages(of: page).flatMap(\.allItems).map(\.zIndex).max() ?? 0) + 1
+    }
+
+    /// Behind everything on the page's spread.
+    private func backZIndex(on page: ScrapbookPage) -> Int {
+        (layerPages(of: page).flatMap(\.allItems).map(\.zIndex).min() ?? 0) - 1
     }
 
     /// End of a drag / pinch / rotate. `translation` in page points. On the spread an item dropped past the gutter
@@ -835,7 +861,7 @@ final class ScrapbookViewModel {
         item.rotation = ScrapbookItemLayout.snappedRotation(item.rotation + rotationDelta)
         if targetPage.id != fromPage.id {
             let fromIndex = pageIndex(of: fromPage)
-            item.zIndex = targetPage.maxZIndex + 1
+            item.zIndex = frontZIndex(on: targetPage)
             item.page = targetPage
             currentPageID = targetPage.id
             guard save() else { return }
@@ -877,7 +903,7 @@ final class ScrapbookViewModel {
     func bringToFront(_ itemID: UUID) {
         guard let item = item(itemID), let page = item.page else { return }
         recordUndo()
-        item.zIndex = page.maxZIndex + 1
+        item.zIndex = frontZIndex(on: page)
         save()
         broadcastItemTransformed(item)
     }
@@ -885,7 +911,7 @@ final class ScrapbookViewModel {
     func sendToBack(_ itemID: UUID) {
         guard let item = item(itemID), let page = item.page else { return }
         recordUndo()
-        item.zIndex = page.minZIndex - 1
+        item.zIndex = backZIndex(on: page)
         save()
         broadcastItemTransformed(item)
     }
@@ -1107,7 +1133,7 @@ final class ScrapbookViewModel {
             center = CGPoint(x: 0.12 + width / 2, y: 0.35)
         }
         let item = ScrapbookItem(centerX: center.x, centerY: center.y, width: width,
-                                 rotation: .random(in: -8...8) * .pi / 180, zIndex: page.maxZIndex + 1)
+                                 rotation: .random(in: -8...8) * .pi / 180, zIndex: frontZIndex(on: page))
         item.letterID = letter.id
         modelContext.insert(item)
         item.page = page
@@ -1149,7 +1175,7 @@ final class ScrapbookViewModel {
             centerY: Double((start.y + end.y) / 2 / pageSize.height),
             width: length,
             rotation: Double(atan2(end.y - start.y, end.x - start.x)),
-            zIndex: page.maxZIndex + 1
+            zIndex: frontZIndex(on: page)
         )
         item.washiID = styleID
         item.washiLength = length
@@ -1206,7 +1232,7 @@ final class ScrapbookViewModel {
             let isSpine = page.role == ScrapbookPage.Role.spine.rawValue
             let item = ScrapbookItem(centerX: 0.5, centerY: isSpine ? 0.5 : 0.4,
                                      width: isSpine ? Self.spineTextSize : TextItemStyle.defaultSize,
-                                     rotation: isSpine ? -.pi / 2 : 0, zIndex: page.maxZIndex + 1)
+                                     rotation: isSpine ? -.pi / 2 : 0, zIndex: frontZIndex(on: page))
             item.text = text
             item.textColor = state.color.rawValue
             modelContext.insert(item)
@@ -1294,7 +1320,7 @@ final class ScrapbookViewModel {
             centerY: (center.y - pageFrame.minY) / pageFrame.height,
             width: isSpine ? min(width / pageFrame.width, 0.6) : width / pageFrame.width,
             rotation: rotation,
-            zIndex: page.maxZIndex + 1
+            zIndex: frontZIndex(on: page)
         )
         modelContext.insert(item)
         item.page = page
@@ -1351,7 +1377,7 @@ final class ScrapbookViewModel {
             let before = snapshot()
             let newPieceIDs = pieces.dropFirst().map { _ in UUID() }
             let originalCenter = CutGeometry.centroid(item.maskPolygon ?? CutGeometry.unitSquare)
-            var zIndex = page.maxZIndex
+            var zIndex = frontZIndex(on: page) - 1
             var pieceItems = [item]
             item.maskPolygon = pieces[0]
             for (polygon, id) in zip(pieces.dropFirst(), newPieceIDs) {
@@ -1409,7 +1435,7 @@ final class ScrapbookViewModel {
             if let top = page.sortedItems.last, top.kind == .drawing {
                 drawingLayerIDs[page.id] = top.id
             } else if page.allItems.count < ScrapbookPage.maxItems {
-                let item = ScrapbookItem(centerX: 0.5, centerY: 0.5, width: 1, rotation: 0, zIndex: page.maxZIndex + 1)
+                let item = ScrapbookItem(centerX: 0.5, centerY: 0.5, width: 1, rotation: 0, zIndex: frontZIndex(on: page))
                 item.drawingData = Data()
                 modelContext.insert(item)
                 item.page = page
@@ -1448,11 +1474,19 @@ final class ScrapbookViewModel {
 
     /// After each stroke on a page (`nil` = no strokes left). Saved 0.5 s after the last change.
     func updateDrawing(_ data: Data?, onPage pageID: UUID) {
-        guard let item = drawingLayer(onPage: pageID) else { return }
+        updateDrawings([pageID: data])
+    }
+
+    /// One stroke's changes by page: one undo step, also when a stroke changes both pages of the spread (change 104).
+    func updateDrawings(_ changes: [UUID: Data?]) {
+        let layers = changes.compactMap { pageID, data in drawingLayer(onPage: pageID).map { (pageID, $0, data) } }
+        guard !layers.isEmpty else { return }
         recordUndo()
-        activatePage(pageID)
-        item.drawingData = data ?? Data()
-        pendingDrawingLayerIDs.insert(item.id)
+        for (pageID, item, data) in layers {
+            activatePage(pageID)
+            item.drawingData = data ?? Data()
+            pendingDrawingLayerIDs.insert(item.id)
+        }
         drawingSaveTask?.cancel()
         drawingSaveTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
@@ -1846,7 +1880,7 @@ final class ScrapbookViewModel {
                         centerY: 0.5,
                         width: 1,
                         rotation: 0,
-                        zIndex: event.zIndex ?? (page.maxZIndex + 1)
+                        zIndex: event.zIndex ?? frontZIndex(on: page)
                     )
                     layer.id = itemID
                     layer.drawingData = nextData
@@ -2007,4 +2041,12 @@ private struct ItemState: Equatable {
 private struct EditorSnapshot {
     let pages: [(pageID: UUID, items: [ItemState])]
     let stickerUsage: [UUID: [String]]
+}
+
+/// An item of a spread with its page and the page's place in the spread (0 = left), change 104.
+struct SpreadItem: Identifiable {
+    let pageIndex: Int
+    let page: ScrapbookPage
+    let item: ScrapbookItem
+    var id: UUID { item.id }
 }

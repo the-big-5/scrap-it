@@ -150,11 +150,37 @@ struct ScrapbookBookView: View {
     }
 
     /// One page of the book, read only (touches go to the book). A missing page (past the last spread) is blank paper.
+    /// The items of both pages of its spread are drawn in one layer order and cut at this page's edges, so an item
+    /// across the gutter is whole on the open book and its part on a turning page turns with it (change 104).
     @ViewBuilder
     private func pageFace(_ page: ScrapbookPage?) -> some View {
         Group {
             if let page {
-                ScrapbookPageView(page: page, photos: viewModel.photosByID, photoAspect: viewModel.photoAspect(for:))
+                let spread = viewModel.layerPages(of: page)
+                let index = spread.firstIndex { $0.id == page.id } ?? 0
+                GeometryReader { geometry in
+                    ZStack(alignment: .topLeading) {
+                        PageBackgroundView(background: page.pageBackground)
+                        ZStack(alignment: .topLeading) {
+                            ForEach(viewModel.layerOrder(of: spread)) { entry in
+                                ScrapbookItemView(
+                                    item: entry.item,
+                                    photo: entry.item.photoID.flatMap { viewModel.photosByID[$0] },
+                                    photoAspect: viewModel.photoAspect(for: entry.item),
+                                    pageSize: geometry.size,
+                                    isSelected: false,
+                                    shouldPlay: { _ in false },
+                                    actions: nil
+                                )
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                                .offset(x: CGFloat(entry.pageIndex - index) * geometry.size.width)
+                            }
+                        }
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                    .clipped()
+                }
+                .aspectRatio(3 / 4, contentMode: .fit)
             } else {
                 PageBackgroundView(background: viewModel.pages.last?.pageBackground ?? .cream)
             }

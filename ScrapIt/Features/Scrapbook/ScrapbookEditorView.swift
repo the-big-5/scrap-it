@@ -99,7 +99,7 @@ struct ScrapbookEditorView: View {
                 case .letter(let letter): viewModel.dropFromTray(.letter(letter), at: point)
                 }
             }
-            pencil.onDrawingChanged = { [viewModel] pageID, data in viewModel.updateDrawing(data, onPage: pageID) }
+            pencil.onDrawingChanged = { [viewModel] changes in viewModel.updateDrawings(changes) }
         }
         .onDisappear {
             viewModel.editorDidDisappear()
@@ -202,6 +202,9 @@ struct ScrapbookEditorView: View {
 
                 trashCan
                     .padding(.bottom, trashBottomPadding)
+                    // Only the trashcan animates when a drag starts / ends: on the whole screen the spring also
+                    // animated the item moving to the other page and the book's clip (change 104).
+                    .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
 
                 if viewModel.activeTool == .pencil && pencil.showsSizePanel {
                     PenSizePanel(controller: pencil)
@@ -233,7 +236,6 @@ struct ScrapbookEditorView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: viewModel.isStickerSheetOpen)
         .animation(.easeInOut(duration: 0.2), value: viewModel.textEditor != nil)
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: pencil.showsSizePanel)
-        .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
     }
 
     /// The front cover (340 × 468) or the spine (74 × 462) at Figma size, with its decorations editable.
@@ -349,7 +351,6 @@ struct ScrapbookEditorView: View {
         .animation(.easeInOut(duration: 0.2), value: viewModel.isCutting)
         .animation(.easeInOut(duration: 0.2), value: viewModel.toastMessage)
         .animation(.spring(response: 0.4, dampingFraction: 0.86), value: viewModel.zoom)
-        .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
         .sensoryFeedback(.impact(weight: .light), trigger: viewModel.isTrashTargeted) { _, isTargeted in isTargeted }
         .sensoryFeedback(.impact(weight: .medium), trigger: viewModel.trashedItemCount)
         .onChange(of: viewModel.zoom) { updateTrayDropFrame() }
@@ -358,7 +359,7 @@ struct ScrapbookEditorView: View {
 
     private func portraitLayout(_ geometry: GeometryProxy) -> some View {
         let width = geometry.size.width
-        let pageWidth = viewModel.zoom == .spread ? width / 2 : width - 21
+        let pageWidth = viewModel.zoom == .spread ? width / 2 : width
         return ZStack(alignment: .bottomLeading) {
             VStack(spacing: 0) {
                 portraitTopBar
@@ -389,6 +390,9 @@ struct ScrapbookEditorView: View {
 
             trashCan
                 .padding(.bottom, trashBottomPadding)
+                // Only the trashcan animates when a drag starts / ends: on the whole screen the spring also animated
+                // the item moving to the other page and the book's clip (change 104).
+                .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
 
             if viewModel.activeTool == .pencil && pencil.showsSizePanel {
                 // The size panel opens above the Pencil tray.
@@ -465,6 +469,7 @@ struct ScrapbookEditorView: View {
             trashCan
                 .frame(maxHeight: .infinity, alignment: .bottom)
                 .padding(.bottom, 8)
+                .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
 
             if viewModel.activeTool == .pencil && pencil.showsSizePanel {
                 PenSizePanel(controller: pencil)
@@ -521,12 +526,45 @@ struct ScrapbookEditorView: View {
 
     // MARK: - Spread
 
-    /// Both pages side by side; zoom slides one page into view (the other peeks at the edge and takes no touches).
+    /// Both pages side by side; zoom slides one page into view, filling the width (change 104).
     private func spread(pageWidth: CGFloat, viewportWidth: CGFloat, offsetX: CGFloat) -> some View {
         let pageHeight = pageWidth * 4 / 3
-        return HStack(spacing: 0) {
-            ForEach(viewModel.currentSpreadPages, id: \.id) { page in
-                pageCell(page)
+        // Both papers, then the items of both pages in one layer order, both edge shadows, then each page's tool.
+        // An item across the gutter stays whole, and selecting or moving it to the other page doesn't reorder the
+        // layers (change 104).
+        return ZStack {
+            HStack(spacing: 0) {
+                ForEach(viewModel.currentSpreadPages, id: \.id) { page in
+                    PageBackgroundView(background: page.pageBackground)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .onTapGesture { viewModel.tapEmptyPage(page.id) }
+                        .allowsHitTesting(viewModel.editablePages.contains { $0.id == page.id })
+                }
+            }
+            spreadItems
+            HStack(spacing: 0) {
+                ForEach(viewModel.currentSpreadPages, id: \.id) { _ in
+                    Color.clear
+                        .scrapbookPageEdgeShadow()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .allowsHitTesting(false)
+            HStack(spacing: 0) {
+                ForEach(viewModel.currentSpreadPages, id: \.id) { page in
+                    pageCell(page)
+                }
+            }
+            // Pencil on the two-page view: one canvas over both pages, so a stroke can cross the gutter (change 104).
+            if let pageIDs = spreadDrawingPageIDs {
+                GeometryReader { geometry in
+                    DrawingCanvasView(pageIDs: pageIDs,
+                                      drawingData: pageIDs.map(viewModel.drawingData(onPage:)),
+                                      pageSize: CGSize(width: geometry.size.width / 2, height: geometry.size.height),
+                                      controller: pencil,
+                                      remoteRevision: viewModel.remoteDrawingRevision)
+                        .id(pageIDs.compactMap { viewModel.drawingLayerIDs[$0] })
+                }
             }
         }
         // Pages size to this frame, so the zoom from the book scales them smoothly.
@@ -562,38 +600,61 @@ struct ScrapbookEditorView: View {
         .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
     }
 
-    private func pageCell(_ page: ScrapbookPage) -> some View {
-        let isEditable = viewModel.editablePages.contains { $0.id == page.id }
-        let holdsDraggedItem = page.allItems.contains { $0.id == viewModel.draggedItemID || $0.id == viewModel.selectedItemID }
-        return ScrapbookPageView(
-            page: page,
-            photos: viewModel.photosByID,
-            selectedItemID: viewModel.selectedItemID,
-            photoAspect: viewModel.photoAspect(for:),
-            shouldPlay: viewModel.shouldPlay(_:isInteracting:),
-            actions: itemActions(for: page),
-            activeDrawingID: viewModel.drawingLayerIDs[page.id],
-            draggedItemID: viewModel.draggedItemID,
-            isTrashTargeted: viewModel.isTrashTargeted
-        )
-        .scrapbookPageEdgeShadow()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onFrameChange(in: .global) { frame in
-            viewModel.pageGlobalFrames[page.id] = frame
-            updateTrayDropFrame()
-        }
-        .onFrameChange(in: .named(StickerDragController.coordinateSpace)) { frame in
-            pageScreenFrames[page.id] = frame
-            updateTrayDropFrame()
-        }
-        .overlay {
-            GeometryReader { geometry in
-                pageOverlay(for: page, size: geometry.size)
+    /// Both pages of the two-page view while Pencil has a layer on each; `nil` = one canvas per page.
+    private var spreadDrawingPageIDs: [UUID]? {
+        let pageIDs = viewModel.currentSpreadPages.map(\.id)
+        guard viewModel.zoom == .spread, pageIDs.count == 2,
+              pageIDs.allSatisfy({ viewModel.drawingLayerIDs[$0] != nil }) else { return nil }
+        return pageIDs
+    }
+
+    /// The items of both pages, back to front by layer (change 104). Each item sits in its page's frame and
+    /// coordinate space, as on `ScrapbookPageView`; only the pages that take touches can be touched.
+    private var spreadItems: some View {
+        GeometryReader { geometry in
+            let pageSize = CGSize(width: geometry.size.width / 2, height: geometry.size.height)
+            ZStack(alignment: .topLeading) {
+                ForEach(viewModel.layerOrder(of: viewModel.currentSpreadPages)) { entry in
+                    let item = entry.item
+                    ScrapbookItemView(
+                        item: item,
+                        photo: item.photoID.flatMap { viewModel.photosByID[$0] },
+                        photoAspect: viewModel.photoAspect(for: item),
+                        pageSize: pageSize,
+                        isSelected: viewModel.selectedItemID == item.id,
+                        shouldPlay: { viewModel.shouldPlay(item, isInteracting: $0) },
+                        actions: itemActions(for: entry.page),
+                        isHidden: viewModel.drawingLayerIDs.values.contains(item.id),
+                        isOverTrash: viewModel.isTrashTargeted && viewModel.draggedItemID == item.id
+                    )
+                    .frame(width: pageSize.width, height: pageSize.height)
+                    .coordinateSpace(name: ScrapbookPageView.coordinateSpace)
+                    .offset(x: CGFloat(entry.pageIndex) * pageSize.width)
+                    .allowsHitTesting(viewModel.editablePages.contains { $0.id == entry.page.id })
+                }
             }
         }
-        .allowsHitTesting(isEditable)
-        // An item dragged past the gutter is drawn above the other page.
-        .zIndex(holdsDraggedItem ? 1 : 0)
+    }
+
+    /// Frames, drops and the active tool of one page; its items are drawn in `spreadItems`.
+    private func pageCell(_ page: ScrapbookPage) -> some View {
+        let isEditable = viewModel.editablePages.contains { $0.id == page.id }
+        return Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onFrameChange(in: .global) { frame in
+                viewModel.pageGlobalFrames[page.id] = frame
+                updateTrayDropFrame()
+            }
+            .onFrameChange(in: .named(StickerDragController.coordinateSpace)) { frame in
+                pageScreenFrames[page.id] = frame
+                updateTrayDropFrame()
+            }
+            .overlay {
+                GeometryReader { geometry in
+                    pageOverlay(for: page, size: geometry.size)
+                }
+            }
+            .allowsHitTesting(isEditable)
     }
 
     /// The tool using touches on a page, if any.
@@ -626,10 +687,11 @@ struct ScrapbookEditorView: View {
             .overlay(alignment: .top) { if showsHint { hint(for: .scissors) } }
             .transition(.opacity)
         } else if viewModel.isDrawing {
-            // Pencil draws straight on every page on screen, each into its own layer.
-            if let layerID = viewModel.drawingLayerIDs[page.id] {
-                DrawingCanvasView(drawingData: viewModel.drawingData(onPage: page.id),
-                                  pageID: page.id,
+            // Pencil draws straight on every page on screen, each into its own layer (both pages of the spread share
+            // one canvas, change 104).
+            if spreadDrawingPageIDs == nil, let layerID = viewModel.drawingLayerIDs[page.id] {
+                DrawingCanvasView(pageIDs: [page.id],
+                                  drawingData: [viewModel.drawingData(onPage: page.id)],
                                   pageSize: size,
                                   controller: pencil,
                                   remoteRevision: viewModel.remoteDrawingRevision)
