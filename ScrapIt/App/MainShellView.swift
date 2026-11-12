@@ -11,6 +11,7 @@ struct MainShellView: View {
     @State private var router: AppRouter
     @State private var sessionStore: SessionStore
     @State private var rollViewModel: RollFlowViewModel?
+    @State private var workbenchViewModel: WorkbenchViewModel
     @State private var profileViewModel: ProfileViewModel
     /// Restores scrapbooks after sign-in / on launch (change 012).
     @State private var archiveSync: ScrapbookArchiveSync
@@ -20,8 +21,14 @@ struct MainShellView: View {
         self.modelContext = modelContext
         self.onSignOut = onSignOut
         let appRouter = AppRouter()
+        let store = SessionStore(modelContext: modelContext)
         _router = State(initialValue: appRouter)
-        _sessionStore = State(initialValue: SessionStore(modelContext: modelContext))
+        _sessionStore = State(initialValue: store)
+        _workbenchViewModel = State(initialValue: WorkbenchViewModel(
+            modelContext: modelContext,
+            navigator: appRouter,
+            sessionStore: store
+        ))
         _profileViewModel = State(initialValue: ProfileViewModel(
             modelContext: modelContext,
             currentUser: currentUser,
@@ -40,12 +47,8 @@ struct MainShellView: View {
         NavigationStack(path: $router.path) {
             TabView(selection: $router.selectedTab) {
                 Tab("Craft", systemImage: "camera.fill", value: AppTab.home) {
-                    WorkbenchView(
-                        modelContext: modelContext,
-                        navigator: router,
-                        sessionStore: sessionStore
-                    )
-                    .toolbarVisibility(router.shouldShowTabBar ? .visible : .hidden, for: .tabBar)
+                    WorkbenchView(viewModel: workbenchViewModel)
+                        .toolbarVisibility(router.shouldShowTabBar ? .visible : .hidden, for: .tabBar)
                 }
 
                 Tab("Library", systemImage: "books.vertical.fill", value: AppTab.profile) {
@@ -166,6 +169,57 @@ struct MainShellView: View {
                 navigator: router,
                 scrapbookID: scrapbookID
             ))
+        case .deskCollection(let kind):
+            switch kind {
+            case .scrapbooks:
+                scrapbooksCollectionView
+            }
+        }
+    }
+
+    private var scrapbooksCollectionView: some View {
+        let scrapbooks = workbenchViewModel.scrapbooks
+        let columns = [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)]
+
+        return DeskCollectionView(
+            title: "Resume Editing",
+            isEmpty: scrapbooks.isEmpty,
+            onBack: workbenchViewModel.closeCollection
+        ) {
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(Array(scrapbooks.enumerated()), id: \.element.id) { index, scrapbook in
+                    FolderPreviewCard(
+                        title: scrapbook.title,
+                        subtitle: workbenchViewModel.formattedDate(for: scrapbook),
+                        theme: workbenchViewModel.folderTheme(at: index),
+                        previewPhotos: workbenchViewModel.previewPhotos(for: scrapbook),
+                        onTap: { workbenchViewModel.openScrapbook(scrapbook) },
+                        onRemoveFromDevice: { workbenchViewModel.requestRemoveFromDevice(scrapbook) }
+                    )
+                }
+            }
+        } emptyState: {
+            DeskEmptyStateView(
+                title: "No scrapbook in progress...yet!",
+                message: "Every scrapbook starts with a roll. Gather your friends and capture moments together.",
+                actionTitle: "Create Roll",
+                onAction: workbenchViewModel.startCreateRollFromCollection
+            ) {
+                ToolboxEmptyIllustration()
+            }
+        }
+        .onAppear { workbenchViewModel.reloadScrapbooks() }
+        .confirmationDialog(
+            "Remove scrapbook from this device?",
+            isPresented: Binding(
+                get: { workbenchViewModel.scrapbookPendingRemoval != nil },
+                set: { if !$0 { workbenchViewModel.scrapbookPendingRemoval = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove from Device", role: .destructive, action: workbenchViewModel.confirmRemoveFromDevice)
+        } message: {
+            Text("This removes the scrapbook and its photos from your device storage. Collaborators keep their shared copy.")
         }
     }
 }

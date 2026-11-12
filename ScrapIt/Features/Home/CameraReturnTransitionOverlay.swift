@@ -42,11 +42,11 @@ struct CameraFlipCardView: View, Animatable {
                     )
             } else {
                 CameraReturnBackDeckView()
-                    .scaleEffect(layout.length(WorkbenchLayout.cameraBodyWidth) / 874.0)
+                    .scaleEffect(layout.length(layout.activeCameraBodyWidth) / 874.0)
                     .frame(width: layout.length(size.width), height: layout.length(size.height))
                     .offset(
-                        x: layout.length(WorkbenchLayout.cameraBodyCenterOffset.x),
-                        y: layout.length(WorkbenchLayout.cameraBodyCenterOffset.y)
+                        x: layout.length(layout.activeCameraBodyCenterOffset.x),
+                        y: layout.length(layout.activeCameraBodyCenterOffset.y)
                     )
                     .rotation3DEffect(
                         .degrees(CameraFlipMath.backAngle(for: angle)),
@@ -148,19 +148,17 @@ struct CameraReturnTransitionOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             let layout = WorkbenchLayout(container: proxy.size)
-            let size = WorkbenchLayout.cameraSize
+            let size = layout.activeCameraSize
 
             let targetScale: CGFloat = switch scaleState {
             case .fullBleed:
-                WorkbenchLayout.fullBleedCameraScale(
+                layout.fullBleedCameraScale(
                     container: proxy.size,
-                    layoutScale: layout.scale,
                     angle: router.cameraReturnAngle
                 )
             case .floating:
-                WorkbenchLayout.floatingCameraScale(
+                layout.floatingCameraScale(
                     container: proxy.size,
-                    layoutScale: layout.scale,
                     angle: router.cameraReturnAngle
                 )
             case .idle:
@@ -169,21 +167,20 @@ struct CameraReturnTransitionOverlay: View {
 
             let targetPosition: CGPoint = switch scaleState {
             case .fullBleed, .floating:
-                WorkbenchLayout.zoomedCameraCenter(
+                layout.zoomedCameraCenter(
                     container: proxy.size,
-                    layoutScale: layout.scale,
                     angle: router.cameraReturnAngle,
                     scale: targetScale
                 )
             case .idle:
-                layout.point(WorkbenchLayout.cameraIdleCenter)
+                layout.point(layout.activeCameraIdleCenter)
             }
 
             let targetRotation: Double = switch scaleState {
             case .fullBleed, .floating:
                 router.cameraReturnAngle
             case .idle:
-                WorkbenchLayout.cameraIdleRotation
+                layout.activeCameraIdleRotation
             }
 
             let shadowOpacity: Double = switch scaleState {

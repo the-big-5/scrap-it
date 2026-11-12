@@ -134,7 +134,7 @@ struct CaptureSessionView: View {
                     windowOrientation: windowOrientation,
                     deviceOrientation: deviceOrientation
                 )
-                OrientationLock.resetToPortrait()
+                OrientationLock.set(.portrait)
                 flowViewModel.cameraDidAppear()
             }
             .onDisappear {
