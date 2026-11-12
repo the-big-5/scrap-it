@@ -405,6 +405,16 @@ final class ScrapbookViewModel {
     /// Only the spread turns to landscape (change 025).
     var allowsLandscape: Bool { mode == .edit && zoom == .spread }
 
+    /// Ensures iPad landscape edit view always displays and enables touches on both pages.
+    func ensureSpreadForLandscape() {
+        guard mode == .edit, zoom != .spread else { return }
+        let wasDrawing = isDrawing
+        endDrawing()
+        zoom = .spread
+        selectedItemID = nil
+        if wasDrawing { beginDrawing() }
+    }
+
     /// Pages that take touches in the edit view: the zoomed page, or both pages of the spread.
     var editablePages: [ScrapbookPage] {
         if mode == .editCover {

@@ -1437,4 +1437,102 @@ struct ScrapbookCoverTests {
         #expect(vm.isLocked)
         #expect(vm.mode == .cover)
     }
+
+    @Test func iPadOrientationAndResponsiveLayoutMetrics() {
+        let padLockedMask = ScrapbookEditorLayout.orientationMask(isPad: true, allowsLandscape: false)
+        let padSpreadMask = ScrapbookEditorLayout.orientationMask(isPad: true, allowsLandscape: true)
+        let phoneLockedMask = ScrapbookEditorLayout.orientationMask(isPad: false, allowsLandscape: false)
+        let phoneSpreadMask = ScrapbookEditorLayout.orientationMask(isPad: false, allowsLandscape: true)
+        #expect(padLockedMask == padSpreadMask)
+        #expect(padLockedMask != phoneLockedMask)
+        #expect(phoneSpreadMask != phoneLockedMask)
+
+        let landscapeSize = CGSize(width: 1376, height: 1032)
+        let landscapeScale = ScrapbookEditorLayout.fitScale(for: landscapeSize, isPad: true)
+        let expectedScale: CGFloat = 1032.0 / 874.0
+        #expect(abs(landscapeScale - expectedScale) < 0.0001)
+
+        let landscapePageWidth = ScrapbookEditorLayout.iPadSpreadPageWidth(container: landscapeSize, isLandscape: true, zoom: .spread)
+        let landscapeSpreadWidth: CGFloat = landscapePageWidth * 2
+        let landscapePageHeight: CGFloat = landscapePageWidth * 4 / 3
+        #expect(landscapeSpreadWidth <= landscapeSize.width + 0.001)
+        #expect(landscapePageHeight <= landscapeSize.height + 0.001)
+
+        let portraitSize = CGSize(width: 1032, height: 1376)
+        let portraitSpreadWidth = ScrapbookEditorLayout.iPadSpreadPageWidth(container: portraitSize, isLandscape: false, zoom: .spread)
+        let portraitSingleWidth = ScrapbookEditorLayout.iPadSpreadPageWidth(container: portraitSize, isLandscape: false, zoom: .left)
+        let totalPortraitSpreadWidth: CGFloat = portraitSpreadWidth * 2
+        let portraitSingleHeight: CGFloat = portraitSingleWidth * 4 / 3
+        let maxPortraitPageHeight: CGFloat = portraitSize.height - 200
+        #expect(totalPortraitSpreadWidth <= portraitSize.width + 0.001)
+        #expect(portraitSingleHeight <= maxPortraitPageHeight + 0.001)
+
+        let compactPadLandscape = CGSize(width: 1024, height: 768)
+        let pad13BookScale = ScrapbookEditorLayout.bookScale(for: landscapeSize, isPad: true)
+        let pad10BookScale = ScrapbookEditorLayout.bookScale(for: compactPadLandscape, isPad: true)
+        let pad10CoverScale = ScrapbookEditorLayout.coverScale(for: compactPadLandscape, isPad: true)
+        let pad13MatScale = ScrapbookEditorLayout.bookMatScale(for: landscapeSize, isPad: true)
+        #expect(pad13BookScale > 2.0)
+        #expect(pad10BookScale > 1.5)
+        #expect(pad10CoverScale > 1.0)
+        #expect(927 * pad13MatScale <= landscapeSize.width + 0.001)
+        #expect(697 * pad13MatScale <= landscapeSize.height + 0.001)
+        #expect(ScrapbookEditorLayout.bookScale(for: ScrapbookEditorLayout.phoneDesignSize, isPad: false) == 1)
+        #expect(ScrapbookEditorLayout.coverScale(for: ScrapbookEditorLayout.phoneDesignSize, isPad: false) == 1)
+
+        // PencilKit-style iPad floating pill tray metrics & dock/minimize resolution
+        #expect(ScrapbookEditorLayout.iPadTrayPillWidth(for: landscapeSize) == 500)
+        #expect(ScrapbookEditorLayout.iPadTrayPillWidth(for: compactPadLandscape) == 500)
+        let bottomCenter = ScrapbookEditorLayout.iPadOpenTrayCenter(container: compactPadLandscape, dock: .bottom, hasSubTray: true)
+        #expect(abs(bottomCenter.x - compactPadLandscape.width / 2) < 0.001)
+        let leadingCenter = ScrapbookEditorLayout.iPadOpenTrayCenter(container: compactPadLandscape, dock: .leading, hasSubTray: true)
+        #expect(abs(leadingCenter.y - compactPadLandscape.height / 2) < 0.001)
+        let trailingCenter = ScrapbookEditorLayout.iPadOpenTrayCenter(container: compactPadLandscape, dock: .trailing, hasSubTray: true)
+        #expect(abs(trailingCenter.y - compactPadLandscape.height / 2) < 0.001)
+
+        // Dragging from bottom to right edge docks on .trailing
+        let dockedRight = ScrapbookEditorLayout.resolveIPadTrayDrag(
+            container: compactPadLandscape,
+            currentDock: .bottom,
+            currentCorner: .bottomLeading,
+            hasSubTray: true,
+            translation: CGSize(width: 440, height: -260),
+            predictedEndTranslation: CGSize(width: 480, height: -280)
+        )
+        #expect(dockedRight.isOpen)
+        #expect(dockedRight.dock == .trailing)
+        #expect(dockedRight.corner == .bottomTrailing)
+
+        // Dragging from trailing to left edge docks on .leading
+        let dockedLeft = ScrapbookEditorLayout.resolveIPadTrayDrag(
+            container: compactPadLandscape,
+            currentDock: .trailing,
+            currentCorner: .bottomTrailing,
+            hasSubTray: true,
+            translation: CGSize(width: -820, height: 0),
+            predictedEndTranslation: CGSize(width: -860, height: 0)
+        )
+        #expect(dockedLeft.isOpen)
+        #expect(dockedLeft.dock == .leading)
+        #expect(dockedLeft.corner == .bottomLeading)
+
+        // Swiping outward toward the docked edge minimizes the tray into the corner circle button
+        let minimizedBottom = ScrapbookEditorLayout.resolveIPadTrayDrag(
+            container: compactPadLandscape,
+            currentDock: .bottom,
+            currentCorner: .bottomLeading,
+            hasSubTray: true,
+            translation: CGSize(width: -40, height: 60),
+            predictedEndTranslation: CGSize(width: -50, height: 90)
+        )
+        #expect(!minimizedBottom.isOpen)
+        #expect(minimizedBottom.corner == .bottomLeading)
+
+        let vm = makeEditor(as: host)
+        vm.openSpread()
+        vm.cycleZoom()
+        #expect(vm.zoom == .left)
+        vm.ensureSpreadForLandscape()
+        #expect(vm.zoom == .spread)
+    }
 }

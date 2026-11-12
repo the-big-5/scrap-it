@@ -11,9 +11,9 @@ struct ScrapbookCoverScreen: View {
             CoverCuttingMat()
 
             GeometryReader { geometry in
-                let width = geometry.size.width * 340 / 402
-                coverBook(width: width)
-                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2 - 10)
+                let scale = ScrapbookEditorLayout.coverScale(for: geometry.size)
+                coverBook(width: 340 * scale)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2 - (UIDevice.current.userInterfaceIdiom == .pad ? 40 : 10 * scale))
             }
 
             VStack(spacing: 0) {
@@ -54,6 +54,7 @@ struct ScrapbookCoverScreen: View {
                             .buttonStyle(.ds(.primary, size: .large, fullWidth: true))
                     }
                 }
+                .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 358 : .infinity)
                 .padding(.horizontal, 22)
                 .padding(.bottom, 24)
             }

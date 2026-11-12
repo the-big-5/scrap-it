@@ -13,6 +13,10 @@ struct ScrapbookEditorView: View {
     @State private var isIslandOnLeading = true
     /// Two-finger zoom on the pages (change 114).
     @State private var pageZoom = PageZoom()
+    /// PencilKit-style iPad floating tray dock edge and minimized corner state (change 107).
+    @State private var iPadTrayDock: ScrapbookEditorLayout.TrayDockEdge = .bottom
+    @State private var iPadTrayCorner: ScrapbookEditorLayout.TrayCorner = .bottomLeading
+    @State private var iPadTrayDragOffset: CGSize = .zero
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The spread zooms from the book into the editor and back (change 025).
     @Namespace private var spreadNamespace
@@ -84,9 +88,9 @@ struct ScrapbookEditorView: View {
         .alert("Couldn't save the change", isPresented: $viewModel.isSaveErrorPresented) {
             Button("OK", role: .cancel) {}
         }
-        // Only the spread turns to landscape (change 025).
+        // Keep iPad in default .all orientation across scrapbook modes (change 107); iPhone turns only on the spread (change 025).
         .onChange(of: viewModel.allowsLandscape, initial: true) { _, allows in
-            OrientationLock.set(allows ? [.portrait, .landscapeLeft, .landscapeRight] : .portrait)
+            OrientationLock.set(ScrapbookEditorLayout.orientationMask(allowsLandscape: allows))
         }
         .onAppear {
             viewModel.load()
@@ -158,7 +162,7 @@ struct ScrapbookEditorView: View {
     /// this side's tools, the color picker above the tray, → to the spine and ✓ to finish.
     private var editCoverView: some View {
         GeometryReader { geometry in
-            let scale = geometry.size.width / 402
+            let scale = ScrapbookEditorLayout.coverScale(for: geometry.size)
             ZStack(alignment: .bottomLeading) {
                 CoverCuttingMat()
 
@@ -205,8 +209,8 @@ struct ScrapbookEditorView: View {
                     }
                     Spacer(minLength: 0)
                     coverSideCell(scale: scale)
-                    // Room for the color picker above the tray, so the cover sits higher (change 026).
-                    Spacer(minLength: TrayStyle.trayHeight + 24 + 54 + 16)
+                    // Room for the color picker and full-width tray under the cover.
+                    Spacer(minLength: TrayStyle.trayHeight + 74)
                 }
                 .zIndex(viewModel.draggedItemID != nil ? 2 : 0)
 
@@ -224,11 +228,13 @@ struct ScrapbookEditorView: View {
                     onSelect: viewModel.selectTrayTool,
                     tools: viewModel.availableTools,
                     isFixed: true,
-                    onCloseSubTray: viewModel.closeSubTray
+                    onCloseSubTray: viewModel.closeSubTray,
+                    pillWidth: isPad ? ScrapbookEditorLayout.iPadTrayPillWidth(for: geometry.size) : nil
                 ) { tool in
                     subTray(for: tool)
                 }
-                .padding(.bottom, 4)
+                .frame(maxWidth: .infinity, alignment: isPad ? .bottom : .bottomLeading)
+                .padding(.bottom, isPad ? 16 : 4)
                 .zIndex(1)
 
                 trashCan
@@ -342,7 +348,14 @@ struct ScrapbookEditorView: View {
                         if orientation == .landscapeLeft { isIslandOnLeading = false }
                     })
 
-                if isLandscape {
+                if isPad {
+                    iPadEditLayout(geometry, isLandscape: isLandscape)
+                        .onChange(of: isLandscape, initial: true) { _, landscapeNow in
+                            if landscapeNow {
+                                viewModel.ensureSpreadForLandscape()
+                            }
+                        }
+                } else if isLandscape {
                     landscapeLayout(geometry)
                 } else {
                     portraitLayout(geometry)
@@ -452,6 +465,162 @@ struct ScrapbookEditorView: View {
         }
         .padding(.horizontal, 22)
         .padding(.top, 4)
+    }
+
+    private var iPadLandscapeTopBar: some View {
+        HStack(spacing: 10) {
+            closeButton
+            Spacer()
+            whosHereButton
+            undoButton
+            redoButton
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 8)
+    }
+
+    /// iPad spread editor: landscape fills full screen height behind the top bar; portrait keeps framed margins and
+    /// the Zoom toggle. Both orientations use a PencilKit-style floating pill tray that centers on its docked edge
+    /// (`.bottom`, `.leading`, `.trailing`) and collapses to a bottom corner circle button.
+    @ViewBuilder
+    private func iPadEditLayout(_ geometry: GeometryProxy, isLandscape: Bool) -> some View {
+        let pageWidth = ScrapbookEditorLayout.iPadSpreadPageWidth(
+            container: geometry.size,
+            safeAreaInsets: geometry.safeAreaInsets,
+            isLandscape: isLandscape,
+            zoom: viewModel.zoom
+        )
+        let pillWidth = ScrapbookEditorLayout.iPadTrayPillWidth(for: geometry.size)
+        let hasSubTray = viewModel.activeTool?.hasSubTray == true
+        let openDepth = ScrapbookEditorLayout.iPadOpenTrayDepth(hasSubTray: hasSubTray)
+        let restingCenter = viewModel.isTrayOpen
+            ? ScrapbookEditorLayout.iPadOpenTrayCenter(container: geometry.size, dock: iPadTrayDock, hasSubTray: hasSubTray)
+            : ScrapbookEditorLayout.iPadClosedTrayCenter(container: geometry.size, corner: iPadTrayCorner)
+        let rotation = viewModel.isTrayOpen ? ScrapbookEditorLayout.iPadTrayRotation(for: iPadTrayDock) : .zero
+
+        ZStack(alignment: .bottomLeading) {
+            if isLandscape {
+                spread(pageWidth: pageWidth, viewportWidth: pageWidth * 2, offsetX: 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea(edges: .vertical)
+                    .zIndex(viewModel.draggedItemID != nil ? 2 : 0)
+
+                VStack(spacing: 0) {
+                    iPadLandscapeTopBar
+                    if viewModel.isLowPowerPaused {
+                        Text("Live Photos paused in Low Power Mode")
+                            .font(.caption)
+                            .foregroundStyle(DSColor.Kraft.normal.color)
+                            .padding(.top, 8)
+                    }
+                    Spacer()
+                }
+                .zIndex(1)
+            } else {
+                let viewportWidth = viewModel.zoom == .spread ? pageWidth * 2 : pageWidth
+                let offsetX = viewModel.zoom == .right ? -pageWidth : 0
+                VStack(spacing: 0) {
+                    portraitTopBar
+                    Spacer(minLength: 0)
+                    spread(pageWidth: pageWidth, viewportWidth: viewportWidth, offsetX: offsetX)
+                        .frame(width: geometry.size.width)
+                        // Zoomed pages spread over the dark area, under the top bar (change 114).
+                        .zIndex(-1)
+                    if viewModel.isLowPowerPaused {
+                        Text("Live Photos paused in Low Power Mode")
+                            .font(.caption)
+                            .foregroundStyle(DSColor.Kraft.normal.color)
+                            .padding(.top, 8)
+                    }
+                    Spacer(minLength: iPadTrayDock == .bottom ? TrayStyle.trayHeight : 24)
+                }
+                .zIndex(viewModel.draggedItemID != nil ? 2 : 0)
+            }
+
+            ToolTray(
+                isOpen: viewModel.isTrayOpen,
+                activeTool: viewModel.raisedTool,
+                onOpen: viewModel.openTray,
+                onClose: viewModel.closeTray,
+                onSelect: viewModel.selectTrayTool,
+                pillWidth: pillWidth,
+                onTrayDragChanged: { translation in
+                    iPadTrayDragOffset = translation
+                },
+                onTrayDragEnded: { translation, predicted in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        if viewModel.isTrayOpen {
+                            let resolved = ScrapbookEditorLayout.resolveIPadTrayDrag(
+                                container: geometry.size,
+                                currentDock: iPadTrayDock,
+                                currentCorner: iPadTrayCorner,
+                                hasSubTray: hasSubTray,
+                                translation: translation,
+                                predictedEndTranslation: predicted
+                            )
+                            iPadTrayDock = resolved.dock
+                            iPadTrayCorner = resolved.corner
+                            iPadTrayDragOffset = .zero
+                            if !resolved.isOpen {
+                                viewModel.closeTray()
+                            }
+                        } else {
+                            let resolved = ScrapbookEditorLayout.resolveIPadClosedTrayDrag(
+                                container: geometry.size,
+                                currentDock: iPadTrayDock,
+                                currentCorner: iPadTrayCorner,
+                                translation: translation,
+                                predictedEndTranslation: predicted
+                            )
+                            iPadTrayDock = resolved.dock
+                            iPadTrayCorner = resolved.corner
+                            iPadTrayDragOffset = .zero
+                        }
+                    }
+                }
+            ) { tool in
+                subTray(for: tool)
+            }
+            .frame(
+                width: viewModel.isTrayOpen ? pillWidth : TrayStyle.closedSize,
+                height: viewModel.isTrayOpen ? openDepth : TrayStyle.closedSize,
+                alignment: .bottom
+            )
+            .rotationEffect(rotation)
+            .frame(
+                width: viewModel.isTrayOpen ? (iPadTrayDock == .bottom ? pillWidth : openDepth) : TrayStyle.closedSize,
+                height: viewModel.isTrayOpen ? (iPadTrayDock == .bottom ? openDepth : pillWidth) : TrayStyle.closedSize
+            )
+            .position(
+                x: restingCenter.x + iPadTrayDragOffset.width,
+                y: restingCenter.y + iPadTrayDragOffset.height
+            )
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: iPadTrayDock)
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: iPadTrayCorner)
+            .zIndex(1)
+
+            trashCan
+                .padding(.bottom, iPadTrayDock == .bottom ? trashBottomPadding : 24)
+                .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
+
+            if viewModel.activeTool == .pencil && pencil.showsSizePanel {
+                if iPadTrayDock == .bottom {
+                    SizePanelAboveTool(toolFrame: pencil.toolFrames[pencil.tool]) { pencilSizePanel }
+                        .transition(.opacity)
+                        .zIndex(1)
+                } else {
+                    pencilSizePanel
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: iPadTrayDock == .leading ? .leading : .trailing
+                        )
+                        .padding(.horizontal, openDepth + 28)
+                        .transition(.opacity)
+                        .zIndex(1)
+                }
+            }
+        }
     }
 
     /// Landscape: always the spread (no zoom). Buttons run down the notch side, the tray stands up on the other.
@@ -860,6 +1029,217 @@ struct ScrapbookEditorView: View {
             LetterTray(controller: trayDrag) { letter in viewModel.addLetter(letter) }
         case .text, .scissors:
             EmptyView()
+        }
+    }
+}
+
+/// Pure geometry and orientation helpers for `ScrapbookEditorView` across iPhone and iPad (change 107).
+struct ScrapbookEditorLayout: Equatable {
+    enum TrayDockEdge: String, Equatable, CaseIterable {
+        case bottom
+        case leading
+        case trailing
+    }
+
+    enum TrayCorner: String, Equatable, CaseIterable {
+        case bottomLeading
+        case bottomTrailing
+    }
+
+    static let phoneDesignSize = CGSize(width: 402, height: 874)
+    static let iPadDefaultPillWidth: CGFloat = 500
+    static let iPadTrayEdgeInset: CGFloat = 16
+    static let iPadTrayCornerInset: CGFloat = 20
+    private static let baseBookWidth: CGFloat = 357.6
+    private static let baseBookHeight: CGFloat = (357.6 / 2 - 7.4) * 4 / 3 + 9.5
+    private static let baseMatSize = CGSize(width: 927, height: 697)
+    private static let baseCoverSize = CGSize(width: 340, height: 468)
+
+    static func iPadTrayPillWidth(for container: CGSize) -> CGFloat {
+        let shortSide = min(container.width, container.height)
+        guard shortSide > 0 else { return iPadDefaultPillWidth }
+        return min(iPadDefaultPillWidth, max(320, shortSide - 32))
+    }
+
+    static func iPadOpenTrayDepth(hasSubTray: Bool) -> CGFloat {
+        hasSubTray ? (TrayStyle.trayHeight * 2 - TrayStyle.overlap) : TrayStyle.trayHeight
+    }
+
+    static func iPadTrayRotation(for dock: TrayDockEdge) -> Angle {
+        switch dock {
+        case .bottom: .zero
+        case .leading: .degrees(90)
+        case .trailing: .degrees(-90)
+        }
+    }
+
+    static func iPadOpenTrayCenter(container: CGSize, dock: TrayDockEdge, hasSubTray: Bool) -> CGPoint {
+        let depth = iPadOpenTrayDepth(hasSubTray: hasSubTray)
+        switch dock {
+        case .bottom:
+            return CGPoint(x: container.width / 2, y: container.height - iPadTrayEdgeInset - depth / 2)
+        case .leading:
+            return CGPoint(x: iPadTrayEdgeInset + depth / 2, y: container.height / 2)
+        case .trailing:
+            return CGPoint(x: container.width - iPadTrayEdgeInset - depth / 2, y: container.height / 2)
+        }
+    }
+
+    static func iPadClosedTrayCenter(container: CGSize, corner: TrayCorner) -> CGPoint {
+        let radius = TrayStyle.closedSize / 2
+        let y = container.height - iPadTrayCornerInset - radius
+        switch corner {
+        case .bottomLeading:
+            return CGPoint(x: iPadTrayCornerInset + radius, y: y)
+        case .bottomTrailing:
+            return CGPoint(x: container.width - iPadTrayCornerInset - radius, y: y)
+        }
+    }
+
+    static func resolveIPadTrayDrag(
+        container: CGSize,
+        currentDock: TrayDockEdge,
+        currentCorner: TrayCorner,
+        hasSubTray: Bool,
+        translation: CGSize,
+        predictedEndTranslation: CGSize
+    ) -> (isOpen: Bool, dock: TrayDockEdge, corner: TrayCorner) {
+        let start = iPadOpenTrayCenter(container: container, dock: currentDock, hasSubTray: hasSubTray)
+        let end = CGPoint(x: start.x + translation.width, y: start.y + translation.height)
+        let projected = CGPoint(
+            x: start.x + (translation.width + predictedEndTranslation.width) * 0.5,
+            y: start.y + (translation.height + predictedEndTranslation.height) * 0.5
+        )
+        let nearestCorner: TrayCorner = end.x <= container.width / 2 ? .bottomLeading : .bottomTrailing
+
+        // Outward swipe toward the currently docked edge folds the pill into a corner circle button.
+        switch currentDock {
+        case .bottom where translation.height > 36 && abs(translation.width) < 120:
+            return (false, .bottom, nearestCorner)
+        case .leading where translation.width < -36 && abs(translation.height) < 120:
+            return (false, .leading, .bottomLeading)
+        case .trailing where translation.width > 36 && abs(translation.height) < 120:
+            return (false, .trailing, .bottomTrailing)
+        default:
+            break
+        }
+
+        // Dragging the pill into either bottom corner also collapses it to that corner.
+        let cornerZone: CGFloat = 180
+        if end.y > container.height - cornerZone && (end.x < cornerZone || end.x > container.width - cornerZone) {
+            return (false, currentDock, nearestCorner)
+        }
+
+        let distLeading = max(0, projected.x)
+        let distTrailing = max(0, container.width - projected.x)
+        let distBottom = max(0, (container.height - projected.y) * 0.85)
+
+        if distLeading <= distBottom && distLeading <= distTrailing {
+            return (true, .leading, .bottomLeading)
+        } else if distTrailing <= distBottom && distTrailing <= distLeading {
+            return (true, .trailing, .bottomTrailing)
+        } else {
+            return (true, .bottom, currentCorner)
+        }
+    }
+
+    static func resolveIPadClosedTrayDrag(
+        container: CGSize,
+        currentDock: TrayDockEdge,
+        currentCorner: TrayCorner,
+        translation: CGSize,
+        predictedEndTranslation: CGSize
+    ) -> (dock: TrayDockEdge, corner: TrayCorner) {
+        let start = iPadClosedTrayCenter(container: container, corner: currentCorner)
+        let projectedX = start.x + (translation.width + predictedEndTranslation.width) * 0.5
+        let corner: TrayCorner = projectedX <= container.width / 2 ? .bottomLeading : .bottomTrailing
+        let dock: TrayDockEdge
+        switch currentDock {
+        case .bottom:
+            dock = .bottom
+        case .leading, .trailing:
+            dock = corner == .bottomLeading ? .leading : .trailing
+        }
+        return (dock, corner)
+    }
+
+    static func orientationMask(
+        isPad: Bool = UIDevice.current.userInterfaceIdiom == .pad,
+        allowsLandscape: Bool
+    ) -> UIInterfaceOrientationMask {
+        if isPad {
+            return OrientationLock.defaultMask(for: .pad)
+        }
+        return allowsLandscape ? [.portrait, .landscapeLeft, .landscapeRight] : .portrait
+    }
+
+    static func fitScale(
+        for container: CGSize,
+        isPad: Bool = UIDevice.current.userInterfaceIdiom == .pad
+    ) -> CGFloat {
+        guard container.width > 0, container.height > 0 else { return 1 }
+        if isPad {
+            return min(container.width / phoneDesignSize.width, container.height / phoneDesignSize.height)
+        }
+        return container.width / phoneDesignSize.width
+    }
+
+    /// Scale for the green cutting mat behind `ScrapbookBookView` (keeps wood margins balanced on iPad).
+    static func bookMatScale(
+        for container: CGSize,
+        isPad: Bool = UIDevice.current.userInterfaceIdiom == .pad
+    ) -> CGFloat {
+        guard isPad, container.width > 0, container.height > 0 else {
+            return fitScale(for: container, isPad: isPad)
+        }
+        return min((container.width * 0.90) / baseMatSize.width,
+                   (container.height * 0.86) / baseMatSize.height)
+    }
+
+    /// Scale for the open book in `ScrapbookBookView` so it fills the iPad screen generously while leaving room
+    /// for the top Back button, bottom Done pill, and page hint tooltip.
+    static func bookScale(
+        for container: CGSize,
+        isPad: Bool = UIDevice.current.userInterfaceIdiom == .pad
+    ) -> CGFloat {
+        guard isPad, container.width > 0, container.height > 0 else {
+            return fitScale(for: container, isPad: isPad)
+        }
+        let matWidth = baseMatSize.width * bookMatScale(for: container, isPad: true)
+        let matHeight = baseMatSize.height * bookMatScale(for: container, isPad: true)
+        let maxBookWidth = min(container.width * 0.80, matWidth * 0.86)
+        let maxBookHeight = min(container.height * 0.54, max(220, container.height - 270), matHeight * 0.76)
+        return min(maxBookWidth / baseBookWidth, maxBookHeight / baseBookHeight)
+    }
+
+    /// Scale for the front cover in `ScrapbookCoverScreen` and `editCoverView` so it fills iPad viewports cleanly.
+    static func coverScale(
+        for container: CGSize,
+        isPad: Bool = UIDevice.current.userInterfaceIdiom == .pad
+    ) -> CGFloat {
+        guard isPad, container.width > 0, container.height > 0 else {
+            return fitScale(for: container, isPad: isPad)
+        }
+        let maxCoverWidth = container.width * 0.78
+        let maxCoverHeight = max(220, container.height - 250)
+        return min(maxCoverWidth / baseCoverSize.width, maxCoverHeight / baseCoverSize.height)
+    }
+
+    static func iPadSpreadPageWidth(
+        container: CGSize,
+        safeAreaInsets: EdgeInsets = .init(),
+        isLandscape: Bool,
+        zoom: SpreadZoom
+    ) -> CGFloat {
+        if isLandscape {
+            let fullHeight = container.height + safeAreaInsets.top + safeAreaInsets.bottom
+            return min(container.width / 2, fullHeight * 3 / 4)
+        } else {
+            let availableHeight = max(240, container.height - 200)
+            let fitHeightWidth = availableHeight * 3 / 4
+            return zoom == .spread
+                ? min(container.width / 2, fitHeightWidth)
+                : min(container.width, fitHeightWidth)
         }
     }
 }

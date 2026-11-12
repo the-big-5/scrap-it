@@ -37,6 +37,7 @@ struct ScrapbookBookView: View {
                 if viewModel.isBookEditable {
                     Button("Done", action: viewModel.finishScrapbook)
                         .buttonStyle(.ds(.primary, size: .large, fullWidth: true))
+                        .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 358 : .infinity)
                         .padding(.horizontal, 22)
                         .padding(.bottom, 24)
                 }
@@ -47,8 +48,12 @@ struct ScrapbookBookView: View {
 
     private var desk: some View {
         GeometryReader { geometry in
-            let scale = geometry.size.width / Self.designWidth
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let matScale = ScrapbookEditorLayout.bookMatScale(for: geometry.size)
+            let scale = ScrapbookEditorLayout.bookScale(for: geometry.size)
             let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            let matX = isPad ? center.x : (-263 + 927 / 2) * matScale
+            let bookCenterY = isPad ? center.y - 26 : center.y + 3 * scale
             ZStack {
                 Image("DeskWood")
                     .resizable()
@@ -58,17 +63,17 @@ struct ScrapbookBookView: View {
                     .accessibilityHidden(true)
 
                 BookCuttingMat()
-                    .frame(width: 927 * scale, height: 697 * scale)
-                    .position(x: (-263 + 927 / 2) * scale, y: center.y)
+                    .frame(width: 927 * matScale, height: 697 * matScale)
+                    .position(x: matX, y: center.y)
                     .accessibilityHidden(true)
 
                 book(scale: scale)
-                    .position(x: center.x, y: center.y + 3 * scale)
+                    .position(x: center.x, y: bookCenterY)
 
                 if viewModel.showsPageHint && viewModel.isBookEditable {
                     PageHintTooltip(onClose: viewModel.dismissPageHint)
-                        .frame(width: 306 * scale)
-                        .position(x: center.x, y: center.y + (bookHeight(scale: scale) / 2) + 84 * scale)
+                        .frame(width: isPad ? min(360, geometry.size.width * 0.6) : 306 * scale)
+                        .position(x: center.x, y: bookCenterY + (bookHeight(scale: scale) / 2) + (isPad ? 42 : 84 * scale))
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
