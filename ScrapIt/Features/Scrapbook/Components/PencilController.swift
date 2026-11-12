@@ -78,6 +78,8 @@ final class PencilController {
     var opacity: Double = 1 { didSet { applyTool() } }
     /// Size + opacity panel above the Pencil tray.
     var showsSizePanel = false
+    /// Each tool's frame in the tray (window coordinates), so the size panel opens above the picked one (change 114).
+    var toolFrames: [PencilToolKind: CGRect] = [:]
 
     /// The canvases being drawn on (change 025: both pages of the spread; change 104: one canvas over both).
     @ObservationIgnored private var boards: [Board] = []

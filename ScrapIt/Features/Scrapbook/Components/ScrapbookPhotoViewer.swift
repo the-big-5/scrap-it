@@ -23,10 +23,14 @@ struct ScrapbookPhotoViewer: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: onClose)
 
-            Button("Close", action: onClose)
-                .font(.headline)
-                .foregroundStyle(.white)
-                .padding(20)
+            // The padding inside the label, so all of it takes the tap (change 114).
+            Button(action: onClose) {
+                Text("Close")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(20)
+                    .contentShape(Rectangle())
+            }
         }
         .task(id: photo.id) {
             image = await ScrapbookImageLoader.shared.image(for: photo.id, data: photo.imageData, pixelSize: 1600)

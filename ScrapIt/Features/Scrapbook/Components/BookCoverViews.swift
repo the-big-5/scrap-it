@@ -154,8 +154,8 @@ struct CoverColorButton: View {
     }
 }
 
-/// UIKit's color picker (grid, spectrum, sliders), reporting each change.
-private struct SystemColorPicker: UIViewControllerRepresentable {
+/// UIKit's color picker (grid, spectrum, sliders), reporting each change. Also the Pencil color circle (change 114).
+struct SystemColorPicker: UIViewControllerRepresentable {
     let color: Color
     let onChange: (Color) -> Void
 

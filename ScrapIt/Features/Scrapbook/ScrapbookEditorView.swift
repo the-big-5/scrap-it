@@ -11,6 +11,8 @@ struct ScrapbookEditorView: View {
     @State private var pageScreenFrames: [UUID: CGRect] = [:]
     /// Landscape: the Dynamic Island (top of the phone) is on the left, where the buttons go (change 113).
     @State private var isIslandOnLeading = true
+    /// Two-finger zoom on the pages (change 114).
+    @State private var pageZoom = PageZoom()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The spread zooms from the book into the editor and back (change 025).
     @Namespace private var spreadNamespace
@@ -55,6 +57,9 @@ struct ScrapbookEditorView: View {
         .animation(.easeInOut(duration: 0.2), value: viewModel.isBackConfirmationPresented)
         .animation(.easeInOut(duration: 0.2), value: viewModel.finishCard)
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: viewModel.coverSide)
+        // The page zoom starts over on another view or screen (change 114).
+        .onChange(of: viewModel.zoom) { pageZoom.reset() }
+        .onChange(of: viewModel.mode) { pageZoom.reset() }
         .sheet(isPresented: $viewModel.isEditingProgressPresented) {
             WhosHereSheet(title: "Editing Progress", firstTitle: "Done Editing", secondTitle: "In Progress",
                           showsPageNumbers: false,
@@ -209,10 +214,9 @@ struct ScrapbookEditorView: View {
                     .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
 
                 if viewModel.activeTool == .pencil && pencil.showsSizePanel {
-                    PenSizePanel(controller: pencil)
-                        .padding(.leading, 14)
-                        .padding(.bottom, 4 + TrayStyle.trayHeight * 2 - TrayStyle.overlap + 6)
-                        .transition(.scale(scale: 0.6, anchor: .bottomLeading).combined(with: .opacity))
+                    // Right above the picked tool, like Notes (change 114).
+                    SizePanelAboveTool(toolFrame: pencil.toolFrames[pencil.tool]) { pencilSizePanel }
+                        .transition(.opacity)
                         .zIndex(1)
                 }
 
@@ -373,6 +377,8 @@ struct ScrapbookEditorView: View {
                 Spacer(minLength: 0)
                 spread(pageWidth: pageWidth, viewportWidth: width,
                        offsetX: viewModel.zoom == .right ? width - 2 * pageWidth : 0)
+                    // Zoomed pages spread over the dark area, under the top bar (change 114).
+                    .zIndex(-1)
                 if viewModel.isLowPowerPaused {
                     Text("Live Photos paused in Low Power Mode")
                         .font(.caption)
@@ -402,11 +408,9 @@ struct ScrapbookEditorView: View {
                 .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
 
             if viewModel.activeTool == .pencil && pencil.showsSizePanel {
-                // The size panel opens above the Pencil tray.
-                PenSizePanel(controller: pencil)
-                    .padding(.leading, 14)
-                    .padding(.bottom, 4 + TrayStyle.trayHeight * 2 - TrayStyle.overlap + 6)
-                    .transition(.scale(scale: 0.6, anchor: .bottomLeading).combined(with: .opacity))
+                // The size panel opens right above the picked tool, like Notes (change 114).
+                SizePanelAboveTool(toolFrame: pencil.toolFrames[pencil.tool]) { pencilSizePanel }
+                    .transition(.opacity)
                     .zIndex(1)
             }
         }
@@ -481,7 +485,7 @@ struct ScrapbookEditorView: View {
                 .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
 
             if viewModel.activeTool == .pencil && pencil.showsSizePanel {
-                PenSizePanel(controller: pencil)
+                pencilSizePanel
                     .frame(maxWidth: .infinity, maxHeight: .infinity,
                            alignment: buttonsOnLeading ? .bottomTrailing : .bottomLeading)
                     .padding(.horizontal, trayDepth + 12)
@@ -490,6 +494,16 @@ struct ScrapbookEditorView: View {
                     .transition(.opacity)
                     .zIndex(1)
             }
+        }
+    }
+
+    /// The eraser has its own size panel (change 114); the other tools share the size and opacity panel.
+    @ViewBuilder
+    private var pencilSizePanel: some View {
+        if pencil.tool == .eraser {
+            EraserSizePanel(controller: pencil)
+        } else {
+            PenSizePanel(controller: pencil)
         }
     }
 
@@ -548,9 +562,11 @@ struct ScrapbookEditorView: View {
                     PageBackgroundView(background: page.pageBackground)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .onTapGesture { viewModel.tapEmptyPage(page.id) }
+                        .simultaneousGesture(TapGesture(count: 2).onEnded { resetPageZoom() })
                         .allowsHitTesting(viewModel.editablePages.contains { $0.id == page.id })
                 }
             }
+            .gesture(PageZoomPinch(zoom: pageZoom))
             spreadItems
             HStack(spacing: 0) {
                 ForEach(viewModel.currentSpreadPages, id: \.id) { _ in
@@ -572,7 +588,8 @@ struct ScrapbookEditorView: View {
                                       drawingData: pageIDs.map(viewModel.drawingData(onPage:)),
                                       pageSize: CGSize(width: geometry.size.width / 2, height: geometry.size.height),
                                       controller: pencil,
-                                      remoteRevision: viewModel.remoteDrawingRevision)
+                                      remoteRevision: viewModel.remoteDrawingRevision,
+                                      zoom: pageZoom)
                         .id(pageIDs.compactMap { viewModel.drawingLayerIDs[$0] })
                 }
             }
@@ -582,6 +599,10 @@ struct ScrapbookEditorView: View {
         .frame(width: pageWidth * 2, height: pageHeight, alignment: .leading)
         .offset(x: offsetX)
         .frame(width: viewportWidth, height: pageHeight, alignment: .leading)
+        // Two-finger zoom (change 114): the pages scale around the screen area's center, cut at its edges.
+        .scaleEffect(pageZoom.scale)
+        .offset(pageZoom.offset)
+        .background(Color.clear.onFrameChange(in: .global) { pageZoom.viewport = $0 })
         .overlay {
             // The sticker sheet opens over the pages on screen; stickers stick to the page they're dropped on.
             if viewModel.isStickerSheetOpen, let sheet = viewModel.currentStickerSheet {
@@ -606,7 +627,8 @@ struct ScrapbookEditorView: View {
                     .allowsHitTesting(false)
             }
         }
-        .clipShape(Rectangle().inset(by: viewModel.draggedItemID != nil ? -2000 : 0))
+        // Zoomed in, the pages spread over the dark area around them, under the buttons and the tray (change 114).
+        .clipShape(Rectangle().inset(by: viewModel.draggedItemID != nil || pageZoom.isZoomed ? -2000 : 0))
         .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
     }
 
@@ -690,7 +712,7 @@ struct ScrapbookEditorView: View {
                     viewModel.activatePage(page.id)
                     return viewModel.cut(along: path, pageSize: size)
                 },
-                onDragMoved: { id, location in viewModel.updateItemDrag(itemID: id, pageLocation: location) },
+                onDragMoved: { id, location in viewModel.updateItemDrag(itemID: id, pageLocation: zoomed(location)) },
                 onDropInTrash: { viewModel.endItemDrag(itemID: $0) },
                 onCancelDrag: { viewModel.cancelItemDrag() }
             )
@@ -704,7 +726,8 @@ struct ScrapbookEditorView: View {
                                   drawingData: [viewModel.drawingData(onPage: page.id)],
                                   pageSize: size,
                                   controller: pencil,
-                                  remoteRevision: viewModel.remoteDrawingRevision)
+                                  remoteRevision: viewModel.remoteDrawingRevision,
+                                  zoom: page.role == nil ? pageZoom : nil)
                     .id(layerID)
                     .overlay(alignment: .top) { if showsHint { hint(for: .pencil) } }
             }
@@ -760,6 +783,15 @@ struct ScrapbookEditorView: View {
         return TrayStyle.trayHeight + 16
     }
 
+    /// A point in a page's own space to its size on screen while the pages are zoomed (change 114).
+    private func zoomed(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x * pageZoom.scale, y: point.y * pageZoom.scale)
+    }
+
+    private func resetPageZoom() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) { pageZoom.reset() }
+    }
+
     private func itemActions(for page: ScrapbookPage) -> ScrapbookItemActions {
         ScrapbookItemActions(
             select: viewModel.selectItem,
@@ -774,7 +806,7 @@ struct ScrapbookEditorView: View {
             deselect: { viewModel.tapEmptyPage(page.id) },
             doubleTap: viewModel.doubleTapItem,
             editText: viewModel.editText,
-            dragChanged: { id, location in viewModel.updateItemDrag(itemID: id, pageLocation: location) },
+            dragChanged: { id, location in viewModel.updateItemDrag(itemID: id, pageLocation: zoomed(location)) },
             endDrag: { viewModel.endItemDrag(itemID: $0) },
             cancelDrag: { viewModel.cancelItemDrag(for: $0) }
         )

@@ -13,9 +13,11 @@ struct DrawingCanvasView: UIViewRepresentable {
     let pageSize: CGSize
     let controller: PencilController
     var remoteRevision: Int = 0
+    /// Two fingers zoom and pan the pages while drawing, like Notes (change 114). `nil` = no zoom.
+    var zoom: PageZoom?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(controller: controller, lastRemoteRevision: remoteRevision)
+        Coordinator(controller: controller, lastRemoteRevision: remoteRevision, zoom: zoom)
     }
 
     func makeUIView(context: Context) -> PKCanvasView {
@@ -31,6 +33,11 @@ struct DrawingCanvasView: UIViewRepresentable {
         canvas.showsHorizontalScrollIndicator = false
         canvas.contentInsetAdjustmentBehavior = .never
         canvas.delegate = context.coordinator
+        if zoom != nil {
+            let pinch = TwoFingerPinchGestureRecognizer(target: context.coordinator,
+                                                        action: #selector(Coordinator.pinch(_:)))
+            canvas.addGestureRecognizer(pinch)
+        }
         controller.attach(canvas, pageIDs: pageIDs, drawings: drawings,
                           pageWidth: ScrapbookPage.canvasSize(for: pageSize).width)
         applyScale(canvas)
@@ -69,10 +76,22 @@ struct DrawingCanvasView: UIViewRepresentable {
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         let controller: PencilController
         var lastRemoteRevision: Int
+        let zoom: PageZoom?
 
-        init(controller: PencilController, lastRemoteRevision: Int) {
+        init(controller: PencilController, lastRemoteRevision: Int, zoom: PageZoom?) {
             self.controller = controller
             self.lastRemoteRevision = lastRemoteRevision
+            self.zoom = zoom
+        }
+
+        /// A second finger turns the touch into a zoom: the stroke the first finger started is dropped.
+        @objc func pinch(_ recognizer: UIPinchGestureRecognizer) {
+            guard let zoom else { return }
+            if recognizer.state == .began, let canvas = recognizer.view as? PKCanvasView {
+                canvas.drawingGestureRecognizer.isEnabled = false
+                canvas.drawingGestureRecognizer.isEnabled = true
+            }
+            PageZoomPinch.handle(recognizer, zoom: zoom)
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
