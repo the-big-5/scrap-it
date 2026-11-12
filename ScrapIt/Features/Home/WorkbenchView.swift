@@ -206,7 +206,7 @@ struct WorkbenchView: View {
             layout: layout,
             isActive: isActive,
             isObscured: isObscured,
-            isDisabled: viewModel.isCameraActive || viewModel.isToolboxActive || viewModel.isRollsActive || viewModel.cameraReturnPhase != .idle,
+            isDisabled: viewModel.isCameraActive || viewModel.isToolboxActive || viewModel.cameraReturnPhase != .idle,
             bounce: rollsBounce
         ) {
             HapticService.shared.playSnapFeedback()

@@ -204,6 +204,7 @@ struct CreateRollLobbyView: View {
                 flowViewModel.startRollCapture()
             }
             .buttonStyle(OffsetPillButtonStyle())
+            .disabled(flowViewModel.activeSession?.status == .live)
         } else {
             Text("Waiting for the host to start...")
                 .font(.system(size: 20, weight: .regular))

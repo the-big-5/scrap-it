@@ -103,7 +103,7 @@ final class RollFlowViewModel {
     @ObservationIgnored private var shotsAwaitingMovie: Set<UUID> = []
     @ObservationIgnored private(set) var finalizeSessionTask: Task<Void, Never>?
     @ObservationIgnored private var roomChangeObserver: NSObjectProtocol?
-    @ObservationIgnored private var activeLobbyUser: UserProfile?
+    @ObservationIgnored private(set) var activeLobbyUser: UserProfile?
 
     deinit {
         finalizeSessionTask?.cancel()
@@ -336,7 +336,10 @@ final class RollFlowViewModel {
         }
 
         beginLivePolling(session: session)
-        navigator?.push(.captureSession)
+        navigator?.beginCameraIntro(filter: session.filter)
+        if navigator?.cameraIntroPhase == .idle {
+            navigator?.push(.captureSession)
+        }
     }
 
     // MARK: - Join roll
@@ -606,7 +609,10 @@ final class RollFlowViewModel {
             apply(snapshot, to: session)
             if session.status == .live, navigator?.path.last == .createRollLobby {
                 beginLivePolling(session: session)
-                navigator?.push(.captureSession)
+                navigator?.beginCameraIntro(filter: session.filter)
+                if navigator?.cameraIntroPhase == .idle {
+                    navigator?.push(.captureSession)
+                }
             }
         } catch RoomError.removed {
             exitRoom(message: Self.roomRemovedMessage)

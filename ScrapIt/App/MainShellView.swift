@@ -78,6 +78,14 @@ struct MainShellView: View {
             }
         }
         .overlay {
+            if router.cameraIntroPhase != .idle {
+                CameraIntroTransitionOverlay(
+                    router: router,
+                    flowViewModel: activeRollViewModel()
+                )
+            }
+        }
+        .overlay {
             if router.isFadingToReveal {
                 Color.black
                     .ignoresSafeArea()
