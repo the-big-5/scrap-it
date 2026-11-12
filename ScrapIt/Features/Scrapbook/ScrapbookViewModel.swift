@@ -159,6 +159,8 @@ final class ScrapbookViewModel {
     @ObservationIgnored private let defaults: UserDefaults
     // Undo / redo for every change in the edit view (change 025)
     private var undoStack: [EditorSnapshot] = []
+    /// The cover color picker is open and hasn't recorded its undo step yet (change 121).
+    private var isCoverColorUndoPending = false
     private var redoStack: [EditorSnapshot] = []
     @ObservationIgnored private var manipulationSnapshot: EditorSnapshot?
     // Tool tray (change 022)
@@ -326,19 +328,28 @@ final class ScrapbookViewModel {
     var leftPage: ScrapbookPage? { currentSpreadPages.first }
     var rightPage: ScrapbookPage? { currentSpreadPages.count > 1 ? currentSpreadPages[1] : nil }
 
-    /// Swipe on the book: next / previous spread. Past the last spread a new spread of two empty pages is added.
+    /// Swipe on the book: next / previous spread. Past the last spread comes the Add page spread: blank, not saved,
+    /// until "+ Add page" adds its two pages (change 121). A finished book has none (change 026).
     func swipeSpread(by delta: Int) {
         dismissPageHint()
         let target = spreadIndex + delta
-        // Reading a finished book never adds pages (change 026).
-        if delta > 0, target >= spreadCount, isBookEditable {
-            appendPage()
-            appendPage()
-        }
-        guard target >= 0, target < spreadCount else { return }
+        let lastIndex = isBookEditable ? spreadCount : spreadCount - 1
+        guard target >= 0, target <= lastIndex else { return }
         spreadIndex = target
         selectedItemID = nil
         lastLetter = nil
+        currentPageID = leftPage?.id
+        updatePresence()
+    }
+
+    /// The blank spread past the last one, offering "+ Add page" (change 121).
+    var isAtAddPageSpread: Bool { isBookEditable && spreadIndex >= spreadCount }
+
+    /// "+ Add page": two empty pages where the Add page spread was; they're the spread on screen now.
+    func addPages() {
+        guard isAtAddPageSpread else { return }
+        appendPage()
+        appendPage()
         currentPageID = leftPage?.id
         updatePresence()
     }
@@ -354,7 +365,8 @@ final class ScrapbookViewModel {
 
     /// Tapping the book zooms into the edit view for the spread on screen, showing both pages.
     func openSpread() {
-        guard isBookEditable else { return }
+        // The Add page spread has no pages to edit yet (change 121).
+        guard isBookEditable, !isAtAddPageSpread else { return }
         dismissPageHint()
         zoom = .spread
         currentPageID = leftPage?.id
@@ -419,9 +431,10 @@ final class ScrapbookViewModel {
         isBackConfirmationPresented = true
     }
 
+    /// "Go to Home": the Craft tab, also when the scrapbook was opened from another tab (change 121).
     func confirmBack() {
         isBackConfirmationPresented = false
-        goBack()
+        backToHome()
     }
 
     // MARK: - Cover and finishing (change 026)
@@ -502,12 +515,19 @@ final class ScrapbookViewModel {
     func editCover() {
         guard !isReadOnly, ensureCoverPage(.front) != nil, ensureCoverPage(.spine) != nil else { return }
         showCoverSide(.front)
+        // Undo / redo in Edit Cover start empty (change 121).
+        clearHistory()
         mode = .editCover
     }
 
-    /// → in Edit Cover: on to the spine.
+    /// "Edit book spine →" in Edit Cover: on to the spine.
     func showSpine() {
         showCoverSide(.spine)
+    }
+
+    /// ‹ on the spine: back to the front cover, edits kept (change 121).
+    func showFront() {
+        showCoverSide(.front)
     }
 
     private func showCoverSide(_ side: CoverSide) {
@@ -518,7 +538,7 @@ final class ScrapbookViewModel {
         isTrayOpen = true
     }
 
-    /// ✓ on the spine: back to the cover screen.
+    /// ✓ in Edit Cover (front or spine): back to the cover screen.
     func finishCoverEdit() {
         cancelItemDrag()
         if textEditor != nil { commitTextEditor() }
@@ -528,9 +548,19 @@ final class ScrapbookViewModel {
         mode = .cover
     }
 
+    /// The color picker opened: its first change is one undo step (change 121).
+    func coverColorPickerOpened() {
+        isCoverColorUndoPending = true
+    }
+
     /// The color picker under the cover; the texture stays visible over any color.
     func setCoverColor(_ hex: String) {
         guard let scrapbook, !isReadOnly, !(scrapbook.coverColorPicked && scrapbook.coverColorHex == hex) else { return }
+        // One undo step per opening of the color picker (it reports every change while dragging), change 121.
+        if isCoverColorUndoPending {
+            recordUndo()
+            isCoverColorUndoPending = false
+        }
         scrapbook.coverColorHex = hex
         scrapbook.coverColorPicked = true
         if save() {
@@ -1563,9 +1593,16 @@ final class ScrapbookViewModel {
     var canRedo: Bool { !redoStack.isEmpty }
 
     /// The spread's pages and the sticker sheets as they are now.
+    /// The pages undo / redo cover: the spread on screen, or both cover sides in Edit Cover (change 121).
+    private var undoPages: [ScrapbookPage] {
+        guard mode == .editCover else { return currentSpreadPages }
+        return [ScrapbookPage.Role.front, .spine].compactMap { coverPage($0) }
+    }
+
     private func snapshot() -> EditorSnapshot {
         EditorSnapshot(
-            pages: currentSpreadPages.map { page in (page.id, page.allItems.map { ItemState($0) }) },
+            pages: undoPages.map { page in (page.id, page.allItems.map { ItemState($0) }) },
+            coverColor: mode == .editCover ? scrapbook.map { ($0.coverColorHex, $0.coverColorPicked) } : nil,
             stickerUsage: Dictionary((scrapbook?.stickerSheets ?? []).map { ($0.id, $0.usedStickerIDs) },
                                      uniquingKeysWith: { first, _ in first })
         )
@@ -1603,7 +1640,7 @@ final class ScrapbookViewModel {
     /// Puts the spread back as it was and tells friends with the existing events (last write wins).
     private func restore(_ target: EditorSnapshot) {
         cancelItemDrag()
-        let pagesByID = Dictionary(currentSpreadPages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let pagesByID = Dictionary(undoPages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var currentItems: [UUID: ScrapbookItem] = [:]
         for page in pagesByID.values {
             for item in page.allItems { currentItems[item.id] = item }
@@ -1664,6 +1701,13 @@ final class ScrapbookViewModel {
         }
         for sheet in scrapbook?.stickerSheets ?? [] {
             if let used = target.stickerUsage[sheet.id] { sheet.usedStickerIDs = used }
+        }
+        if let color = target.coverColor, let scrapbook,
+           color.hex != scrapbook.coverColorHex || color.picked != scrapbook.coverColorPicked {
+            scrapbook.coverColorHex = color.hex
+            scrapbook.coverColorPicked = color.picked
+            events.append(ScrapbookEvent(type: .coverColor, pageIndex: Self.frontCoverEventIndex, senderID: senderID,
+                                         coverColor: color.hex))
         }
         guard save() else { return }
         events.forEach(broadcast)
@@ -2040,6 +2084,8 @@ private struct ItemState: Equatable {
 /// The spread's pages and the sticker sheets before a change.
 private struct EditorSnapshot {
     let pages: [(pageID: UUID, items: [ItemState])]
+    /// Edit Cover only (change 121): the cover color and whether it was picked.
+    let coverColor: (hex: String, picked: Bool)?
     let stickerUsage: [UUID: [String]]
 }
 
