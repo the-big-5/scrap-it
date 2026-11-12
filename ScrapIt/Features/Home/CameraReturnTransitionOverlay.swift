@@ -42,12 +42,7 @@ struct CameraFlipCardView: View, Animatable {
                     )
             } else {
                 CameraReturnBackDeckView()
-                    .scaleEffect(layout.length(layout.activeCameraBodyWidth) / 874.0)
                     .frame(width: layout.length(size.width), height: layout.length(size.height))
-                    .offset(
-                        x: layout.length(layout.activeCameraBodyCenterOffset.x),
-                        y: layout.length(layout.activeCameraBodyCenterOffset.y)
-                    )
                     .rotation3DEffect(
                         .degrees(CameraFlipMath.backAngle(for: angle)),
                         axis: (x: 0, y: 1, z: 0),
@@ -58,75 +53,12 @@ struct CameraFlipCardView: View, Animatable {
     }
 }
 
-/// Back deck representation of the disposable camera with closed iris diaphragm (change 100).
+/// Physical disposable camera back face representation for the return transition (changes 100, 110).
 struct CameraReturnBackDeckView: View {
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            // Camera body texture
-            Image("CameraBodyShape")
-                .resizable()
-                .frame(width: 874, height: 402)
-                .position(x: 874 / 2, y: 402 / 2)
-
-            // Viewfinder screen bezel with closed mechanical iris
-            ZStack {
-                RoundedRectangle(cornerRadius: 14.54)
-                    .fill(Color(red: 22 / 255, green: 21 / 255, blue: 20 / 255))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14.54)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(0.4), radius: 5.2, x: 0, y: 5.2)
-
-                ZStack {
-                    Color(red: 28 / 255, green: 27 / 255, blue: 26 / 255)
-                    CameraIrisDiaphragmView(isClosed: true)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 6.2))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-            }
-            .frame(width: 444.406, height: 337)
-            .position(x: 136 + 444.406 / 2, y: 33 + 337 / 2)
-
-            // Flash button well
-            Image("CameraSwitchWell")
-                .resizable()
-                .frame(width: 60, height: 120)
-                .position(x: 62 + 60 / 2, y: 33 + 120 / 2)
-
-            // Back button well
-            Circle()
-                .fill(Color(red: 44 / 255, green: 44 / 255, blue: 44 / 255))
-                .frame(width: 60, height: 60)
-                .position(x: 62 + 60 / 2, y: 302 + 60 / 2)
-
-            // Zoom control well
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(red: 35 / 255, green: 35 / 255, blue: 35 / 255))
-                .frame(width: 172, height: 83)
-                .position(x: 594 + 172 / 2, y: 14 + 83 / 2)
-
-            // Shutter well
-            Image("CameraShutterWell")
-                .resizable()
-                .frame(width: 154, height: 154)
-                .position(x: 594 + 154 / 2, y: 128 + 154 / 2)
-
-            // Flip button well
-            Image("CameraSwitchWell")
-                .resizable()
-                .frame(width: 72, height: 72)
-                .position(x: 596 + 72 / 2, y: 298 + 72 / 2)
-
-            // Shots-left dial
-            Image("CameraDialOuter")
-                .resizable()
-                .frame(width: 83, height: 83)
-                .position(x: 763 + 83 / 2, y: 287 + 83 / 2)
-        }
-        .frame(width: 874, height: 402)
-        .clipped()
+        Image("DeskDisposableCameraBack")
+            .resizable()
+            .scaledToFit()
     }
 }
 
@@ -166,7 +98,13 @@ struct CameraReturnTransitionOverlay: View {
             }
 
             let targetPosition: CGPoint = switch scaleState {
-            case .fullBleed, .floating:
+            case .fullBleed:
+                layout.zoomedViewfinderCenter(
+                    container: proxy.size,
+                    angle: router.cameraReturnAngle,
+                    scale: targetScale
+                )
+            case .floating:
                 layout.zoomedCameraCenter(
                     container: proxy.size,
                     angle: router.cameraReturnAngle,

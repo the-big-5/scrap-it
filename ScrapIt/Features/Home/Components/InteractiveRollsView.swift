@@ -56,7 +56,7 @@ struct InteractiveRollsView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Film Rolls")
         .accessibilityHint("Tap to view and resume your in-progress rolls")
-        .disabled(isDisabled)
+        .disabled(isDisabled && !isActive)
         .scaleEffect(isActive ? bounce.scale : 1.0)
         .rotationEffect(.degrees(baseRotation + (isActive ? bounce.wiggleDegrees * wiggleSign : 0)))
         .offset(

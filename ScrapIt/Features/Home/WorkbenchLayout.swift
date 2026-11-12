@@ -172,6 +172,13 @@ struct WorkbenchLayout: Equatable {
         )
     }
 
+    var activeCameraViewfinderCenterOffset: CGPoint {
+        CGPoint(
+            x: Self.cameraViewfinderCenterOffset.x * cameraBodyScaleFactor,
+            y: Self.cameraViewfinderCenterOffset.y * cameraBodyScaleFactor
+        )
+    }
+
     func zoomedCameraCenter(container: CGSize, angle: Double, scale: CGFloat) -> CGPoint {
         Self.zoomedCameraCenter(
             container: container,
@@ -179,6 +186,16 @@ struct WorkbenchLayout: Equatable {
             angle: angle,
             scale: scale,
             bodyCenterOffset: activeCameraBodyCenterOffset
+        )
+    }
+
+    func zoomedViewfinderCenter(container: CGSize, angle: Double, scale: CGFloat) -> CGPoint {
+        Self.zoomedCameraCenter(
+            container: container,
+            layoutScale: self.scale,
+            angle: angle,
+            scale: scale,
+            bodyCenterOffset: activeCameraViewfinderCenterOffset
         )
     }
 
@@ -247,6 +264,9 @@ extension WorkbenchLayout {
     static let cameraBodyHeight: CGFloat = 111.5
     static let cameraBodyCenterOffset = CGPoint(x: -2.0, y: 10.5)
 
+    /// Center offset of the optical viewfinder window on `DeskDisposableCameraBack` within its exported asset frame (in 402×874 design points).
+    static let cameraViewfinderCenterOffset = CGPoint(x: -2.52, y: -19.54)
+
     /// Target center for the zoomed-in camera during the return transition (change 086).
     /// Centers the actual physical camera body on screen for portrait and landscape orientations.
     static func zoomedCameraCenter(
@@ -279,7 +299,7 @@ extension WorkbenchLayout {
         }
     }
 
-    /// Scale for full-bleed camera element covering screen edge-to-edge (change 100).
+    /// Scale for full-bleed optical viewfinder zoom covering screen edge-to-edge (changes 100, 110).
     static func fullBleedCameraScale(
         container: CGSize,
         layoutScale: CGFloat,
@@ -291,11 +311,11 @@ extension WorkbenchLayout {
         if isLandscapeAngle {
             let scaleX = container.height / (cameraSize.width * layoutScale)
             let scaleY = container.width / (cameraSize.height * layoutScale)
-            return max(scaleX, scaleY) * 1.08
+            return max(scaleX, scaleY) * 3.5
         } else {
             let scaleX = container.width / (cameraSize.width * layoutScale)
             let scaleY = container.height / (cameraSize.height * layoutScale)
-            return max(scaleX, scaleY) * 1.08
+            return max(scaleX, scaleY) * 3.5
         }
     }
 
