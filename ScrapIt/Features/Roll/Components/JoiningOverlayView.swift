@@ -35,11 +35,15 @@ struct JoiningOverlayView: View {
 
             VStack {
                 Spacer()
-                Button("Cancel", action: flowViewModel.cancelJoin)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(DSColor.Brand.tertiary.color)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .padding(.bottom, 32)
+                // The 44 pt area inside the label, so all of it takes the tap (change 114).
+                Button(action: flowViewModel.cancelJoin) {
+                    Text("Cancel")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(DSColor.Brand.tertiary.color)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .padding(.bottom, 32)
             }
         }
         .transition(.opacity)

@@ -66,12 +66,16 @@ struct BookStarCard: View {
     @ViewBuilder
     private var buttons: some View {
         ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
-            Button(action.title, action: action.action)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(action.style == .primary ? DSColor.Kraft.light.color : DSColor.Brand.primary.color)
-                .frame(maxWidth: action.style == .plain && !stacked ? 108 : .infinity, minHeight: 52)
-                .background(background(for: action.style), in: Capsule())
-                .buttonStyle(.plain)
+            // Size and capsule inside the label, so the whole capsule takes the tap, not only the title (change 114).
+            Button(action: action.action) {
+                Text(action.title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(action.style == .primary ? DSColor.Kraft.light.color : DSColor.Brand.primary.color)
+                    .frame(maxWidth: action.style == .plain && !stacked ? 108 : .infinity, minHeight: 52)
+                    .background(background(for: action.style), in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
 
