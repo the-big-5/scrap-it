@@ -14,7 +14,8 @@ struct ToolTray<SubTray: View>: View {
     var tools: [ScrapbookTool] = ScrapbookTool.allCases
     /// Edit Cover (change 026): the main tray stays open, centered, and doesn't scroll or fold away.
     var isFixed = false
-    /// Swipe down on the second tray (Edit Cover): puts the tool away. `nil`: the second tray doesn't react.
+    /// Swipe down on the second tray (Edit Cover; the editor too since change 127): puts the tool away.
+    /// `nil`: the second tray doesn't react.
     var onCloseSubTray: (() -> Void)?
     /// Where the closed button sits in the tray's own space (change 025: `.bottomTrailing` when the tray is turned
     /// on its left side in landscape, so the button ends up at the bottom of the screen).
@@ -27,6 +28,9 @@ struct ToolTray<SubTray: View>: View {
     /// Drag callbacks for moving/minimizing the open iPad floating pill in editor coordinate space.
     var onTrayDragChanged: ((CGSize) -> Void)? = nil
     var onTrayDragEnded: ((CGSize, CGSize) -> Void)? = nil
+    /// The swipe that closes the main tray (change 127): its sideways lean picks the corner the closed button
+    /// goes to. Called just before `onClose`.
+    var onCloseSwipe: ((CGSize) -> Void)? = nil
     @ViewBuilder let subTray: (ScrapbookTool) -> SubTray
 
     private var closedAnchor: UnitPoint {
@@ -138,7 +142,10 @@ struct ToolTray<SubTray: View>: View {
             // Swiping down folds the tray back into the round button (not on a fixed tray).
             if !isFixed {
                 ScrollPanProbe(direction: .down, onEnded: { _, translation, cancelled in
-                    if !cancelled, translation.height > 30 { onClose() }
+                    if !cancelled, translation.height > 30 {
+                        onCloseSwipe?(translation)
+                        onClose()
+                    }
                 })
             }
         }
