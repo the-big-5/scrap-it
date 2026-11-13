@@ -34,4 +34,19 @@ struct PencilControllerTests {
         #expect(abs(minShift) < 0.01)
         #expect(abs(maxShift) < 0.01)
     }
+
+    @Test func mergedDrawingDataCombinesAllStrokes() throws {
+        func stroke(x: CGFloat) -> PKStroke {
+            let points = [x, x + 20].map {
+                PKStrokePoint(location: CGPoint(x: $0, y: 50), timeOffset: 0, size: CGSize(width: 4, height: 4),
+                              opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
+            }
+            return PKStroke(ink: PKInk(.pen, color: .black), path: PKStrokePath(controlPoints: points, creationDate: Date()))
+        }
+        let d1 = PKDrawing(strokes: [stroke(x: 10)]).dataRepresentation()
+        let d2 = PKDrawing(strokes: [stroke(x: 100)]).dataRepresentation()
+        let merged = PencilController.mergedDrawingData([d1, Data(), d2])
+        let decoded = try PKDrawing(data: merged)
+        #expect(decoded.strokes.count == 2)
+    }
 }

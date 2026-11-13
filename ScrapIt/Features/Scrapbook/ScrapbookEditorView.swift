@@ -344,17 +344,20 @@ struct ScrapbookEditorView: View {
             .frame(width: size.width, height: size.height)
             .id(page.id)
             .overlay {
-                // The sticker sheet opens over the cover area; stickers stick to this side.
+                // The sticker sheet opens over the cover area; scaled smaller on the spine so the spine stays visible (change 128).
                 if viewModel.isStickerSheetOpen, let sheet = viewModel.currentStickerSheet {
+                    let coverOverlaySize = CGSize(width: 340 * scale, height: 468 * scale)
+                    let sheetScale: CGFloat = role == .spine ? 0.58 : 1
                     StickerSheetOverlay(
                         set: viewModel.stickerSet,
                         sheet: sheet,
                         controller: stickerController,
-                        pageSize: CGSize(width: 340 * scale, height: 468 * scale),
+                        pageSize: CGSize(width: coverOverlaySize.width * sheetScale,
+                                         height: coverOverlaySize.height * sheetScale),
                         onClose: viewModel.closeStickerSheet,
                         onNewSheet: viewModel.takeNewStickerSheet
                     )
-                    .frame(width: 340 * scale, height: 468 * scale)
+                    .frame(width: coverOverlaySize.width, height: coverOverlaySize.height)
                     .transition(.opacity)
                 }
             }

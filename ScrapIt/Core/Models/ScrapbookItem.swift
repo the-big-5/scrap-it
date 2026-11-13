@@ -76,8 +76,8 @@ final class ScrapbookItem {
         switch kind {
         case .photo, .sticker: Self.minWidth...Self.maxWidth
         case .letter: 0.04...0.8
-        // On the narrow spine the font size can grow up to the spine's width (change 026).
-        case .text: page?.role == ScrapbookPage.Role.spine.rawValue ? 0.1...1.0 : 0.03...0.3
+        // Spine text stands along the spine and can scale larger; front cover & pages also allow larger text (change 128).
+        case .text: page?.role == ScrapbookPage.Role.spine.rawValue ? 0.1...1.5 : 0.03...0.6
         case .washi: 0.05...1.6
         case .drawing: 1...1
         }

@@ -173,6 +173,10 @@ final class StickerDragController {
 
     private func pageWidth(for session: Session) -> CGFloat {
         guard pageFrame.width > 0 else { return session.homeWidth }
+        if pageFrame.height > pageFrame.width * 3 {
+            // Spine: keep the peeled sticker sized meaningfully relative to the narrow spine, capped at 0.8 (change 128).
+            return min(max(session.homeWidth, ScrapbookItem.minWidth * pageFrame.width), pageFrame.width * 0.8)
+        }
         let width = session.sticker.frame.width / session.set.sheetSize.width * pageFrame.width
         return max(width, ScrapbookItem.minWidth * pageFrame.width)
     }
