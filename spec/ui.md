@@ -91,7 +91,7 @@ Figma nodes 1300:26163 (options), 1300:26710 (room code); change 019. Host "+" t
 - No invite link yet / link failed: alert "Couldn't create the invite link. Check iCloud and your connection, then try again."
 
 ## Share Room (system share sheet) [Locked]
-Figma 768:1623, from the lobby's "⋯" → Share Room (host and participant): AirDrop sends the iCloud link only; messaging apps get text only [Draft]: "Join my roll “<name>” on ScrapIt! 📸 / Roll code: <code> / <link>". Mail and other non-messaging destinations hidden. App name from one constant (`AppBrand.name`)
+Figma 768:1623, from the lobby's "⋯" → Share Room (host and participant): AirDrop sends the iCloud link only; messaging apps get text only [Draft]: "Join my roll “<name>” on Rèlic! 📸 / Roll code: <code> / <link>". Mail and other non-messaging destinations hidden. App name from one constant (`AppBrand.name`, change 134)
 
 ## Screen: Join a Roll [Locked]
 Figma node 1187:9697 (change 019)
@@ -137,7 +137,7 @@ Shown once after End Roll. No back button, no tab bar.
 - Scattered: photos with a 1.5 pt white border, long side 150 pt, ±14° rotation, overlapping; drag moves a photo and brings it to the front; photos arriving later land on the mat
 - "Tidy Up" (top right, 44 pt pill) → 2-column grid on Kraft light-active, 175 × 233 cells, 18 pt corners, capture time badge ("16:45"), scrolls; the button then reads "Scatter"
 - "Start Scrapbook" (bottom, large pill) on both views → scrapbook editor
-- Photo detail: 40% black dim, photo with a 5 pt white border (Live Photo plays on press), "Save" pill + share circle below it; tap outside closes. Save toast: "Saved to Photos" / "Couldn't save. Allow ScrapIt to add photos in Settings."
+- Photo detail: 40% black dim, photo with a 5 pt white border (Live Photo plays on press), "Save" pill + share circle below it; tap outside closes. Save toast: "Saved to Photos" / "Couldn't save. Allow Rèlic to add photos in Settings." (uses `AppBrand.name`, change 134)
 
 ## Screen: Profile tab (Library) [Locked]
 Figma nodes 1300:36485 (empty state), 1300:36434 (bookshelf), 1300:36781 (settings); changes 044, 088, 103, 122, 125.
@@ -236,5 +236,6 @@ All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, tr
 - Scrapbook tool tray (change 022, copied from the camera POC): `Tray/` (tray-tool-*, tray-pencil-*, tray-washi-1…4, tray-pen-size-1…5), `Letters/` (letter-A…Z, letter-0…9, SVG), `Scrapbook/` sticker-fun-* (27) and sticker-sheet-fun
 - Book view (folder `BookView/`, change 025): ScrapbookZoomSpread / ZoomLeft / ZoomRight and ScrapbookPeople (SVG glyphs from the Figma buttons, background removed), BookConfirmWashi (SVG), BookConfirmStar (@3x PNG cut from the Figma image, transparent); reuses DeskWood; BookCoverTexture (neutral grain made from the Figma cover image, change 026), BookConfirmStarWink (@3x PNG from the Figma image)
 - Profile (folder `Profile/`, change 088): `WoodenShelfPlank` (wooden bookshelf plank PNG, Figma 1515:31687 / 1300:36435) and Figma book spine artwork.
+- AppIcon (`AppIcon.appiconset`, change 134): universal `1024×1024` opaque PNG (film strip and blue scissors flattened onto `#F9F5ED`) for iPhone and iPad.
 
 Note: designs are still in progress, so treat Figma-derived details as [Draft] until marked Locked.

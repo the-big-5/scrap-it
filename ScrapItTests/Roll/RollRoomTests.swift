@@ -175,6 +175,7 @@ struct RollRoomTests {
         #expect(text.contains("N4B13L"))
         #expect(text.contains(content.link.absoluteString))
         #expect(text.contains(AppBrand.name))
+        #expect(AppBrand.name == "Rèlic")
     }
 
     @Test func onlyAirDropAndMessagingAreOffered() {

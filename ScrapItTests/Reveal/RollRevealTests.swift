@@ -262,6 +262,7 @@ struct RollRevealTests {
         viewModel.select(photo.id)
         await viewModel.saveSelected()
         #expect(viewModel.saveMessage == RollRevealViewModel.saveFailedMessage)
+        #expect(RollRevealViewModel.saveFailedMessage.contains(AppBrand.name))
     }
 
     @Test func startScrapbookOpensTheEditorWithoutTheRevealBehind() {

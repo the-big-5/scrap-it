@@ -50,6 +50,7 @@
         },
       ],
       "build-settings": {
+        "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
         "CODE_SIGN_ENTITLEMENTS": "ScrapIt/ScrapIt.entitlements",
         "CODE_SIGN_STYLE": "Automatic",
         "CURRENT_PROJECT_VERSION": "1",
@@ -59,8 +60,10 @@
         "ENABLE_USER_SELECTED_FILES": "readonly",
         "GENERATE_INFOPLIST_FILE": "YES",
         "INFOPLIST_FILE": "ScrapIt-Info.plist",
+        "INFOPLIST_KEY_CFBundleDisplayName": "Rèlic",
         "INFOPLIST_KEY_NSCameraUsageDescription": "Need camera for photos",
         "INFOPLIST_KEY_NSMotionUsageDescription": "Orientation sensor used to orient camera controls in landscape.",
+        "INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription": "Save photos from your roll to Photos",
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]": "YES",
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]": "YES",
         "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]": "YES",

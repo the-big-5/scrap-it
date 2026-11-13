@@ -4,8 +4,6 @@
 <dict>
 	<key>CKSharingSupported</key>
 	<true/>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Save photos from your roll to Photos</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
