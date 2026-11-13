@@ -1602,6 +1602,20 @@ struct ScrapbookCoverTests {
         #expect(697 * pad13MatScale <= landscapeSize.height + 0.001)
         #expect(ScrapbookEditorLayout.bookScale(for: ScrapbookEditorLayout.phoneDesignSize, isPad: false) == 1)
         #expect(ScrapbookEditorLayout.coverScale(for: ScrapbookEditorLayout.phoneDesignSize, isPad: false) == 1)
+        #expect(ScrapbookEditorLayout.editCoverScale(for: ScrapbookEditorLayout.phoneDesignSize, coverSide: .front, isPad: false) == 1)
+        #expect(ScrapbookEditorLayout.editCoverScale(for: ScrapbookEditorLayout.phoneDesignSize, coverSide: .spine, isPad: false) == 1)
+
+        // Cover & Spine edit clearance keeps the fixed bottom tray (including open sub-tray) inside the viewport
+        let editContainers = [compactPadLandscape, CGSize(width: 768, height: 1024), landscapeSize, portraitSize]
+        let openSubTrayBottom = TrayStyle.trayHeight * 2 - TrayStyle.overlap + 16
+        #expect(TrayStyle.reservedHeight >= openSubTrayBottom)
+        for container in editContainers {
+            let frontScale = ScrapbookEditorLayout.editCoverScale(for: container, coverSide: .front, isPad: true)
+            let spineScale = ScrapbookEditorLayout.editCoverScale(for: container, coverSide: .spine, isPad: true)
+            #expect(165 + 468 * frontScale + TrayStyle.reservedHeight <= container.height + 0.001)
+            #expect(50 + 462 * spineScale + TrayStyle.reservedHeight <= container.height + 0.001)
+            #expect(340 * frontScale <= container.width * 0.78 + 0.001)
+        }
 
         // PencilKit-style iPad floating pill tray metrics & dock/minimize resolution
         #expect(ScrapbookEditorLayout.iPadTrayPillWidth(for: landscapeSize) == 500)

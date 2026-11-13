@@ -288,4 +288,30 @@ import UIKit
         #expect(abs((dims.innerWidth / dims.innerHeight) - (4.0 / 3.0)) < 0.0001)
         #expect(dims.outerWidth == 444.406)
     }
+
+    // MARK: - iPad & iPhone canvas scaling (change 123)
+
+    @Test func cameraCanvasScaleFitsIPadAndFillsIPhone() {
+        let canvas = CGSize(width: 874, height: 402)
+
+        // iPhone retains exact max fill scale
+        #expect(RollCameraOrientation.cameraCanvasScale(viewportSize: CGSize(width: 402, height: 874), idiom: .phone) == 1.0)
+        let iphone14Scale = RollCameraOrientation.cameraCanvasScale(viewportSize: CGSize(width: 390, height: 844), idiom: .phone)
+        #expect(abs(iphone14Scale - (390.0 / 402.0)) < 0.0001)
+
+        // iPad fits the entire 874 x 402 camera canvas proportionally inside both landscape and portrait 4:3 viewports
+        let ipadViewports = [
+            CGSize(width: 1024, height: 768),
+            CGSize(width: 768, height: 1024),
+            CGSize(width: 1376, height: 1032),
+            CGSize(width: 1032, height: 1376),
+        ]
+        for viewport in ipadViewports {
+            let scale = RollCameraOrientation.cameraCanvasScale(viewportSize: viewport, canvasSize: canvas, idiom: .pad)
+            let longSide = max(viewport.width, viewport.height)
+            let shortSide = min(viewport.width, viewport.height)
+            #expect(canvas.width * scale <= longSide + 0.001)
+            #expect(canvas.height * scale <= shortSide + 0.001)
+        }
+    }
 }

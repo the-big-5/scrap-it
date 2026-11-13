@@ -49,12 +49,16 @@ struct ProfileView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 32)
+                .blur(radius: viewModel.isReaderBackdropBlurred ? 5.5 : 0)
             }
 
             moreMenu
                 .padding(.top, 4)
                 .padding(.trailing, 16)
+                .blur(radius: viewModel.isReaderBackdropBlurred ? 5.5 : 0)
         }
+        .allowsHitTesting(!viewModel.isReaderBackdropBlurred)
+        .animation(.easeInOut(duration: 0.55), value: viewModel.isReaderBackdropBlurred)
         .onAppear { viewModel.reload() }
         .confirmationDialog(
             "Delete this scrapbook?",
@@ -118,7 +122,9 @@ struct ProfileView: View {
                 ForEach(Array(viewModel.shelfRows.enumerated()), id: \.offset) { _, row in
                     BookshelfRowView(
                         items: row,
-                        onOpen: viewModel.open,
+                        frameStore: viewModel.shelfFrameStore,
+                        hiddenScrapbookID: viewModel.openedScrapbook?.id,
+                        onOpen: viewModel.openFromShelf,
                         onDelete: viewModel.requestDelete
                     )
                 }

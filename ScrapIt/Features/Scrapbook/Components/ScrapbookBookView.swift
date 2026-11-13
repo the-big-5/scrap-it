@@ -7,6 +7,7 @@ struct ScrapbookBookView: View {
     let viewModel: ScrapbookViewModel
     /// Shared with the edit view so the spread zooms from the book into the editor.
     let namespace: Namespace.ID
+    var onCloseReadOnlyBook: (() -> Void)?
     /// Page turn progress: 0 = still, -1 = right page turned over to the left (next spread), 1 = left page turned
     /// over to the right (previous spread).
     @State private var turn: CGFloat = 0
@@ -21,10 +22,12 @@ struct ScrapbookBookView: View {
             desk
             VStack(spacing: 0) {
                 HStack {
-                    // Reading a finished book: back to the closed book (change 026).
+                    // Reading a finished book: back to the closed book (change 026 / 128).
                     Button {
                         if viewModel.isBookEditable {
                             viewModel.requestBack()
+                        } else if let onCloseReadOnlyBook {
+                            onCloseReadOnlyBook()
                         } else {
                             viewModel.closeReadOnlyBook()
                         }
@@ -79,153 +82,81 @@ struct ScrapbookBookView: View {
             let matX = isPad ? center.x : (-263 + 927 / 2) * matScale
             let bookCenterY = isPad ? center.y - 26 : center.y + 3 * scale
             ZStack {
-                Image("DeskWood")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .clipped()
-                    .accessibilityHidden(true)
+                ScrapbookBookDeskBackdrop(center: center, matX: matX, matScale: matScale, size: geometry.size)
 
-                BookCuttingMat()
-                    .frame(width: 927 * matScale, height: 697 * matScale)
-                    .position(x: matX, y: center.y)
-                    .accessibilityHidden(true)
-
-                book(scale: scale)
-                    .position(x: center.x, y: bookCenterY)
+                ScrapbookInteractiveSpreadBook(
+                    viewModel: viewModel,
+                    scale: scale,
+                    turn: $turn,
+                    namespace: namespace,
+                    matchID: Self.spreadMatchID,
+                    showsAddPagePrompt: true,
+                    onTapSpread: viewModel.openSpread
+                )
+                .position(x: center.x, y: bookCenterY)
 
                 if viewModel.showsPageHint && viewModel.isBookEditable {
                     PageHintTooltip(onClose: viewModel.dismissPageHint)
                         .frame(width: isPad ? min(360, geometry.size.width * 0.6) : 306 * scale)
-                        .position(x: center.x, y: bookCenterY + (bookHeight(scale: scale) / 2) + (isPad ? 42 : 84 * scale))
+                        .position(x: center.x, y: bookCenterY + (ScrapbookInteractiveSpreadBook.bookHeight(scale: scale) / 2) + (isPad ? 42 : 84 * scale))
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
         }
         .ignoresSafeArea()
     }
+}
 
-    // MARK: - Book
+/// Shared wood desk + green cutting mat behind `ScrapbookBookView` and its 3D cover-hinge transition (change 128).
+struct ScrapbookBookDeskBackdrop: View {
+    let center: CGPoint
+    let matX: CGFloat
+    let matScale: CGFloat
+    let size: CGSize
 
-    private func pageWidth(scale: CGFloat) -> CGFloat { 357.6 * scale / 2 - 7.4 * scale }
-    private func bookHeight(scale: CGFloat) -> CGFloat { pageWidth(scale: scale) * 4 / 3 + 9.5 * scale }
+    var body: some View {
+        ZStack {
+            Image("DeskWood")
+                .resizable()
+                .scaledToFill()
+                .frame(width: size.width, height: size.height)
+                .clipped()
+                .accessibilityHidden(true)
 
-    private func spreadPages(at index: Int) -> [ScrapbookPage] {
-        let spreads = viewModel.spreads
-        return spreads.indices.contains(index) ? spreads[index] : []
-    }
-
-    private func book(scale: CGFloat) -> some View {
-        let pageWidth = pageWidth(scale: scale)
-        let pageSize = CGSize(width: pageWidth, height: pageWidth * 4 / 3)
-        let current = spreadPages(at: viewModel.spreadIndex)
-        let next = spreadPages(at: viewModel.spreadIndex + 1)
-        let previous = spreadPages(at: viewModel.spreadIndex - 1)
-        // Under the turning leaf: the page that's revealed on the side it leaves.
-        let baseLeft = turn > 0 ? previous.first : current.first
-        let baseRight = turn < 0 ? next.last : current.last
-        return ZStack {
-            HStack(spacing: 0) {
-                pageFace(baseLeft)
-                pageFace(baseRight)
-            }
-            .matchedGeometryEffect(id: Self.spreadMatchID, in: namespace)
-            .frame(width: pageSize.width * 2, height: pageSize.height)
-            .overlay(alignment: .trailing) {
-                if turn == 0 && viewModel.isAtAddPageSpread {
-                    addPagePrompt
-                        .frame(width: pageSize.width, height: pageSize.height)
-                }
-            }
-
-            if turn < 0 {
-                // Turning forward: the right page swings over the spine to the left; its back is the next left page.
-                leaf(front: current.last, back: next.first, size: pageSize,
-                     angle: Double(turn) * 180, anchor: .leading)
-                    .offset(x: pageWidth / 2)
-            } else if turn > 0 {
-                // Turning back: the left page swings over to the right; its back is the previous right page.
-                leaf(front: current.first, back: previous.last, size: pageSize,
-                     angle: Double(turn) * 180, anchor: .trailing)
-                    .offset(x: -pageWidth / 2)
-            }
-        }
-        .padding(.horizontal, 7.4 * scale)
-        .padding(.vertical, 4.75 * scale)
-        // Cover: the scrapbook's cover color (Edit Cover, change 026) with the cover grain and inner shadow.
-        .background(
-            ZStack {
-                Color(coverHex: viewModel.coverColorHex)
-                Image("BookCoverTexture")
-                    .resizable(resizingMode: .tile)
-                    .blendMode(.overlay)
-                    .opacity(0.55)
-                RoundedRectangle(cornerRadius: 4.7 * scale)
-                    .stroke(Color.black.opacity(0.3), lineWidth: 7 * scale)
-                    .blur(radius: 7 * scale)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 4.7 * scale))
-            .compositingGroup()
-            .shadow(color: Color(red: 41 / 255, green: 26 / 255, blue: 10 / 255).opacity(0.35), radius: 2, y: 1)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            // A finished book opens its pages read only (change 125).
-            guard turn == 0 else { return }
-            viewModel.openSpread()
-        }
-        .gesture(turnGesture(pageWidth: pageWidth))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Pages \(viewModel.spreadIndex * 2 + 1) and \(viewModel.spreadIndex * 2 + 2)")
-        .accessibilityHint("Tap to decorate. Swipe for other pages.")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { viewModel.openSpread() }
-        .accessibilityAction(named: "Add page") { viewModel.addPages() }
-        .accessibilityAdjustableAction { direction in
-            viewModel.swipeSpread(by: direction == .increment ? 1 : -1)
+            BookCuttingMat()
+                .frame(width: 927 * matScale, height: 697 * matScale)
+                .position(x: matX, y: center.y)
+                .accessibilityHidden(true)
         }
     }
+}
 
-    /// Past the last spread (change 121, Figma 1662:27296): the pages are only added when asked.
-    private var addPagePrompt: some View {
-        VStack(spacing: 4) {
-            Text("Need more space?")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.primary)
-            Button(action: viewModel.addPages) {
-                Label("Add page", systemImage: "plus")
-                    .font(.system(size: 15))
-                    .foregroundStyle(DSColor.Kraft.light.color)
-                    .padding(.horizontal, 14)
-                    .frame(height: 33)
-                    .background(DSColor.Brand.primary.color, in: Capsule())
-                    .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-        }
-    }
+/// Shared read-only page renderer (both pages of a spread rendered in one layer order and clipped cleanly,
+/// matching `ScrapbookBookView` change 104).
+struct ScrapbookBookPageFace: View {
+    let viewModel: ScrapbookViewModel
+    let page: ScrapbookPage?
+    var allowsPlayback: Bool = true
 
-    /// One page of the book, read only (touches go to the book). A missing page (past the last spread) is blank paper.
-    /// The items of both pages of its spread are drawn in one layer order and cut at this page's edges, so an item
-    /// across the gutter is whole on the open book and its part on a turning page turns with it (change 104).
-    @ViewBuilder
-    private func pageFace(_ page: ScrapbookPage?) -> some View {
+    var body: some View {
         Group {
             if let page {
                 let spread = viewModel.layerPages(of: page)
                 let index = spread.firstIndex { $0.id == page.id } ?? 0
+                let photos = viewModel.photosByID
                 GeometryReader { geometry in
                     ZStack(alignment: .topLeading) {
                         PageBackgroundView(background: page.pageBackground)
                         ZStack(alignment: .topLeading) {
                             ForEach(viewModel.layerOrder(of: spread)) { entry in
+                                let photo = entry.item.photoID.flatMap { photos[$0] }
                                 ScrapbookItemView(
                                     item: entry.item,
-                                    photo: entry.item.photoID.flatMap { viewModel.photosByID[$0] },
+                                    photo: photo,
                                     photoAspect: viewModel.photoAspect(for: entry.item),
                                     pageSize: geometry.size,
                                     isSelected: false,
-                                    shouldPlay: { _ in false },
+                                    shouldPlay: { allowsPlayback && viewModel.shouldPlay(entry.item, isInteracting: $0) },
                                     actions: nil
                                 )
                                 .frame(width: geometry.size.width, height: geometry.size.height)
@@ -245,19 +176,127 @@ struct ScrapbookBookView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
     }
+}
 
-    /// The page being turned: it rotates around the spine; past halfway its back (the page behind) shows. It darkens
-    /// as it stands up, like a real leaf catching less light.
+/// Interactive open two-page spread with 3D leaf turning, cover backing, optional Add Page prompt, and tap-to-zoom.
+/// Shared by `ScrapbookBookView` and `BookshelfReaderOverlay` (change 128).
+struct ScrapbookInteractiveSpreadBook: View {
+    let viewModel: ScrapbookViewModel
+    let scale: CGFloat
+    @Binding var turn: CGFloat
+    var namespace: Namespace.ID?
+    var matchID: String?
+    var showsAddPagePrompt: Bool = true
+    var allowsPlayback: Bool = true
+    let onTapSpread: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static func pageWidth(scale: CGFloat) -> CGFloat { 357.6 * scale / 2 - 7.4 * scale }
+    static func pageHeight(scale: CGFloat) -> CGFloat { pageWidth(scale: scale) * 4 / 3 }
+    static func spreadWidth(scale: CGFloat) -> CGFloat { pageWidth(scale: scale) * 2 + 14.8 * scale }
+    static func bookHeight(scale: CGFloat) -> CGFloat { pageHeight(scale: scale) + 9.5 * scale }
+
+    private func spreadPages(at index: Int) -> [ScrapbookPage] {
+        let spreads = viewModel.spreads
+        return spreads.indices.contains(index) ? spreads[index] : []
+    }
+
+    var body: some View {
+        let pageWidth = Self.pageWidth(scale: scale)
+        let pageSize = CGSize(width: pageWidth, height: pageWidth * 4 / 3)
+        let current = spreadPages(at: viewModel.spreadIndex)
+        let next = spreadPages(at: viewModel.spreadIndex + 1)
+        let previous = spreadPages(at: viewModel.spreadIndex - 1)
+        let baseLeft = turn > 0 ? previous.first : current.first
+        let baseRight = turn < 0 ? next.last : current.last
+
+        ZStack {
+            spreadPair(baseLeft: baseLeft, baseRight: baseRight, pageSize: pageSize)
+                .overlay(alignment: .trailing) {
+                    if showsAddPagePrompt && turn == 0 && viewModel.isAtAddPageSpread {
+                        addPagePrompt
+                            .frame(width: pageSize.width, height: pageSize.height)
+                    }
+                }
+
+            if turn < 0 {
+                leaf(front: current.last, back: next.first, size: pageSize,
+                     angle: Double(turn) * 180, anchor: .leading)
+                    .offset(x: pageWidth / 2)
+            } else if turn > 0 {
+                leaf(front: current.first, back: previous.last, size: pageSize,
+                     angle: Double(turn) * 180, anchor: .trailing)
+                    .offset(x: -pageWidth / 2)
+            }
+        }
+        .padding(.horizontal, 7.4 * scale)
+        .padding(.vertical, 4.75 * scale)
+        .background(
+            BookCoverPlate(colorHex: viewModel.coverColorHex, cornerRadius: 4.7 * scale)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard turn == 0 else { return }
+            onTapSpread()
+        }
+        .gesture(turnGesture(pageWidth: pageWidth))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Pages \(viewModel.spreadIndex * 2 + 1) and \(viewModel.spreadIndex * 2 + 2)")
+        .accessibilityHint("Tap to read. Swipe for other pages.")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onTapSpread() }
+        .accessibilityAction(named: "Add page") {
+            if showsAddPagePrompt { viewModel.addPages() }
+        }
+        .accessibilityAdjustableAction { direction in
+            viewModel.swipeSpread(by: direction == .increment ? 1 : -1)
+        }
+    }
+
+    @ViewBuilder
+    private func spreadPair(baseLeft: ScrapbookPage?, baseRight: ScrapbookPage?, pageSize: CGSize) -> some View {
+        let canPlaySpread = allowsPlayback && turn == 0
+        let content = HStack(spacing: 0) {
+            ScrapbookBookPageFace(viewModel: viewModel, page: baseLeft, allowsPlayback: canPlaySpread)
+            ScrapbookBookPageFace(viewModel: viewModel, page: baseRight, allowsPlayback: canPlaySpread)
+        }
+        .frame(width: pageSize.width * 2, height: pageSize.height)
+
+        if let namespace, let matchID {
+            content.matchedGeometryEffect(id: matchID, in: namespace)
+        } else {
+            content
+        }
+    }
+
+    private var addPagePrompt: some View {
+        VStack(spacing: 4) {
+            Text("Need more space?")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.primary)
+            Button(action: viewModel.addPages) {
+                Label("Add page", systemImage: "plus")
+                    .font(.system(size: 15))
+                    .foregroundStyle(DSColor.Kraft.light.color)
+                    .padding(.horizontal, 14)
+                    .frame(height: 33)
+                    .background(DSColor.Brand.primary.color, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func leaf(front: ScrapbookPage?, back: ScrapbookPage?, size: CGSize,
                       angle: Double, anchor: UnitPoint) -> some View {
         let showsBack = abs(angle) > 90
         let shade = sin(abs(angle) * .pi / 180) * 0.35
         return ZStack {
             if showsBack {
-                pageFace(back)
+                ScrapbookBookPageFace(viewModel: viewModel, page: back, allowsPlayback: false)
                     .scaleEffect(x: -1, y: 1)
             } else {
-                pageFace(front)
+                ScrapbookBookPageFace(viewModel: viewModel, page: front, allowsPlayback: false)
             }
             Color.black.opacity(shade).allowsHitTesting(false)
         }
@@ -266,21 +305,18 @@ struct ScrapbookBookView: View {
         .shadow(color: .black.opacity(shade * 0.8), radius: 8, x: anchor == .leading ? -4 : 4)
     }
 
-    /// The page follows the finger; let go past a third (or with a flick) and it falls over, otherwise it settles back.
     private func turnGesture(pageWidth: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 12)
             .onChanged { value in
                 viewModel.dismissPageHint()
-                var progress = value.translation.width / (pageWidth * 2)
-                // No previous spread: the left page doesn't lift.
-                if viewModel.spreadIndex == 0 { progress = min(progress, 0) }
-                // On the Add page spread the right page doesn't lift: "+ Add page" is the only way on (change 121).
-                if viewModel.isAtAddPageSpread { progress = max(progress, 0) }
-                // Reading a finished book, its last spread has nothing after it (change 125).
-                if !viewModel.isBookEditable, viewModel.spreadIndex >= viewModel.spreadCount - 1 {
-                    progress = max(progress, 0)
-                }
-                turn = max(-1, min(1, progress))
+                turn = ScrapbookSpreadTurnMath.clampedProgress(
+                    rawProgress: value.translation.width / (pageWidth * 2),
+                    spreadIndex: viewModel.spreadIndex,
+                    spreadCount: viewModel.spreadCount,
+                    isAtAddPageSpread: viewModel.isAtAddPageSpread,
+                    isBookEditable: viewModel.isBookEditable,
+                    showsAddPagePrompt: showsAddPagePrompt
+                )
             }
             .onEnded { value in
                 let flick = value.predictedEndTranslation.width / (pageWidth * 2)
@@ -306,7 +342,7 @@ struct ScrapbookBookView: View {
 
 /// The green cutting mat under the book, drawn from the Figma layers (grid, rulers, numbers) in its
 /// 927 × 697 design space.
-private struct BookCuttingMat: View {
+struct BookCuttingMat: View {
     private static let size = CGSize(width: 927.126, height: 697)
     private static let line = Color(red: 254 / 255, green: 254 / 255, blue: 253 / 255)
 
@@ -402,5 +438,28 @@ private struct Triangle: Shape {
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         path.closeSubpath()
         return path
+    }
+}
+
+/// Bounds interactive page-turn drag progress so both editable and read-only readers turn
+/// freely between spreads while preventing drags past either end of the book.
+enum ScrapbookSpreadTurnMath {
+    static func clampedProgress(
+        rawProgress: CGFloat,
+        spreadIndex: Int,
+        spreadCount: Int,
+        isAtAddPageSpread: Bool,
+        isBookEditable: Bool,
+        showsAddPagePrompt: Bool
+    ) -> CGFloat {
+        var progress = rawProgress
+        if spreadIndex <= 0 {
+            progress = min(progress, 0)
+        }
+        let allowsTrailingAddPage = isBookEditable && showsAddPagePrompt
+        if isAtAddPageSpread || (!allowsTrailingAddPage && spreadIndex >= max(0, spreadCount - 1)) {
+            progress = max(progress, 0)
+        }
+        return max(-1, min(1, progress))
     }
 }

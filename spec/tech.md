@@ -61,7 +61,7 @@ Feature-first MVVM. Views are dumb; all logic lives in ViewModels.
 
 ```text
 ScrapIt/
-├── App/            ScrapIt.swift, AppDelegate.swift, RootView.swift, MainShellView.swift, FloatingTabBarView.swift (+ TabBarDragMath),
+├── App/            ScrapIt.swift, AppDelegate.swift, RootView.swift, MainShellView.swift (native TabView, change 088),
 │                   Navigation/ (AppRouter.swift, NavigationRoutes.swift), CloudKitShareHandling (share-accepting scene delegate, IncomingShareInbox)
 ├── Core/
 │   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus,
@@ -78,17 +78,17 @@ ScrapIt/
 │   │                   DigicamGrade, FilterSamplePhotos (+ FilterSampleRenderer), ProfileAvatarProcessor
 │   └── DesignSystem/   Tokens (Color, Typography, Elevation), Components (Button, Icon, Input), Fonts/, ScrapTheme, OffsetPillButtonStyle, CircleIconButton, LivePhotoPlayerView,
 │                       DeskCollection/ (DeskCollectionView, DeskEmptyStateView, FolderPreviewCard, RollStripCard),
-│                       Scrapbook/ (ScrapbookPageView, ScrapbookItemView, PageBackgroundView, LoopingVideoView, ScrapbookDrawingImage, ViewFrameReader, WashiTapeView, TextItemAppearance, BookSpineArt)
+│                       Scrapbook/ (ScrapbookPageView, ScrapbookItemView, PageBackgroundView, LoopingVideoView, ScrapbookDrawingImage, ViewFrameReader, WashiTapeView, TextItemAppearance, BookSpineArt, BookCoverHingeTransition)
 └── Features/
     ├── Auth/           WelcomeSignInView, AuthViewModel
     ├── Home/           WorkbenchView, WorkbenchViewModel, WorkbenchLayout (desk asset frames, portrait & iPad landscape scales), CameraReturnTransitionOverlay,
     │                   Components/ (InteractiveToolboxView, ToolboxEmptyIllustration, InteractiveRollsView, RollEmptyIllustration)
-    ├── Profile/        ProfileView, EditProfileView, ProfileViewModel, Components/ (ProfileAvatarView)
+    ├── Profile/        ProfileView, EditProfileView, ProfileViewModel, Components/ (ProfileAvatarView, BookshelfRowView, BookshelfReaderOverlay, ProfileEmptyStateView, ProfileHeaderView, EditProfileFormCard, change 088, 128)
     ├── Roll/           CreateRollSetupView, CreateRollFilterView, CreateRollLobbyView, JoinRollView, CaptureSessionView, CameraIntroTransitionOverlay, CameraIntroHTMLTemplate, RollFlowViewModel, Components/ (InviteFriendSheetView, RollInviteShare, RollAvatarView, RollRoomHeader, FilmStripPickerView, FilterCanisterCardView, KnurledZoomWheelView, CaptureEventView, FilteredCameraPreviewView, ShotsLeftDialView, CameraIrisDiaphragmView, CameraIntroComponents, CameraIntroWebView)
-    └── Scrapbook/      ScrapbookEditorView, ScrapbookViewModel, Components/ (ScrapbookBookView, ScrapbookCoverScreen, BookCoverViews, BookStarCard,
+    └── Scrapbook/      ScrapbookEditorView (+ ScrapbookEditorLayout, change 107), ScrapbookViewModel, Components/ (ScrapbookBookView, ScrapbookCoverScreen, BookCoverViews, BookStarCard,
                         BookBackConfirmation, WhosHereSheet, SpreadEditorButton,
                         ScissorsToolView, StickerDragController, StickerSheetOverlay, BackgroundPickerView,
-                        TrayStyle, ToolTray, TrayScroll, ScrollPanProbe, SubTrays, TrayDragController, PencilController, PencilTray, DrawingCanvasView,
+                        TrayStyle, ToolTray (+ iPad floating dockable pill), TrayScroll (+ trayPillWidth), ScrollPanProbe, SubTrays, TrayDragController, PencilController, PencilTray, DrawingCanvasView,
                         WashiPullOverlay, TextItemEditor, ScrapbookPhotoViewer, ScrapbookTrashCanView)
 ```
 

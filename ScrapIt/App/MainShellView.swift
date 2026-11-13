@@ -56,14 +56,30 @@ struct MainShellView: View {
 
                 Tab("Library", systemImage: "books.vertical.fill", value: AppTab.profile) {
                     ProfileView(viewModel: profileViewModel)
-                        .toolbarVisibility(router.shouldShowTabBar ? .visible : .hidden, for: .tabBar)
+                        .toolbarVisibility(
+                            router.shouldShowTabBar && !profileViewModel.isReaderBackdropBlurred ? .visible : .hidden,
+                            for: .tabBar
+                        )
                 }
             }
             .tint(DSColor.Kraft.darker.color)
             .toolbar(.hidden, for: .navigationBar)
             .animation(.spring(response: 0.35, dampingFraction: 0.82), value: router.isTabBarHidden)
+            .animation(.easeInOut(duration: 0.50), value: profileViewModel.isReaderBackdropBlurred)
             .navigationDestination(for: AppRoute.self) { route in
                 destinationView(for: route)
+            }
+        }
+        // Playful bookshelf reader overlay above blurred shelf (change 128).
+        .overlay {
+            if let openedScrapbook = profileViewModel.openedScrapbook {
+                BookshelfReaderOverlay(
+                    scrapbook: openedScrapbook,
+                    profileViewModel: profileViewModel,
+                    modelContext: modelContext,
+                    sessionStore: sessionStore
+                )
+                .id(openedScrapbook.id)
             }
         }
         // Joining a roll by code or invite link (change 024).
@@ -104,6 +120,11 @@ struct MainShellView: View {
         .onChange(of: router.path) { _, newPath in
             if !newPath.contains(where: \.isRollRoute) {
                 rollViewModel = nil
+            }
+        }
+        .onChange(of: router.selectedTab) { _, tab in
+            if tab != .profile, profileViewModel.openedScrapbook != nil {
+                profileViewModel.finishClosingShelfReader()
             }
         }
         .task {

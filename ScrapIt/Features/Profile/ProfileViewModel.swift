@@ -28,6 +28,14 @@ final class ProfileViewModel {
     private(set) var scrapbooks: [Scrapbook] = []
     /// Waiting for the delete confirmation.
     var scrapbookPendingDeletion: Scrapbook?
+    /// Scrapbook currently opened in the blurred-bookshelf reader overlay (change 128).
+    private(set) var openedScrapbook: Scrapbook?
+    /// Captured global screen frame of the tapped spine so pull-out starts from its shelf slot (change 128).
+    private(set) var openedBookSourceFrame: CGRect?
+    /// Non-invalidating global-frame store updated during shelf layout and scroll (change 128).
+    @ObservationIgnored let shelfFrameStore = BookshelfFrameStore()
+    /// Drives background blur on `ProfileView` while the bookshelf reader is open or animating out.
+    var isReaderBackdropBlurred = false
 
     // MARK: - Edit Profile draft state (change 044)
     var draftName: String = ""
@@ -188,6 +196,20 @@ final class ProfileViewModel {
         navigator?.push(.scrapbook(scrapbook.id))
     }
 
+    /// Opens the tapped book in the playful blurred-bookshelf reader overlay (change 128).
+    func openFromShelf(_ scrapbook: Scrapbook) {
+        openedBookSourceFrame = shelfFrameStore.frame(for: scrapbook.id)
+        openedScrapbook = scrapbook
+        isReaderBackdropBlurred = true
+    }
+
+    /// Finishes tearing down the reader overlay once its closing animation finishes (change 128).
+    func finishClosingShelfReader() {
+        openedScrapbook = nil
+        openedBookSourceFrame = nil
+        isReaderBackdropBlurred = false
+    }
+
     func openCreateRoll() {
         navigator?.push(.createRollSetup)
     }
@@ -212,7 +234,11 @@ final class ProfileViewModel {
     /// Cloud data is kept (friends still need it).
     func confirmDelete() {
         guard let scrapbook = scrapbookPendingDeletion else { return }
+        let deletedID = scrapbook.id
         scrapbookPendingDeletion = nil
+        if openedScrapbook?.id == deletedID {
+            finishClosingShelfReader()
+        }
 
         ScrapbookLocalDeletionService.deleteLocalCopy(
             of: scrapbook,

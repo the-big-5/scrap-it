@@ -11,6 +11,7 @@
 - Don't edit main spec/ files unless running /merge-change.
 - Tiny tweaks (text, color, spacing; one file, no behavior change) may be done directly on request.
 - File naming convention: Always use PascalCase and no numbers for code files (e.g., `PrimaryButton.swift`, `RollViewModel.swift`; no numbers like `View2.swift` or `ButtonV1.swift`).
+- Dead code cleanup: When executing an approved change or refactor, remove obsolete, unused, or superseded functions, properties, and logic that are no longer relevant, provided removing them is verified non-breaking (all references removed, tests compile and pass). Do not leave commented-out code or unused dead methods behind. (If deleting an entire file, ask for confirmation first or specify it in the change file tasks to protect Xcode project references).
 - After any task, report what you did and what you did not do.
 
 # Rule for write a code
