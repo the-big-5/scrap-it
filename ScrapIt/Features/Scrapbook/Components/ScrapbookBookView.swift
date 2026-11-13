@@ -22,19 +22,29 @@ struct ScrapbookBookView: View {
             VStack(spacing: 0) {
                 HStack {
                     // Reading a finished book: back to the closed book (change 026).
-                    BackCircleButton {
+                    Button {
                         if viewModel.isBookEditable {
                             viewModel.requestBack()
                         } else {
                             viewModel.closeReadOnlyBook()
                         }
+                    } label: {
+                        Image(systemName: "chevron.backward.circle.fill")
+                            .font(.system(size: 32))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
                     }
-                        .accessibilityLabel("Back")
+                    .accessibilityLabel("Back")
                     Spacer()
                     // ✓ instead of the Done button (change 125, Figma 1518:30319): on to the cover screen.
                     if viewModel.isBookEditable {
-                        CircleIconButton(systemName: "checkmark", accessibilityLabel: "Done",
-                                         action: viewModel.requestFinish)
+                        Button(action: viewModel.requestFinish) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 32))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+                        }
+                        .accessibilityLabel("Done")
                     }
                 }
                 .padding(.horizontal, 22)
@@ -181,7 +191,7 @@ struct ScrapbookBookView: View {
         VStack(spacing: 4) {
             Text("Need more space?")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Color.primary)
             Button(action: viewModel.addPages) {
                 Label("Add page", systemImage: "plus")
                     .font(.system(size: 15))
@@ -364,14 +374,12 @@ private struct PageHintTooltip: View {
                         .foregroundStyle(DSColor.Brand.primary.color)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(.black)
-                            .frame(minWidth: 44, minHeight: 44)
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
                     }
                     .buttonStyle(.plain)
-                    .padding(.vertical, -10)
-                    .padding(.trailing, -10)
                     .accessibilityLabel("Close")
                 }
                 Text("You can swipe to another page and decorate it too.")

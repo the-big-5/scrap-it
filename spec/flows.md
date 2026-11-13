@@ -7,7 +7,7 @@
    - Offline: straight to Home with local data; the Apple check runs once the network is back, and anything but authorized → Welcome
    - No local profile → Welcome
 4. After sign-in (and on every launch), scrapbooks and photos from the user's ended rolls are restored in the background, e.g. on a new phone (change 012). No restore UI
-5. Sign out (in Edit Profile via "Log out" and confirmation): returns to onboarding slides before Welcome (change 074); local data is kept
+5. Sign out (in Profile Settings via "Log Out" and confirmation, change 088): returns to onboarding slides before Welcome (change 074); local data is kept
 Edge cases:
 - Cancel: stay on Welcome, no message
 - Sign-in fails (including no Apple Account on the device): stay on Welcome with an error message
@@ -50,11 +50,10 @@ Edge cases:
 - Host disconnects: host role passes to the next participant
 - Last-shot race: first write wins; the other photo is dropped and that user is told the roll finished
 
-## F4: Profile shelf [Draft]
-1. User opens profile → sees the scrapbook covers, newest first. For now a 2-column cover grid like the camera POC (change 013); the Figma book / shelf (1109:4648) comes later
-2. Taps a cover → opens the scrapbook editor
-3. Long-press a cover → Delete → confirmation → the scrapbook, its pages and the roll's photos are deleted on this phone; restore (012) does not bring it back here. Cloud data is kept, so a new phone restores it again [Open]
-Empty state: short text that scrapbooks appear after a roll ends [Draft]. Loading state: [Open]
+## F4: Profile bookshelf [Locked]
+Figma nodes 1300:36434 (shelf), 1300:36485 (empty state); change 088.
+1. User opens profile ("Library" tab) → sees wooden bookshelf (`1300:36434`) displaying rows of up to 12 vertical book spines per shelf plank, cycling 12 Figma spine colors with rotated Architects Daughter title. Tap a spine → opens the scrapbook editor; long-press a spine → `.contextMenu` "Delete" → confirmation "Delete this scrapbook?" / "Its photos on this phone are deleted too." (local deletion, change 012).
+2. Empty state (`1300:36485`): "Your bookshelf is waiting!", wooden shelf plank, and a "Create Roll" pill button routing directly to F3 Create Roll Setup (`AppRoute.createRollSetup`).
 
 ## F5: Scrapbook creation [Draft]
 1. When a roll ends, a new scrapbook is created; after the Roll Reveal (F3 step 10, change 021) "Start Scrapbook" opens the scrapbook as a book on the desk with one spread (two empty pages, change 025); tapping the book zooms into the spread editor; the user adds the roll's photos (Live Photos included) from the Photos tray (change 022)

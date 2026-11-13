@@ -30,10 +30,15 @@ struct WorkbenchView: View {
             // Figma CameraClick "Toolbar - Top", leading button: closes like tapping the blur.
             // Stays inside the safe area (below the status bar / Dynamic Island).
             if viewModel.isCameraActive {
-                BackCircleButton { closeCamera() }
-                    .accessibilityLabel("Close")
-                    .padding(.leading, 16)
-                    .transition(.opacity)
+                Button(action: closeCamera) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 32))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+                }
+                .accessibilityLabel("Close")
+                .padding(.leading, 16)
+                .transition(.opacity)
             }
         }
         .onDisappear {

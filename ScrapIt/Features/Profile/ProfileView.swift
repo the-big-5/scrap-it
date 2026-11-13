@@ -34,14 +34,14 @@ struct ProfileView: View {
 
                     Text(viewModel.displayName)
                         .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(Color.black)
+                        .foregroundStyle(.primary)
                         .multilineTextAlignment(.center)
                         .padding(.top, 12)
 
                     Text(viewModel.bioText)
                         .font(.system(size: 13))
                         .italic(!viewModel.hasBio)
-                        .foregroundStyle(viewModel.hasBio ? DSColor.Brand.primary.color : Color.black)
+                        .foregroundStyle(viewModel.hasBio ? Color.primary : Color.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.top, 6)
 
@@ -80,7 +80,10 @@ struct ProfileView: View {
             }
             .disabled(true)
         } label: {
-            CircleIconLabel(systemName: "ellipsis")
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 32))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
         }
         .accessibilityLabel("Profile options")
     }
@@ -91,7 +94,7 @@ struct ProfileView: View {
             VStack(spacing: 0) {
                 Text(ProfileViewModel.emptyBookshelfText)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Color.black)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
                 Button(action: viewModel.openCreateRoll) {

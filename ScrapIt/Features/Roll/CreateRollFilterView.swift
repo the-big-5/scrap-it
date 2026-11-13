@@ -14,23 +14,6 @@ struct CreateRollFilterView: View {
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
-                // Top navigation bar with Back button and Title
-                ZStack {
-                    Text(flowViewModel.isEditingRoll ? "Edit Roll" : "Create Roll")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(DSColor.Brand.primary.color)
-
-                    HStack {
-                        BackCircleButton {
-                            dismiss()
-                        }
-                        Spacer()
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
-
                 Text("Pick a filter")
                     .font(.system(size: 20))
                     .foregroundStyle(DSColor.Brand.primary.color)
@@ -68,7 +51,11 @@ struct CreateRollFilterView: View {
                 .padding(.bottom, 24)
             }
         }
-        .navigationBarBackButtonHidden(true)
+        .navigationTitle(flowViewModel.isEditingRoll ? "Edit Roll" : "Create Roll")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .tint(DSColor.Brand.primary.color)
         .task { await flowViewModel.loadFilterSamples() }
     }
 }

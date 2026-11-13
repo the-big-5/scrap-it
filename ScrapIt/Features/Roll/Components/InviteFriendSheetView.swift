@@ -44,9 +44,14 @@ struct InviteFriendSheetView: View {
 
     private var optionsPage: some View {
         VStack(spacing: 0) {
-            header(leading: CircleIconButton(systemName: "xmark", accessibilityLabel: "Close") {
+            header(leading: Button {
                 flowViewModel.isInviteSheetPresented = false
-            })
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 28))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+            }.accessibilityLabel("Close"))
 
             InviteFriendsIllustration()
                 .frame(maxWidth: 376)
@@ -76,13 +81,18 @@ struct InviteFriendSheetView: View {
 
     private var codePage: some View {
         VStack(spacing: 0) {
-            header(leading: CircleIconButton(systemName: "arrow.left", accessibilityLabel: "Back") {
+            header(leading: Button {
                 flowViewModel.showInviteOptions()
-            })
+            } label: {
+                Image(systemName: "chevron.backward.circle.fill")
+                    .font(.system(size: 28))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+            }.accessibilityLabel("Back"))
 
             Text("Share this code with your friends to join the roll.")
                 .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Color.primary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 34)
                 .padding(.top, 28)
@@ -97,7 +107,7 @@ struct InviteFriendSheetView: View {
             Text(flowViewModel.roomCode)
                 .font(.system(size: 36, weight: .regular))
                 .tracking(12)
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Color.primary)
                 .padding(.top, 24)
                 .contentShape(Rectangle())
                 .onLongPressGesture {
