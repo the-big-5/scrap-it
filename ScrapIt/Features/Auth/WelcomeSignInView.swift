@@ -7,49 +7,22 @@ struct WelcomeSignInView: View {
 
     var body: some View {
         ZStack {
-            ScrapTheme.creamBackground
+            DSColor.Kraft.lightActive.color
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer()
-                    .frame(height: 54)
 
-                // LOGO placeholder box per Figma node 676:3703
-                Text("LOGO")
-                    .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(ScrapTheme.charcoal)
-                    .frame(width: 210, height: 48)
-                    .background(Color(red: 0.906, green: 0.910, blue: 0.914))
+                collage
 
                 Spacer()
-
-                RetroCameraIllustration(scale: 1.05, showShadowPlate: true)
-                    .padding(.bottom, 28)
 
                 VStack(spacing: 16) {
-                    Text("Shoot together.\nKeep it forever.")
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(ScrapTheme.charcoal)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(2)
-
-                    Text("Sign in to start a shared roll with friends and\nkeep every scrapbook on your shelf.")
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(ScrapTheme.secondaryText)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(3)
-                        .padding(.horizontal, 28)
-                }
-
-                Spacer()
-
-                VStack(spacing: 18) {
                     if let message = authViewModel.welcomeMessage {
                         Text(message)
                             .font(.system(size: 13))
-                            .foregroundStyle(DSColor.Component.inputError)
+                            .foregroundStyle(DSColor.Component.inputError.color)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
                     }
 
                     SignInWithAppleButton(.signIn) { request in
@@ -64,40 +37,173 @@ struct WelcomeSignInView: View {
                         }
                     }
                     .signInWithAppleButtonStyle(.black)
-                    .frame(height: 54)
+                    .frame(height: 52)
                     .clipShape(Capsule())
                     .disabled(authViewModel.isOffline)
                     .opacity(authViewModel.isOffline ? 0.5 : 1)
-                    .padding(.horizontal, 24)
 
                     Text(termsAttributedString)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
                 }
-                .padding(.bottom, 28)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 16)
             }
         }
     }
 
+    private var collage: some View {
+        ZStack {
+            ForEach(Self.collageSprites) { sprite in
+                let baseImage = Image(sprite.imageName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: sprite.width, height: sprite.height)
+                    .rotationEffect(.degrees(sprite.rotationDegrees))
+
+                if sprite.hasShadow {
+                    baseImage
+                        .shadow(color: .black.opacity(0.25), radius: 5, x: 0, y: 4)
+                        .position(x: sprite.centerX, y: sprite.centerY)
+                } else {
+                    baseImage
+                        .position(x: sprite.centerX, y: sprite.centerY)
+                }
+            }
+        }
+        .frame(width: 315, height: 301)
+    }
+
     private var termsAttributedString: AttributedString {
         var result = AttributedString("By continuing, you agree to our ")
-        result.foregroundColor = ScrapTheme.secondaryText
+        result.foregroundColor = DSColor.Component.textSecondary.color
 
         var terms = AttributedString("Terms of Use")
-        terms.foregroundColor = ScrapTheme.charcoal
-        terms.font = .system(size: 12, weight: .semibold)
+        terms.foregroundColor = DSColor.Brand.primary.color
+        terms.font = .system(size: 13, weight: .semibold)
         result.append(terms)
 
         var andText = AttributedString(" and ")
-        andText.foregroundColor = ScrapTheme.secondaryText
+        andText.foregroundColor = DSColor.Component.textSecondary.color
         result.append(andText)
 
-        var privacy = AttributedString("Privacy\nPolicy.")
-        privacy.foregroundColor = ScrapTheme.charcoal
-        privacy.font = .system(size: 12, weight: .semibold)
+        var privacy = AttributedString("Privacy Policy.")
+        privacy.foregroundColor = DSColor.Brand.primary.color
+        privacy.font = .system(size: 13, weight: .semibold)
         result.append(privacy)
 
         return result
     }
+}
+
+private extension WelcomeSignInView {
+    struct CollageSprite: Identifiable {
+        let id: String
+        let imageName: String
+        let width: CGFloat
+        let height: CGFloat
+        let rotationDegrees: Double
+        let centerX: CGFloat
+        let centerY: CGFloat
+        let hasShadow: Bool
+
+        init(
+            imageName: String,
+            width: CGFloat,
+            height: CGFloat,
+            rotationDegrees: Double = 0,
+            centerX: CGFloat,
+            centerY: CGFloat,
+            hasShadow: Bool = false
+        ) {
+            self.id = imageName
+            self.imageName = imageName
+            self.width = width
+            self.height = height
+            self.rotationDegrees = rotationDegrees
+            self.centerX = centerX
+            self.centerY = centerY
+            self.hasShadow = hasShadow
+        }
+    }
+
+    // Coordinates match Figma node 1545:40827 (315x301 collage frame anchored at 43, 255).
+    static let collageSprites: [CollageSprite] = [
+        CollageSprite(
+            imageName: "ToolboxEmptyStarburst",
+            width: 79.40,
+            height: 126.83,
+            rotationDegrees: 19.3,
+            centerX: 240.32,
+            centerY: 72.99
+        ),
+        CollageSprite(
+            imageName: "SignInPhotoBack",
+            width: 54.42,
+            height: 64.37,
+            centerX: 138.34,
+            centerY: 223.46
+        ),
+        CollageSprite(
+            imageName: "SignInPhotoFront",
+            width: 48.47,
+            height: 58.17,
+            centerX: 135.76,
+            centerY: 225.86
+        ),
+        CollageSprite(
+            imageName: "RollEmptyStarTop",
+            width: 65,
+            height: 83,
+            centerX: 153.50,
+            centerY: 58.50
+        ),
+        CollageSprite(
+            imageName: "DeskDisposableCamera",
+            width: 199.28,
+            height: 149.35,
+            rotationDegrees: -5.7,
+            centerX: 138.74,
+            centerY: 120.59,
+            hasShadow: true
+        ),
+        CollageSprite(
+            imageName: "RollEmptyStarLeft",
+            width: 66,
+            height: 70,
+            centerX: 33.00,
+            centerY: 178.00
+        ),
+        CollageSprite(
+            imageName: "RollEmptyStarRight",
+            width: 59,
+            height: 125,
+            centerX: 285.50,
+            centerY: 226.50
+        ),
+        CollageSprite(
+            imageName: "ToolboxEmptyNotebook",
+            width: 104.46,
+            height: 154.31,
+            rotationDegrees: 24.9,
+            centerX: 227.22,
+            centerY: 185.15
+        ),
+        CollageSprite(
+            imageName: "DeskFilmRollYellow",
+            width: 101,
+            height: 75,
+            centerX: 89.50,
+            centerY: 176.50,
+            hasShadow: true
+        ),
+        CollageSprite(
+            imageName: "ToolboxEmptyRuler",
+            width: 40.20,
+            height: 152.50,
+            rotationDegrees: -73.8,
+            centerX: 105.87,
+            centerY: 260.43
+        ),
+    ]
 }
