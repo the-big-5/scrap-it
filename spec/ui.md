@@ -236,6 +236,6 @@ All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, tr
 - Scrapbook tool tray (change 022, copied from the camera POC): `Tray/` (tray-tool-*, tray-pencil-*, tray-washi-1…4, tray-pen-size-1…5), `Letters/` (letter-A…Z, letter-0…9, SVG), `Scrapbook/` sticker-fun-* (27) and sticker-sheet-fun
 - Book view (folder `BookView/`, change 025): ScrapbookZoomSpread / ZoomLeft / ZoomRight and ScrapbookPeople (SVG glyphs from the Figma buttons, background removed), BookConfirmWashi (SVG), BookConfirmStar (@3x PNG cut from the Figma image, transparent); reuses DeskWood; BookCoverTexture (neutral grain made from the Figma cover image, change 026), BookConfirmStarWink (@3x PNG from the Figma image)
 - Profile (folder `Profile/`, change 088): `WoodenShelfPlank` (wooden bookshelf plank PNG, Figma 1515:31687 / 1300:36435) and Figma book spine artwork.
-- AppIcon (`AppIcon.appiconset`, change 134): universal `1024×1024` opaque PNG (film strip and blue scissors flattened onto `#F9F5ED`) for iPhone and iPad.
+- AppIcon (`AppIcon.appiconset`, change 134 + dark variant): universal `1024×1024` opaque PNG (`AppIcon.png`, film strip and blue scissors flattened onto `#F9F5ED`) for Any Appearance and `1024×1024` Dark variant (`Icons-Relic-iOS-Dark-1024@1x 2.png`) for iPhone and iPad.
 
 Note: designs are still in progress, so treat Figma-derived details as [Draft] until marked Locked.
