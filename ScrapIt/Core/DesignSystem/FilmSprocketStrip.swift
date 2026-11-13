@@ -5,18 +5,22 @@ import SwiftUI
 struct FilmSprocketStrip: View {
     var body: some View {
         GeometryReader { geo in
-            let holeCount = max(10, Int(geo.size.width / 8))
+            let holeWidth: CGFloat = 4
+            let spacing: CGFloat = 3
+            let holeCount = max(10, Int(ceil((geo.size.width + spacing) / (holeWidth + spacing))))
             ZStack {
                 Rectangle()
                     .fill(Color.black)
-                HStack(spacing: 3) {
+                HStack(spacing: spacing) {
                     ForEach(0..<holeCount, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: 1)
                             .fill(ScrapTheme.creamBackground)
-                            .frame(width: 4, height: 3)
+                            .frame(width: holeWidth, height: 3)
                     }
                 }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
         }
         .frame(height: 6)
     }

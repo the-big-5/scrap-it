@@ -9,6 +9,12 @@ struct JoinRollView: View {
     var currentUser: UserProfile
     @Bindable var flowViewModel: RollFlowViewModel
 
+    private static let codeBoxWidth: CGFloat = 49
+    private static let codeBoxSpacing: CGFloat = 5
+    private static let codeBlockWidth: CGFloat =
+        CGFloat(RollFlowViewModel.joinCodeLength) * codeBoxWidth
+        + CGFloat(max(RollFlowViewModel.joinCodeLength - 1, 0)) * codeBoxSpacing
+
     var body: some View {
         ZStack(alignment: .top) {
             DSColor.Kraft.lightActive.color
@@ -21,17 +27,18 @@ struct JoinRollView: View {
 
                 Text("Turn on AirDrop to accept the invite")
                     .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Color.black)
                     .multilineTextAlignment(.center)
                     .padding(.top, 8)
 
                 Divider()
+                    .overlay(Color(red: 230 / 255, green: 230 / 255, blue: 230 / 255))
                     .padding(.top, 16)
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Enter code")
                         .font(.system(size: 20, weight: .regular))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Color.black)
 
                     codeField
 
@@ -42,7 +49,8 @@ struct JoinRollView: View {
                             .padding(.top, 2)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: Self.codeBlockWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 14)
 
                 Spacer()
@@ -68,6 +76,7 @@ struct JoinRollView: View {
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(DSColor.Kraft.lightActive.color, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.light, for: .navigationBar)
         .tint(DSColor.Brand.primary.color)
         .onAppear { flowViewModel.prepareJoin() }
     }
@@ -90,7 +99,7 @@ struct JoinRollView: View {
             .opacity(0.02)
             .accessibilityLabel("Roll code")
 
-            HStack(spacing: 5) {
+            HStack(spacing: Self.codeBoxSpacing) {
                 ForEach(0..<RollFlowViewModel.joinCodeLength, id: \.self) { index in
                     RollCodeBox {
                         Text(flowViewModel.joinCodeCharacter(at: index))
@@ -106,6 +115,6 @@ struct JoinRollView: View {
             .onTapGesture { isCodeFocused = true }
             .accessibilityHidden(true)
         }
-        .frame(height: 58)
+        .frame(width: Self.codeBlockWidth, height: 58)
     }
 }
