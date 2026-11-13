@@ -20,6 +20,7 @@ private final class FakeRoomService: RollRoomServicing {
     var joinError: RoomError?
     var fetchError: RoomError?
     var created: [RoomDraft] = []
+    var createDelay: Duration?
     var updated: [(user: RoomParticipant, code: String)] = []
     var removed: [(userID: String, code: String)] = []
     var left: [(code: String, owner: String, userID: String)] = []
@@ -27,6 +28,7 @@ private final class FakeRoomService: RollRoomServicing {
     let shareURL = URL(string: "https://www.icloud.com/share/0abcDEF")!
 
     func createRoom(_ draft: RoomDraft) async throws -> RoomSnapshot {
+        if let createDelay { try? await Task.sleep(for: createDelay) }
         created.append(draft)
         if let createError {
             lastErrorDescription = "CKError 15 (serverRejectedRequest)"
@@ -118,8 +120,16 @@ struct RollRoomTests {
         context.insert(guest)
     }
 
-    private func makeViewModel(online: Bool = true, store: SessionStore? = nil) -> RollFlowViewModel {
-        let cloud = CloudKitSessionService(modelContext: context)
+    private func makeViewModel(
+        online: Bool = true,
+        store: SessionStore? = nil,
+        onPublishSession: ((CaptureSession) async -> Void)? = nil
+    ) -> RollFlowViewModel {
+        let cloud = CloudKitSessionService(
+            modelContext: context,
+            enableNetworkMonitoring: false,
+            onPublishSession: onPublishSession
+        )
         cloud.isOnline = online
         return RollFlowViewModel(
             modelContext: context,
@@ -840,5 +850,85 @@ struct RollRoomTests {
         #expect(rooms.updated.last?.user.avatarData != nil)
         #expect(vm.lobbyParticipants.first?.name == "Nabiel Updated")
         #expect(vm.lobbyParticipants.first?.avatarData != nil)
+    }
+
+    // MARK: - Monotonic Start/Continue Roll sync (change 148)
+
+    @Test func startRollBeforeRoomCreationCompletesKeepsLiveAndPublishesStatus() async {
+        rooms.createDelay = .milliseconds(50)
+        var publishedStatuses: [SessionStatus] = []
+        let vm = makeViewModel { session in
+            publishedStatuses.append(session.status)
+        }
+
+        createLobby(vm, as: host)
+        #expect(vm.activeSession?.status == .waiting)
+        #expect(vm.activeSession?.ckRecordName == nil)
+
+        vm.startRollCapture()
+        #expect(vm.activeSession?.status == .live)
+        #expect(publishedStatuses.isEmpty)
+
+        await waitUntil { vm.inviteContent != nil && !publishedStatuses.isEmpty }
+
+        #expect(vm.activeSession?.status == .live)
+        #expect(vm.activeSession?.ckRecordName == RollRoomLocation.sessionRecordName)
+        #expect(publishedStatuses == [.live])
+    }
+
+    @Test func refreshLobbyAndContinueRollResyncStaleWaitingSnapshotForHost() async {
+        var publishedStatuses: [SessionStatus] = []
+        let vm = makeViewModel { session in
+            publishedStatuses.append(session.status)
+        }
+
+        createLobby(vm, as: host)
+        await waitUntil { vm.inviteContent != nil }
+        guard let session = vm.activeSession else {
+            Issue.record("Expected active session")
+            return
+        }
+
+        // Simulate local start while remote room snapshot still reports waiting.
+        session.status = .live
+        vm.lobbyDidAppear(currentUser: host)
+        await waitUntil { publishedStatuses.contains(.live) }
+
+        #expect(session.status == .live)
+        #expect(publishedStatuses.contains(.live))
+
+        let countBeforeContinue = publishedStatuses.count
+        vm.continueRoll()
+        await waitUntil { publishedStatuses.count > countBeforeContinue }
+        vm.lobbyDidDisappear()
+
+        #expect(publishedStatuses.count > countBeforeContinue)
+        #expect(navigator.path.last == .captureSession)
+    }
+
+    @Test func applySnapshotDoesNotDowngradeSessionStatus() {
+        let vm = makeViewModel()
+        createLobby(vm, as: host)
+        guard let session = vm.activeSession else {
+            Issue.record("Expected active session")
+            return
+        }
+
+        session.status = .ended
+        let staleWaiting = RoomSnapshot(
+            sessionID: session.id,
+            rollCode: session.rollCode,
+            name: session.name,
+            hostUserID: host.appleUserID,
+            rollSize: session.rollSize,
+            slotsUsed: 0,
+            filterRaw: session.filterRaw,
+            statusRaw: SessionStatus.waiting.rawValue,
+            participants: [RoomParticipant(userID: host.appleUserID, name: host.name)],
+            shareURL: rooms.shareURL,
+            zoneOwnerName: nil
+        )
+        vm.apply(staleWaiting, to: session)
+        #expect(session.status == .ended)
     }
 }

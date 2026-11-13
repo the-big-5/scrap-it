@@ -19,12 +19,15 @@ final class CloudKitSessionService {
     private let monitorQueue = DispatchQueue(label: "scrapit.network.monitor")
     private var pollTimer: Timer?
     private let modelContext: ModelContext
+    @ObservationIgnored private let onPublishSession: ((CaptureSession) async -> Void)?
 
     init(
         modelContext: ModelContext,
-        enableNetworkMonitoring: Bool = true
+        enableNetworkMonitoring: Bool = true,
+        onPublishSession: ((CaptureSession) async -> Void)? = nil
     ) {
         self.modelContext = modelContext
+        self.onPublishSession = onPublishSession
         if enableNetworkMonitoring {
             startNetworkMonitoring()
         }
@@ -62,6 +65,10 @@ final class CloudKitSessionService {
         }
         guard session.ckRecordName != nil else {
             print("⚠️ [CloudKitSessionService] publishSessionToCloudKit skipped: ckRecordName=nil")
+            return
+        }
+        if let onPublishSession {
+            await onPublishSession(session)
             return
         }
         let location = roomLocation(for: session)
