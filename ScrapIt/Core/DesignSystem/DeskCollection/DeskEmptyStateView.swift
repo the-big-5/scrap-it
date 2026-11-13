@@ -16,13 +16,13 @@ struct DeskEmptyStateView<Illustration: View>: View {
 
             Text(title)
                 .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Color.primary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 8)
 
             Text(message)
                 .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Color.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 311)
                 .padding(.top, 14)

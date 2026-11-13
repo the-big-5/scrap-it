@@ -592,6 +592,9 @@ final class RollFlowViewModel {
 
     func lobbyDidAppear(currentUser: UserProfile? = nil) {
         activeLobbyUser = currentUser
+        // Back in the lobby from Edit Roll with the system back button (change 122): nothing saved, edit mode off
+        // (change 081), so the next Create Roll isn't taken for an edit.
+        if isEditingRoll { resetDrafts() }
         if lobbyParticipants.isEmpty, let session = activeSession {
             lobbyParticipants = zip(session.participantIDs, session.participantNames).map {
                 RoomParticipant(userID: $0.0, name: $0.1)

@@ -570,6 +570,22 @@ struct RollRoomTests {
         #expect(navigator.path == lobbyPath)
     }
 
+    @Test func systemBackFromEditRollLeavesEditMode() async throws {
+        let vm = makeViewModel()
+        createLobby(vm, as: host)
+        await waitUntil { vm.inviteContent != nil }
+        let session = try #require(vm.activeSession)
+
+        vm.editRoom()
+        vm.draftRollName = "Nope"
+        // The system back button pops to the lobby without calling cancelEditRoll (change 122).
+        navigator.path.removeLast()
+        vm.lobbyDidAppear(currentUser: host)
+        #expect(!vm.isEditingRoll)
+        #expect(session.name == "Roll")
+        #expect(vm.draftRollName.isEmpty)
+    }
+
     @Test func aStartedRollCantBeEdited() async throws {
         let vm = makeViewModel()
         createLobby(vm, as: host)

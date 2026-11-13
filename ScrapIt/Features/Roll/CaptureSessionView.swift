@@ -376,8 +376,8 @@ struct CaptureSessionView: View {
                     )
                     .shadow(color: Color.black.opacity(0.25), radius: 4, x: 0, y: 2)
 
-                Image(systemName: "arrow.left")
-                    .font(.system(size: 22, weight: .regular))
+                Image(systemName: "chevron.backward")
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(Color(red: 228 / 255, green: 228 / 255, blue: 228 / 255))
                     .rotationEffect(.degrees(symbolRotation))
                     .animation(.easeInOut(duration: 0.3), value: symbolRotation)

@@ -19,7 +19,13 @@ struct WhosHereSheet: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(DSColor.Brand.primary.color)
                 HStack {
-                    CircleIconButton(systemName: "xmark", accessibilityLabel: "Close", action: onClose)
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 28))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+                    }
+                    .accessibilityLabel("Close")
                     Spacer()
                 }
             }

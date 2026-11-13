@@ -105,11 +105,16 @@ struct CreateRollLobbyView: View {
     // MARK: - Toolbar
 
     private var toolbar: some View {
-        // Top-aligned: the menu label below is 3 pt taller (it includes its shadow).
-        HStack(alignment: .top) {
-            CircleIconButton(systemName: "xmark", accessibilityLabel: "Close") {
+        HStack(alignment: .center) {
+            Button {
                 flowViewModel.closeLobby()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 32))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
             }
+            .accessibilityLabel("Close")
 
             Spacer()
 
@@ -130,10 +135,10 @@ struct CreateRollLobbyView: View {
                     }
                 }
             } label: {
-                // The 3 pt offset shadow sits outside the 44 pt circle; iOS clips a menu label to its frame
-                // while the menu closes, so the shadow vanished for a moment. The padding keeps it inside.
-                CircleIconLabel(systemName: "ellipsis")
-                    .padding(.bottom, 3)
+                Image(systemName: "ellipsis.circle.fill")
+                    .font(.system(size: 32))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
             }
             .menuOrder(.fixed)
             .accessibilityLabel("More")
