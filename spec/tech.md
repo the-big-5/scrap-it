@@ -45,7 +45,7 @@
 - Duplicates after sync: `UserProfile` keeps the oldest per Apple user ID; roll data is local and restore skips existing ids
 - One shared iCloud container / team for all developers: [Open] (each developer currently uses their own)
 - Before TestFlight / App Store: deploy the CloudKit schema to Production; after that, model changes can only add fields
-- `.xcodeproj` exception (change 008, approved by the user): iPhone supported orientations include Landscape Left / Right; nothing else changed
+- `.xcodeproj` exceptions (approved by the user): change 008 (iPhone supported orientations include Landscape Left / Right), change 011 (`INFOPLIST_FILE` = `ScrapIt-Info.plist`), and change 134 (`ASSETCATALOG_COMPILER_APPICON_NAME` = `AppIcon`, `INFOPLIST_KEY_CFBundleDisplayName` = `Rèlic`, and `INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription` moved from `ScrapIt-Info.plist`)
 - Live Photo movies are stored in `ScrapPhoto.livePhotoMovieData`, uploaded inside the encrypted shot and played in the Scrapbook grid (change 012)
 - Shared profile thumbnails (change 044): `ProfileAvatarProcessor` downsamples picked avatars to `512` px JPEG (`0.8` quality) for `UserProfile.avatarData`, `200` px (`0.7`) for CloudKit `RollParticipant["avatarData"]` in `Roll-<code>` zones (synced on create/join/re-enter), and `80` px (`0.55`) for `CollaboratorPresence.avatarData` in Supabase Realtime.
 - Shot upload (change 020, replaces 015's "upload only at the end"): each shot uploads right after capture, once its slot claim is confirmed (016) and its Live Photo movie is saved; lost-race shots are never uploaded. `RollShot` and `RollShotRef` are saved together as CloudKit long-lived operations (the system finishes them when the app is closed); the encrypted payload waits in `Application Support/PendingShots/` until the save is done. On launch the app picks up those operations and retries every unsynced shot (live and ended rolls), also when the network comes back. Same record names, so no duplicates. Shots of abandoned rolls can stay in CloudKit (accepted). Whether a force-quit stops long-lived operations: [Open] (the launch retry covers it). Local rolls (no iCloud / Simulator) upload nothing
@@ -53,7 +53,7 @@
 - Reveal tear lock (change 024): the envelope opens when the local photo count reaches the roll's `slotsUsed` or 10 s after the reveal opened; the End Roll sync still runs its 2 minutes after the tear. A friend's shot that hadn't finished uploading (phone off, offline, force-quit) only arrives after that friend is online again, on a later launch here
 - Joining overlay (change 024): a CloudKit join can't be cancelled; Cancel hides the overlay, ignores a late failure and calls `leaveRoom` after a late success (not when opened as host)
 - Leaving the app right after a photo (change 020): from the shutter on, the shot runs with extra background time (`BackgroundTime.keepAlive`, `beginBackgroundTask`, about 30 s): photo processing, slot claim (016) and its Supabase broadcast, Live Photo movie, upload start. Without it iOS froze the shot until the app was reopened (slot unchanged for others, a participant's last photo missing on the host)
-- Saving to Photos (change 021): add-only permission (`NSPhotoLibraryAddUsageDescription` in `ScrapIt-Info.plist`), asked on the first Save; a Live Photo is saved as photo + paired video
+- Saving to Photos (change 021): add-only permission (`INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription` in `ScrapIt.xcodeproj/project.xcproj`, moved from `ScrapIt-Info.plist`), asked on the first Save; a Live Photo is saved as photo + paired video
 - "iPhone Duo" device target: [Open] (not an iOS device, clarify)
 
 ## Code structure [Locked]
@@ -66,7 +66,7 @@ ScrapIt/
 ├── Core/
 │   ├── Models/         SwiftData models, one file per type: UserProfile, Scrapbook, ScrapPhoto, CaptureSession, RollFilter, SessionStatus,
 │   │                   ScrapbookPage, ScrapbookItem, StickerSheet; PageBackground, StickerCatalog, LetterCatalog, WashiCatalog, TextItemColor;
-│   │                   camera logic: ZoomStop, CameraButtonRules, RollCameraOrientation; AppBrand (app name constant)
+│   │                   camera logic: ZoomStop, CameraButtonRules, RollCameraOrientation; AppBrand (app name constant `"Rèlic"`, change 134)
 │   ├── Services/       CloudKitSessionService, CameraController, CameraEngine, FilmFilterPipeline, PreviewRenderer, LivePhotoMovieWriter,
 │   │                   Navigator, SessionStore, OrientationLock, CameraMotionService,
 │   │                   AppleCredentialChecker, NetworkMonitor, HapticService, ZoomCapabilities,

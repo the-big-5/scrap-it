@@ -62,7 +62,7 @@ final class RollRevealViewModel {
     static let openHintText = "Swipe or tap to open"
     static let readyTextDuration: Duration = .seconds(2.5)
     static let savedMessage = "Saved to Photos"
-    static let saveFailedMessage = "Couldn't save. Allow ScrapIt to add photos in Settings."
+    static let saveFailedMessage = "Couldn't save. Allow \(AppBrand.name) to add photos in Settings."
 
     @ObservationIgnored private let modelContext: ModelContext
     @ObservationIgnored private weak var navigator: (any Navigator)?
