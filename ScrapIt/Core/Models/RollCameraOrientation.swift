@@ -256,4 +256,24 @@ enum RollCameraOrientation {
         let outerHeight: CGFloat = 337.0
         return (outerWidth, outerHeight, innerWidth, innerHeight)
     }()
+
+    /// Computes the scale factor for the fixed `874 × 402` camera canvas.
+    /// iPhone preserves aspect-fill (`max`) edge-to-edge scaling; iPad uses proportional fit (`min`)
+    /// so every camera control remains unclipped inside `4:3` portrait and landscape windows.
+    static func cameraCanvasScale(
+        viewportSize: CGSize,
+        canvasSize: CGSize = CGSize(width: 874, height: 402),
+        idiom: UIUserInterfaceIdiom = UIDevice.current.userInterfaceIdiom
+    ) -> CGFloat {
+        guard viewportSize.width > 0, viewportSize.height > 0,
+              canvasSize.width > 0, canvasSize.height > 0 else {
+            return 1.0
+        }
+        let isPortrait = viewportSize.height > viewportSize.width
+        let viewportWidth = isPortrait ? viewportSize.height : viewportSize.width
+        let viewportHeight = isPortrait ? viewportSize.width : viewportSize.height
+        let widthRatio = viewportWidth / canvasSize.width
+        let heightRatio = viewportHeight / canvasSize.height
+        return idiom == .pad ? min(widthRatio, heightRatio) : max(widthRatio, heightRatio)
+    }
 }

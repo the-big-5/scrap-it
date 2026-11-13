@@ -247,8 +247,14 @@ final class ScrapbookViewModel {
         let id = scrapbookID
         scrapbook = (try? modelContext.fetch(FetchDescriptor<Scrapbook>(predicate: #Predicate { $0.id == id })))?.first
         guard scrapbook != nil else { return }
-        while pages.count < 2 || !pages.count.isMultiple(of: 2) {
+        var pageSafetyCounter = 0
+        while (pages.count < 2 || !pages.count.isMultiple(of: 2)), pageSafetyCounter < 4 {
+            pageSafetyCounter += 1
+            let previousCount = pages.count
             appendPage()
+            if pages.count <= previousCount {
+                break
+            }
         }
         if migratePageDrawings() {
             save()
@@ -783,7 +789,7 @@ final class ScrapbookViewModel {
     }
 
     /// Everyone in the roll (members of the scrapbook), with the host and me included.
-    private var memberRows: [EditingProgressRow] {
+    var memberRows: [EditingProgressRow] {
         guard let scrapbook else { return [] }
         var rows: [EditingProgressRow] = []
         for (index, id) in scrapbook.memberIDs.enumerated() where !rows.contains(where: { $0.id == id }) {

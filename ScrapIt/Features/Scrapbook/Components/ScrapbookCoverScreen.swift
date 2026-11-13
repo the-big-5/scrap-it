@@ -5,6 +5,7 @@ import SwiftUI
 /// buttons for this person underneath. Tapping the book opens it read-only.
 struct ScrapbookCoverScreen: View {
     let viewModel: ScrapbookViewModel
+    var onOpenBook: (() -> Void)?
 
     var body: some View {
         ZStack {
@@ -73,20 +74,40 @@ struct ScrapbookCoverScreen: View {
 
     /// The front cover: its material, then its decorations (read only).
     private func coverBook(width: CGFloat) -> some View {
+        ScrapbookFrontCoverContent(viewModel: viewModel)
+            .frame(width: width, height: width / ScrapbookPage.Role.front.aspectRatio)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if let onOpenBook {
+                    onOpenBook()
+                } else {
+                    viewModel.openReadOnlyBook()
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(viewModel.title) cover")
+            .accessibilityHint("Tap to read the pages.")
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// Shared read-only front cover artwork + decorations, sized by its parent container (change 128).
+struct ScrapbookFrontCoverContent: View {
+    let viewModel: ScrapbookViewModel
+
+    var body: some View {
         ZStack {
             BookCoverArt(colorHex: viewModel.coverColorHex)
             if let front = viewModel.coverPage(.front) {
-                ScrapbookPageView(page: front, photos: viewModel.photosByID, photoAspect: viewModel.photoAspect(for:),
-                                  aspectRatio: ScrapbookPage.Role.front.aspectRatio, drawsBackground: false)
-                    .allowsHitTesting(false)
+                ScrapbookPageView(
+                    page: front,
+                    photos: viewModel.photosByID,
+                    photoAspect: viewModel.photoAspect(for:),
+                    aspectRatio: ScrapbookPage.Role.front.aspectRatio,
+                    drawsBackground: false
+                )
+                .allowsHitTesting(false)
             }
         }
-        .frame(width: width, height: width / ScrapbookPage.Role.front.aspectRatio)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: viewModel.openReadOnlyBook)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(viewModel.title) cover")
-        .accessibilityHint("Tap to read the pages.")
-        .accessibilityAddTraits(.isButton)
     }
 }

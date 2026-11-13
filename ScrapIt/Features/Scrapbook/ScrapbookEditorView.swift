@@ -25,6 +25,8 @@ struct ScrapbookEditorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The spread zooms from the book into the editor and back (change 025).
     @Namespace private var spreadNamespace
+    @State private var readOnlyHinge: ReadOnlyHingeState?
+    @State private var readOnlyHingeTask: Task<Void, Never>?
     private let isPad = UIDevice.current.userInterfaceIdiom == .pad
 
     init(viewModel: ScrapbookViewModel) {
@@ -35,17 +37,29 @@ struct ScrapbookEditorView: View {
         ZStack {
             switch viewModel.mode {
             case .book:
-                ScrapbookBookView(viewModel: viewModel, namespace: spreadNamespace)
-                    .transition(.opacity)
+                ScrapbookBookView(
+                    viewModel: viewModel,
+                    namespace: spreadNamespace,
+                    onCloseReadOnlyBook: { startReadOnlyHinge(opening: false) }
+                )
+                .transition(.opacity)
             case .edit:
                 editView
                     .transition(.opacity)
             case .cover:
-                ScrapbookCoverScreen(viewModel: viewModel)
-                    .transition(.opacity)
+                ScrapbookCoverScreen(
+                    viewModel: viewModel,
+                    onOpenBook: { startReadOnlyHinge(opening: true) }
+                )
+                .transition(.opacity)
             case .editCover:
                 editCoverView
                     .transition(.opacity)
+            }
+
+            if let readOnlyHinge {
+                ReadOnlyBookHingeOverlay(viewModel: viewModel, progress: readOnlyHinge.progress)
+                    .zIndex(5)
             }
 
             if let card = viewModel.finishCard {
@@ -135,10 +149,43 @@ struct ScrapbookEditorView: View {
             pencil.onDrawingChanged = { [viewModel] changes in viewModel.updateDrawings(changes) }
         }
         .onDisappear {
+            readOnlyHingeTask?.cancel()
+            readOnlyHinge = nil
             viewModel.editorDidDisappear()
             viewModel.isVisible = false
             viewModel.disconnectRealtime()
             OrientationLock.resetToPortrait()
+        }
+    }
+
+    private func startReadOnlyHinge(opening: Bool) {
+        readOnlyHingeTask?.cancel()
+        if reduceMotion {
+            if opening { viewModel.openReadOnlyBook() } else { viewModel.closeReadOnlyBook() }
+            return
+        }
+        guard readOnlyHinge == nil else { return }
+        readOnlyHinge = ReadOnlyHingeState(progress: opening ? 0 : 1)
+        HapticService.shared.playSnapFeedback()
+
+        readOnlyHingeTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: opening ? 0.78 : 0.56)) {
+                readOnlyHinge?.progress = opening ? 1 : 0
+            }
+            try? await Task.sleep(for: .milliseconds(opening ? 790 : 570))
+            guard !Task.isCancelled else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                if opening {
+                    viewModel.openReadOnlyBook()
+                } else {
+                    viewModel.closeReadOnlyBook()
+                }
+                readOnlyHinge = nil
+            }
         }
     }
 
@@ -183,115 +230,122 @@ struct ScrapbookEditorView: View {
     /// Edit Cover (Figma 1444:23793 front, 1515:27196 spine): the cover side on the mat, the tray already open with
     /// this side's tools, the color picker above the tray, → to the spine and ✓ to finish.
     private var editCoverView: some View {
-        GeometryReader { geometry in
-            let scale = ScrapbookEditorLayout.coverScale(for: geometry.size)
-            ZStack(alignment: .bottomLeading) {
-                CoverCuttingMat()
+        ZStack {
+            CoverCuttingMat()
 
-                VStack(spacing: 0) {
-                    // Figma 1444:23793 / 1515:27196 (change 121): ‹ back to the front on the spine; Editing
-                    // Progress, Undo, Redo and ✓ on both sides.
-                    HStack(spacing: 8) {
-                        if viewModel.coverSide == .spine {
-                            Button(action: viewModel.showFront) {
-                                Image(systemName: "chevron.backward.circle.fill")
-                                    .font(.system(size: 32))
-                                    .symbolRenderingMode(.hierarchical)
-                                    .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+            GeometryReader { geometry in
+                let scale = ScrapbookEditorLayout.editCoverScale(
+                    for: geometry.size,
+                    coverSide: viewModel.coverSide,
+                    isPad: isPad
+                )
+                ZStack(alignment: .bottomLeading) {
+                    VStack(spacing: 0) {
+                        // Figma 1444:23793 / 1515:27196 (change 121): ‹ back to the front on the spine; Editing
+                        // Progress, Undo, Redo and ✓ on both sides.
+                        HStack(spacing: 8) {
+                            if viewModel.coverSide == .spine {
+                                Button(action: viewModel.showFront) {
+                                    Image(systemName: "chevron.backward.circle.fill")
+                                        .font(.system(size: 32))
+                                        .symbolRenderingMode(.hierarchical)
+                                        .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+                                }
+                                .accessibilityLabel("Back to the front cover")
                             }
-                            .accessibilityLabel("Back to the front cover")
-                        }
-                        Spacer()
-                        SpreadEditorButton(icon: .asset("ScrapbookPeople", template: false), width: 46,
-                                           accessibilityLabel: "Editing progress") {
-                            viewModel.isEditingProgressPresented = true
-                        }
-                        undoButton
-                        redoButton
-                        SpreadEditorButton(icon: .system("checkmark"), accessibilityLabel: "Done",
-                                           action: viewModel.finishCoverEdit)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
-                    if viewModel.coverSide == .front {
-                        // Figma 1444:23788: the way to the spine, labeled.
-                        Button(action: viewModel.showSpine) {
-                            HStack(spacing: 6) {
-                                Text("Edit book spine")
-                                Image(systemName: "arrow.forward")
+                            Spacer()
+                            SpreadEditorButton(icon: .asset("ScrapbookPeople", template: false), width: 46,
+                                               accessibilityLabel: "Editing progress") {
+                                viewModel.isEditingProgressPresented = true
                             }
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(DSColor.Paper.light.color)
-                            .padding(.horizontal, 14)
-                            .frame(height: 52)
-                            .background(DSColor.Brand.primary.color, in: Capsule())
-                            .contentShape(Capsule())
+                            undoButton
+                            redoButton
+                            SpreadEditorButton(icon: .system("checkmark"), accessibilityLabel: "Done",
+                                               action: viewModel.finishCoverEdit)
                         }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.horizontal, 23)
-                        .padding(.top, 39)
-                        // Room between the button and the cover (asked while testing).
-                        .padding(.bottom, 24)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                        if viewModel.coverSide == .front {
+                            // Figma 1444:23788: the way to the spine, labeled.
+                            Button(action: viewModel.showSpine) {
+                                HStack(spacing: 6) {
+                                    Text("Edit book spine")
+                                    Image(systemName: "arrow.forward")
+                                }
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(DSColor.Paper.light.color)
+                                .padding(.horizontal, 14)
+                                .frame(height: 52)
+                                .background(DSColor.Brand.primary.color, in: Capsule())
+                                .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.horizontal, 23)
+                            .padding(.top, 39)
+                            // Room between the button and the cover (asked while testing).
+                            .padding(.bottom, 24)
+                        }
+                        Spacer(minLength: 0)
+                        coverSideCell(scale: scale)
+                        // Room for the color picker and tray (including open sub-tray on iPad) under the cover.
+                        Spacer(minLength: isPad ? TrayStyle.reservedHeight : TrayStyle.trayHeight + 74)
                     }
-                    Spacer(minLength: 0)
-                    coverSideCell(scale: scale)
-                    // Room for the color picker and full-width tray under the cover.
-                    Spacer(minLength: TrayStyle.trayHeight + 74)
-                }
-                .zIndex(viewModel.draggedItemID != nil ? 2 : 0)
+                    .zIndex(viewModel.draggedItemID != nil ? 2 : 0)
 
-                CoverColorButton(colorHex: viewModel.coverColorHex, onChange: viewModel.setCoverColor,
-                                 onOpen: viewModel.coverColorPickerOpened)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, 20)
-                    .padding(.bottom, TrayStyle.trayHeight + 24)
+                    CoverColorButton(colorHex: viewModel.coverColorHex, onChange: viewModel.setCoverColor,
+                                     onOpen: viewModel.coverColorPickerOpened)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(.trailing, 20)
+                        .padding(.bottom, TrayStyle.trayHeight + 24)
 
-                ToolTray(
-                    isOpen: viewModel.isTrayOpen,
-                    activeTool: viewModel.raisedTool,
-                    onOpen: viewModel.openTray,
-                    onClose: viewModel.closeTray,
-                    onSelect: viewModel.selectTrayTool,
-                    tools: viewModel.availableTools,
-                    isFixed: true,
-                    onCloseSubTray: viewModel.closeSubTray,
-                    pillWidth: isPad ? ScrapbookEditorLayout.iPadTrayPillWidth(for: geometry.size) : nil
-                ) { tool in
-                    subTray(for: tool)
-                }
-                .frame(maxWidth: .infinity, alignment: isPad ? .bottom : .bottomLeading)
-                .padding(.bottom, isPad ? 16 : 4)
-                .zIndex(1)
+                    ToolTray(
+                        isOpen: viewModel.isTrayOpen,
+                        activeTool: viewModel.raisedTool,
+                        onOpen: viewModel.openTray,
+                        onClose: viewModel.closeTray,
+                        onSelect: viewModel.selectTrayTool,
+                        tools: viewModel.availableTools,
+                        isFixed: true,
+                        onCloseSubTray: viewModel.closeSubTray,
+                        pillWidth: isPad ? ScrapbookEditorLayout.iPadTrayPillWidth(for: geometry.size) : nil
+                    ) { tool in
+                        subTray(for: tool)
+                    }
+                    .frame(maxWidth: .infinity, alignment: isPad ? .bottom : .bottomLeading)
+                    .padding(.bottom, isPad ? 16 : 4)
+                    .zIndex(1)
 
-                trashCan
-                    .padding(.bottom, trashBottomPadding)
-                    // Only the trashcan animates when a drag starts / ends: on the whole screen the spring also
-                    // animated the item moving to the other page and the book's clip (change 104).
-                    .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
+                    trashCan
+                        .padding(.bottom, trashBottomPadding)
+                        // Only the trashcan animates when a drag starts / ends: on the whole screen the spring also
+                        // animated the item moving to the other page and the book's clip (change 104).
+                        .animation(.spring(response: 0.25, dampingFraction: 0.78), value: viewModel.draggedItemID != nil)
 
-                if viewModel.activeTool == .pencil && pencil.showsSizePanel {
-                    // Right above the picked tool, like Notes (change 114).
-                    SizePanelAboveTool(toolFrame: pencil.toolFrames[pencil.tool]) { pencilSizePanel }
+                    if viewModel.activeTool == .pencil && pencil.showsSizePanel {
+                        // Right above the picked tool, like Notes (change 114).
+                        SizePanelAboveTool(toolFrame: pencil.toolFrames[pencil.tool]) { pencilSizePanel }
+                            .transition(.opacity)
+                            .zIndex(1)
+                    }
+
+                    StickerDragLayer(controller: stickerController)
+                        .zIndex(4)
+                    TrayDragLayer(controller: trayDrag)
+                        .zIndex(4)
+
+                    if viewModel.textEditor != nil {
+                        TextEditorOverlay(
+                            draft: Binding(get: { viewModel.textEditor?.draft ?? "" }, set: { viewModel.textEditor?.draft = $0 }),
+                            color: Binding(get: { viewModel.textEditor?.color ?? .black }, set: { viewModel.textEditor?.color = $0 }),
+                            font: TextItemStyle.coverFont(size: 30),
+                            onDone: viewModel.commitTextEditor
+                        )
                         .transition(.opacity)
-                        .zIndex(1)
+                        .zIndex(6)
+                    }
                 }
-
-                StickerDragLayer(controller: stickerController)
-                    .zIndex(4)
-                TrayDragLayer(controller: trayDrag)
-                    .zIndex(4)
-
-                if viewModel.textEditor != nil {
-                    TextEditorOverlay(
-                        draft: Binding(get: { viewModel.textEditor?.draft ?? "" }, set: { viewModel.textEditor?.draft = $0 }),
-                        color: Binding(get: { viewModel.textEditor?.color ?? .black }, set: { viewModel.textEditor?.color = $0 }),
-                        font: TextItemStyle.coverFont(size: 30),
-                        onDone: viewModel.commitTextEditor
-                    )
-                    .transition(.opacity)
-                    .zIndex(6)
-                }
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
         }
         .ignoresSafeArea(.keyboard)
@@ -1336,7 +1390,7 @@ struct ScrapbookEditorLayout: Equatable {
         return min(maxBookWidth / baseBookWidth, maxBookHeight / baseBookHeight)
     }
 
-    /// Scale for the front cover in `ScrapbookCoverScreen` and `editCoverView` so it fills iPad viewports cleanly.
+    /// Scale for the front cover in `ScrapbookCoverScreen` so it fills iPad viewports cleanly.
     static func coverScale(
         for container: CGSize,
         isPad: Bool = UIDevice.current.userInterfaceIdiom == .pad
@@ -1347,6 +1401,24 @@ struct ScrapbookEditorLayout: Equatable {
         let maxCoverWidth = container.width * 0.78
         let maxCoverHeight = max(220, container.height - 250)
         return min(maxCoverWidth / baseCoverSize.width, maxCoverHeight / baseCoverSize.height)
+    }
+
+    /// Scale for the editable front cover and book spine in `editCoverView`, reserving header chrome
+    /// (`Edit book spine` pill on `.front`) and fixed bottom `ToolTray` + sub-tray clearance on iPad.
+    static func editCoverScale(
+        for container: CGSize,
+        coverSide: CoverSide,
+        isPad: Bool = UIDevice.current.userInterfaceIdiom == .pad
+    ) -> CGFloat {
+        guard isPad, container.width > 0, container.height > 0 else {
+            return fitScale(for: container, isPad: isPad)
+        }
+        let topChrome: CGFloat = coverSide == .front ? 168 : 56
+        let bottomReserved = TrayStyle.reservedHeight
+        let maxSideWidth = container.width * 0.78
+        let maxSideHeight = max(80, container.height - topChrome - bottomReserved)
+        let contentSize = coverSide == .front ? baseCoverSize : CGSize(width: 74, height: 462)
+        return min(maxSideWidth / contentSize.width, maxSideHeight / contentSize.height)
     }
 
     static func iPadSpreadPageWidth(
@@ -1365,6 +1437,67 @@ struct ScrapbookEditorLayout: Equatable {
                 ? min(container.width / 2, fitHeightWidth)
                 : min(container.width, fitHeightWidth)
         }
+    }
+}
+
+private struct ReadOnlyHingeState: Equatable {
+    var progress: CGFloat
+}
+
+/// Shared 3D cover-hinge overlay transitioning between `ScrapbookCoverScreen` and `ScrapbookBookView` (change 128).
+private struct ReadOnlyBookHingeOverlay: View {
+    let viewModel: ScrapbookViewModel
+    let progress: CGFloat
+
+    var body: some View {
+        let p = BookCoverHingeMath.clamp(progress)
+        GeometryReader { geometry in
+            let isPad = UIDevice.current.userInterfaceIdiom == .pad
+            let coverScale = ScrapbookEditorLayout.coverScale(for: geometry.size, isPad: isPad)
+            let bookScale = ScrapbookEditorLayout.bookScale(for: geometry.size, isPad: isPad)
+            let matScale = ScrapbookEditorLayout.bookMatScale(for: geometry.size, isPad: isPad)
+            let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            let matX = isPad ? center.x : (-263 + 927 / 2) * matScale
+            let coverY = center.y - (isPad ? 40 : 10 * coverScale)
+            let bookY = isPad ? center.y - 26 : center.y + 3 * bookScale
+            let bookCenterY = coverY + (bookY - coverY) * p
+            let closedSize = CGSize(width: 340 * coverScale, height: 468 * coverScale)
+            let openSpreadSize = CGSize(
+                width: ScrapbookInteractiveSpreadBook.spreadWidth(scale: bookScale),
+                height: ScrapbookInteractiveSpreadBook.bookHeight(scale: bookScale)
+            )
+            let spread = viewModel.spreads.indices.contains(viewModel.spreadIndex)
+                ? viewModel.spreads[viewModel.spreadIndex]
+                : (viewModel.spreads.first ?? [])
+
+            ZStack {
+                CoverCuttingMat()
+                    .opacity(Double(1 - p))
+                ScrapbookBookDeskBackdrop(center: center, matX: matX, matScale: matScale, size: geometry.size)
+                    .opacity(Double(p))
+
+                BookCoverHingeView(
+                    openProgress: p,
+                    closedSize: closedSize,
+                    openSpreadSize: openSpreadSize,
+                    coverHorizontalPadding: 7.4 * bookScale,
+                    coverVerticalPadding: 4.75 * bookScale,
+                    coverCornerRadius: 4.7 * bookScale,
+                    coverColorHex: viewModel.coverColorHex,
+                    frontCover: {
+                        ScrapbookFrontCoverContent(viewModel: viewModel)
+                    },
+                    leftPage: {
+                        ScrapbookBookPageFace(viewModel: viewModel, page: spread.first, allowsPlayback: false)
+                    },
+                    rightPage: {
+                        ScrapbookBookPageFace(viewModel: viewModel, page: spread.last, allowsPlayback: false)
+                    }
+                )
+                .position(x: center.x, y: bookCenterY)
+            }
+        }
+        .ignoresSafeArea()
     }
 }
 

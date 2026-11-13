@@ -6,10 +6,11 @@ struct PageBackgroundView: View {
 
     var body: some View {
         Canvas { context, size in
+            guard size.width > 1, size.height > 1 else { return }
             let rgb = background.baseRGB
             context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: rgb.red, green: rgb.green, blue: rgb.blue)))
 
-            let spacing = size.width / 18
+            let spacing = max(size.width / 18, 2)
             let lineWidth = max(0.5, size.width / 600)
             let ink = Color(red: 0.45, green: 0.62, blue: 0.82).opacity(0.45)
 

@@ -64,12 +64,11 @@ struct CaptureSessionView: View {
             let canvasWidth: CGFloat = 874
             let canvasHeight: CGFloat = 402
 
-            // Viewport dimensions filling entire screen edge-to-edge
-            let viewportWidth = isPortrait ? geo.size.height : geo.size.width
-            let viewportHeight = isPortrait ? geo.size.width : geo.size.height
-
-            // Scale factor to ensure everything is completely flush with screen edges
-            let scale = max(viewportWidth / canvasWidth, viewportHeight / canvasHeight)
+            // iPhone stays flush edge-to-edge (max); iPad scales proportionally to fit without cropping (min).
+            let scale = RollCameraOrientation.cameraCanvasScale(
+                viewportSize: geo.size,
+                canvasSize: CGSize(width: canvasWidth, height: canvasHeight)
+            )
 
             ZStack {
                 Color(red: 42 / 255, green: 36 / 255, blue: 31 / 255)

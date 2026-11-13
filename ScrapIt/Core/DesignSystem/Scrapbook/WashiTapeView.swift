@@ -84,7 +84,8 @@ struct WashiTapeShape: Shape {
 
 enum WashiPattern {
     static func draw(_ style: WashiStyle, in context: inout GraphicsContext, size: CGSize) {
-        let unit = size.height / 4
+        guard size.width > 1, size.height > 1 else { return }
+        let unit = max(size.height / 4, 2)
         switch style.motif {
         case .triangles:
             var x: CGFloat = 0
