@@ -349,6 +349,9 @@ final class RollFlowViewModel {
         do {
             let snapshot = try await roomService.createRoom(draft)
             apply(snapshot, to: session)
+            if session.status != .waiting {
+                await cloudService.publishSessionToCloudKit(session: session)
+            }
         } catch {
             logRoomFailure("create invite link", error)
             inviteLinkError = Self.inviteLinkFailedMessage
@@ -376,6 +379,9 @@ final class RollFlowViewModel {
     /// start step and its intro (change 110 plays only on Start Roll).
     func continueRoll() {
         guard let session = activeSession, session.status == .live else { return }
+        if let currentUser = activeLobbyUser, isHost(currentUser) {
+            Task { await cloudService.publishSessionToCloudKit(session: session) }
+        }
         navigator?.push(.captureSession)
     }
 
@@ -571,7 +577,8 @@ final class RollFlowViewModel {
         session.rollSize = snapshot.rollSize
         session.slotsUsed = max(session.slotsUsed, snapshot.slotsUsed)
         session.filterRaw = snapshot.filterRaw
-        session.statusRaw = snapshot.statusRaw
+        let incomingStatus = SessionStatus(rawValue: snapshot.statusRaw) ?? .waiting
+        session.status = SessionStatus.latest(session.status, incomingStatus)
         session.participantIDs = snapshot.participants.map(\.userID)
         session.participantNames = snapshot.participants.map(\.name)
         session.ckRecordName = RollRoomLocation.sessionRecordName
@@ -649,6 +656,7 @@ final class RollFlowViewModel {
             // Only a roll that starts while waiting here moves people to the camera; a started roll reopened from
             // Resume Roll waits for Continue Roll (change 081).
             let wasWaiting = session.status == .waiting
+            let snapshotStatus = SessionStatus(rawValue: snapshot.statusRaw) ?? .waiting
             apply(snapshot, to: session)
             if wasWaiting, session.status == .live, navigator?.path.last == .createRollLobby {
                 beginLivePolling(session: session)
@@ -656,6 +664,11 @@ final class RollFlowViewModel {
                 if navigator?.cameraIntroPhase == .idle {
                     navigator?.push(.captureSession)
                 }
+            } else if session.status == .live,
+                      snapshotStatus == .waiting,
+                      let currentUser = activeLobbyUser,
+                      isHost(currentUser) {
+                Task { await cloudService.publishSessionToCloudKit(session: session) }
             }
         } catch RoomError.removed {
             exitRoom(message: Self.roomRemovedMessage)

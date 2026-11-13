@@ -429,4 +429,49 @@ struct WorkbenchViewModelTests {
         #expect(roomService.deleteCalls.isEmpty)
         #expect(!vm.activeRolls.contains(where: { $0.id == localLive.id }))
     }
+
+    @Test func staleWaitingCloudSnapshotNeverDowngradesLocalLiveRoll() async throws {
+        let me = UserProfile(appleUserID: "me-1", name: "Lepin")
+        context.insert(me)
+        let roomService = MockWorkbenchRoomService()
+        let (vm, router, store) = makeViewModel(currentUser: me, roomService: roomService)
+
+        let startedLocally = CaptureSession(
+            name: "Night Walk",
+            rollCode: "LIVE01",
+            ckRecordName: "RollSession",
+            hostUserID: "me-1",
+            participantIDs: ["me-1"],
+            participantNames: ["Lepin"],
+            rollSize: 24,
+            slotsUsed: 0,
+            filter: .colorPrint200,
+            status: .live
+        )
+        context.insert(startedLocally)
+        try context.save()
+
+        roomService.fetchResults["LIVE01"] = .success(RoomSnapshot(
+            sessionID: startedLocally.id,
+            rollCode: "LIVE01",
+            name: "Night Walk",
+            hostUserID: "me-1",
+            rollSize: 24,
+            slotsUsed: 0,
+            filterRaw: RollFilter.colorPrint200.rawValue,
+            statusRaw: SessionStatus.waiting.rawValue,
+            participants: [RoomParticipant(userID: "me-1", name: "Lepin")],
+            shareURL: nil,
+            zoneOwnerName: nil,
+            rollKey: nil
+        ))
+
+        await vm.refreshActiveRolls()
+        #expect(startedLocally.status == .live)
+
+        await vm.openRoll(startedLocally)
+        #expect(startedLocally.status == .live)
+        #expect(store.activeSession?.status == .live)
+        #expect(router.path.last == .createRollLobby)
+    }
 }

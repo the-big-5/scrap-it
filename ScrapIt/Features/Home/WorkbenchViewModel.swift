@@ -486,8 +486,9 @@ final class WorkbenchViewModel {
         session.rollSize = snapshot.rollSize
         session.slotsUsed = max(session.slotsUsed, snapshot.slotsUsed)
         session.filterRaw = snapshot.filterRaw
-        if !(preserveNonEndedForReveal && snapshot.statusRaw == SessionStatus.ended.rawValue) {
-            session.statusRaw = snapshot.statusRaw
+        let incomingStatus = SessionStatus(rawValue: snapshot.statusRaw) ?? .waiting
+        if !(preserveNonEndedForReveal && incomingStatus == .ended) {
+            session.status = SessionStatus.latest(session.status, incomingStatus)
         }
         if let endTime = snapshot.endTime {
             session.endTime = endTime
