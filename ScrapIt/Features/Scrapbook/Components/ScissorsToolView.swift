@@ -31,6 +31,9 @@ struct ScissorsToolView: View {
     var onDragMoved: (UUID, CGPoint) -> Void = { _, _ in }
     var onDropInTrash: (UUID) -> Bool = { _ in false }
     var onCancelDrag: () -> Void = {}
+    /// The size moves are measured against: the page. `nil` = this layer's own size (one page). Over both pages of
+    /// the spread (change 126) the layer is two pages wide.
+    var pageSize: CGSize?
 
     private enum Mode {
         case pending, cutting, moving, transforming
@@ -146,8 +149,9 @@ struct ScissorsToolView: View {
             extendCut(to: value.location, size: size)
         case .moving:
             guard let id = manipulated, let base else { return }
-            onMove(id, (base.centerX + value.translation.width / size.width,
-                        base.centerY + value.translation.height / size.height,
+            let unit = pageSize ?? size
+            onMove(id, (base.centerX + value.translation.width / unit.width,
+                        base.centerY + value.translation.height / unit.height,
                         base.width, base.rotation))
             onDragMoved(id, value.location)
         case .transforming, nil:

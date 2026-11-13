@@ -232,6 +232,56 @@ struct ScrapbookEditorTests {
         #expect(abs(pieces.map(CutGeometry.area).reduce(0, +) - 1) < 0.001)
     }
 
+    @Test func aCutStoppingShortIsContinuedToTheEdge() throws {
+        // From the left edge to the middle only (change 126).
+        let pieces = try #require(CutGeometry.autoCompletedPieces(
+            CutGeometry.unitSquare, by: [CGPoint(x: -0.1, y: 0.5), CGPoint(x: 0.3, y: 0.5), CGPoint(x: 0.6, y: 0.5)],
+            minimumArea: 0.02
+        ))
+        #expect(pieces.count == 2)
+        let total: CGFloat = pieces.map(CutGeometry.area).reduce(0, +)
+        #expect(abs(total - 1) < 0.001)
+    }
+
+    @Test func aRoughLoopCutsOutItsInsideAndLeavesAHole() throws {
+        // A circle around the middle whose ends don't meet.
+        let loop = stride(from: 0.0, through: 1.9 * Double.pi, by: 0.2).map {
+            CGPoint(x: 0.5 + 0.25 * cos($0), y: 0.5 + 0.25 * sin($0))
+        }
+        let pieces = try #require(CutGeometry.autoCompletedPieces(CutGeometry.unitSquare, by: loop, minimumArea: 0.02))
+        #expect(pieces.count == 2)
+        let remainder = pieces[0], inner = pieces[1]
+        #expect(CutGeometry.rings(of: remainder) != nil)
+        #expect(!CutGeometry.contains(remainder, CGPoint(x: 0.5, y: 0.5)))
+        #expect(CutGeometry.contains(remainder, CGPoint(x: 0.05, y: 0.05)))
+        #expect(CutGeometry.contains(inner, CGPoint(x: 0.5, y: 0.5)))
+        let innerArea: CGFloat = CutGeometry.area(inner)
+        #expect(innerArea > 0.15 && innerArea < 0.2)
+    }
+
+    @Test func aStrokeThatMissesThePhotoIsNotCompleted() {
+        let pieces = CutGeometry.autoCompletedPieces(
+            CutGeometry.unitSquare, by: [CGPoint(x: 1.2, y: 0.5), CGPoint(x: 1.5, y: 0.5)], minimumArea: 0.02
+        )
+        #expect(pieces == nil)
+    }
+
+    @Test func scissorsCutAPhotoOnTheOtherSideOfTheGutter() throws {
+        let vm = makeEditor()
+        vm.openSpread()
+        let left = try #require(vm.leftPage)
+        vm.addPhoto(stillPhoto.id, at: CGPoint(x: 0.95, y: 0.5))
+        let photo = try #require(left.allItems.first)
+        photo.rotation = 0
+        let pageSize = CGSize(width: 200, height: 266)
+
+        // A cut across the part over the right page (spread x 220).
+        let didCut = vm.cut(alongSpread: [CGPoint(x: 220, y: 0), CGPoint(x: 220, y: 266)], pageSize: pageSize)
+        #expect(didCut)
+        #expect(left.allItems.count == 2)
+        #expect(vm.rightPage?.allItems.isEmpty == true)
+    }
+
     // MARK: - Stickers
 
     @Test func aStickerCanBeUsedOncePerSheet() throws {

@@ -1474,28 +1474,72 @@ final class ScrapbookViewModel {
         return (item.centerX, item.centerY, item.width, item.rotation)
     }
 
-    /// Cuts the topmost photo the stroke crosses. Every crossing of the whole stroke splits, so one stroke
-    /// can make more than two pieces. Pieces move ±3 pt apart so the cut shows. `true` if something was cut.
+    /// The topmost item at a point of the two-page view (one pair of scissors over both pages, change 126): both
+    /// pages' items in their shared layer order (change 104), front first.
+    func itemID(atSpread point: CGPoint, pageSize: CGSize, photosOnly: Bool) -> UUID? {
+        layerOrder(of: currentSpreadPages).reversed().first { entry in
+            let item = entry.item
+            switch item.kind {
+            case .photo: break
+            case .drawing, .text: return false
+            case .sticker, .letter, .washi: if photosOnly { return false }
+            }
+            let pagePoint = CGPoint(x: point.x - CGFloat(entry.pageIndex) * pageSize.width, y: point.y)
+            let box = ScrapbookItemLayout.boxSize(of: item, photoAspect: photoAspect(for: item), pageSize: pageSize)
+            let local = ScrapbookItemLayout.normalizedPoint(pagePoint, in: item, box: box, pageSize: pageSize)
+            return CutGeometry.contains(item.maskPolygon ?? CutGeometry.unitSquare, local)
+        }?.item.id
+    }
+
+    /// A point of the two-page view in the item's own page space.
+    func pagePoint(fromSpread point: CGPoint, itemID: UUID, pageWidth: CGFloat) -> CGPoint {
+        let index = item(itemID)?.page.flatMap { page in currentSpreadPages.firstIndex { $0.id == page.id } } ?? 0
+        return CGPoint(x: point.x - CGFloat(index) * pageWidth, y: point.y)
+    }
+
+    /// Cuts the topmost photo the stroke crosses on the active page (a zoomed page, the cover). See `cut(candidates:)`.
     @discardableResult
     func cut(along pagePath: [CGPoint], pageSize: CGSize) -> Bool {
-        guard let page = currentPage, pageSize.width > 0, pageSize.height > 0 else { return false }
-        let freeSlots = ScrapbookPage.maxItems - page.allItems.count
-        guard freeSlots > 0 else {
-            showToast(Self.pageFullMessage)
-            return false
-        }
-        let path = CutGeometry.simplify(pagePath, tolerance: 1.5)
+        guard let page = currentPage else { return false }
+        return cut(candidates: page.sortedItems.reversed().map { (page, $0, pagePath) }, pageSize: pageSize)
+    }
 
-        for item in page.sortedItems.reversed() where item.kind == .photo {
+    /// The two-page view (change 126): the stroke, in spread space, is matched against both pages' photos front
+    /// first, so an item across the gutter can be cut on either side.
+    @discardableResult
+    func cut(alongSpread spreadPath: [CGPoint], pageSize: CGSize) -> Bool {
+        let candidates = layerOrder(of: currentSpreadPages).reversed().map { entry in
+            (entry.page, entry.item, spreadPath.map { CGPoint(x: $0.x - CGFloat(entry.pageIndex) * pageSize.width, y: $0.y) })
+        }
+        return cut(candidates: candidates, pageSize: pageSize)
+    }
+
+    /// Cuts the first photo the stroke cuts, front to back. Every crossing of the whole stroke splits, so one stroke
+    /// can make more than two pieces; with auto-complete (change 126) a stroke stopping short is continued to the
+    /// edge and a rough loop cuts out its inside. Pieces move ±3 pt apart so the cut shows. `true` if something was cut.
+    private func cut(candidates: [(page: ScrapbookPage, item: ScrapbookItem, path: [CGPoint])], pageSize: CGSize) -> Bool {
+        guard pageSize.width > 0, pageSize.height > 0 else { return false }
+        for (page, item, pagePath) in candidates where item.kind == .photo {
             let box = ScrapbookItemLayout.boxSize(of: item, photoAspect: photoAspect(for: item), pageSize: pageSize)
+            let path = CutGeometry.simplify(pagePath, tolerance: 1.5)
             let localPath = path.map { ScrapbookItemLayout.normalizedPoint($0, in: item, box: box, pageSize: pageSize) }
-            guard let pieces = CutGeometry.splitAll(item.maskPolygon ?? CutGeometry.unitSquare, by: localPath,
-                                                    minimumArea: CutGeometry.minimumPieceArea,
-                                                    maxPieces: freeSlots + 1) else { continue }
+            let mask = item.maskPolygon ?? CutGeometry.unitSquare
+            let freeSlots = ScrapbookPage.maxItems - page.allItems.count
+            guard freeSlots > 0 else {
+                // The page is full: only say so when the stroke was on this photo.
+                if localPath.contains(where: { CutGeometry.contains(mask, $0) }) {
+                    showToast(Self.pageFullMessage)
+                    return false
+                }
+                continue
+            }
+            guard let pieces = CutGeometry.autoCompletedPieces(mask, by: localPath,
+                                                               minimumArea: CutGeometry.minimumPieceArea,
+                                                               maxPieces: freeSlots + 1) else { continue }
 
             let before = snapshot()
             let newPieceIDs = pieces.dropFirst().map { _ in UUID() }
-            let originalCenter = CutGeometry.centroid(item.maskPolygon ?? CutGeometry.unitSquare)
+            let originalCenter = CutGeometry.centroid(mask)
             var zIndex = frontZIndex(on: page) - 1
             var pieceItems = [item]
             item.maskPolygon = pieces[0]
@@ -1527,7 +1571,7 @@ final class ScrapbookViewModel {
             pushUndo(before)
             broadcast(ScrapbookEvent(
                 type: .itemCut,
-                pageIndex: pageIndex(of: currentPage),
+                pageIndex: pageIndex(of: page),
                 senderID: senderID,
                 itemID: item.id,
                 maskData: item.maskData,

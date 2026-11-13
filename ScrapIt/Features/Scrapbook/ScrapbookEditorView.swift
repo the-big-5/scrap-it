@@ -807,6 +807,13 @@ struct ScrapbookEditorView: View {
                     pageCell(page)
                 }
             }
+            // Scissors on the two-page view: one pair over both pages, cutting either side of the gutter (change 126).
+            if viewModel.isCutting, viewModel.zoom == .spread, !viewModel.isReadingPages {
+                GeometryReader { geometry in
+                    spreadScissors(pageSize: CGSize(width: geometry.size.width / 2, height: geometry.size.height))
+                }
+                .transition(.opacity)
+            }
             // Pencil on the two-page view: one canvas over both pages, so a stroke can cross the gutter (change 104).
             if let pageIDs = spreadDrawingPageIDs {
                 GeometryReader { geometry in
@@ -856,6 +863,30 @@ struct ScrapbookEditorView: View {
         // Zoomed in, the pages spread over the dark area around them, under the buttons and the tray (change 114).
         .clipShape(Rectangle().inset(by: viewModel.draggedItemID != nil || pageZoom.isZoomed ? -2000 : 0))
         .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+    }
+
+    /// The scissors over both pages of the spread (change 126): points are in spread space; finding, moving and
+    /// cutting map them to each item's own page.
+    private func spreadScissors(pageSize: CGSize) -> some View {
+        ScissorsToolView(
+            itemAt: { point, _ in viewModel.itemID(atSpread: point, pageSize: pageSize, photosOnly: false) },
+            isOverPhoto: { point, _ in viewModel.itemID(atSpread: point, pageSize: pageSize, photosOnly: true) != nil },
+            itemFrame: viewModel.itemFrame,
+            onSelect: viewModel.selectItem,
+            onMove: { id, frame in
+                viewModel.setItemFrame(itemID: id, centerX: frame.centerX, centerY: frame.centerY,
+                                       width: frame.width, rotation: frame.rotation)
+            },
+            onFinishMove: { viewModel.finishItemManipulation(itemID: $0) },
+            onCut: { path, _ in viewModel.cut(alongSpread: path, pageSize: pageSize) },
+            onDragMoved: { id, location in
+                let pagePoint = viewModel.pagePoint(fromSpread: location, itemID: id, pageWidth: pageSize.width)
+                viewModel.updateItemDrag(itemID: id, pageLocation: zoomed(pagePoint))
+            },
+            onDropInTrash: { viewModel.endItemDrag(itemID: $0) },
+            onCancelDrag: { viewModel.cancelItemDrag() },
+            pageSize: pageSize
+        )
     }
 
     /// Both pages of the two-page view while Pencil has a layer on each; `nil` = one canvas per page.
@@ -920,7 +951,7 @@ struct ScrapbookEditorView: View {
     private func pageOverlay(for page: ScrapbookPage, size: CGSize) -> some View {
         // The page shows the hint itself only when it's alone (zoomed page, cover); the spread centers it instead.
         let showsHint = page.id == viewModel.currentPageID && !(viewModel.mode == .edit && viewModel.zoom == .spread)
-        if viewModel.isCutting {
+        if viewModel.isCutting && viewModel.zoom != .spread {
             ScissorsToolView(
                 itemAt: { point, size in
                     viewModel.activatePage(page.id)
