@@ -150,41 +150,121 @@ struct CoverColorButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Cover color")
-        .sheet(isPresented: $isPickerPresented) {
-            SystemColorPicker(color: Color(coverHex: colorHex)) { onChange($0.coverHex) }
-                .presentationDetents([.medium, .large])
+        .systemColorPicker(isPresented: $isPickerPresented, color: Color(coverHex: colorHex)) {
+            onChange($0.coverHex)
         }
     }
 }
 
-/// UIKit's color picker (grid, spectrum, sliders), reporting each change. Also the Pencil color circle (change 114).
-struct SystemColorPicker: UIViewControllerRepresentable {
+extension View {
+    /// Presents UIKit's `UIColorPickerViewController` directly from the host UIKit hierarchy rather than inside a
+    /// SwiftUI `.sheet`, avoiding UIKit eyedropper (`UIColorSampler`) crashes (change 128).
+    func systemColorPicker(isPresented: Binding<Bool>, color: Color, onChange: @escaping (Color) -> Void) -> some View {
+        background(SystemColorPickerPresenter(isPresented: isPresented, color: color, onChange: onChange))
+    }
+}
+
+/// Presents `UIColorPickerViewController` natively via UIKit (grid, spectrum, sliders, eyedropper) without
+/// wrapping it in a SwiftUI `.sheet`. Also used by the Pencil color circle (change 114, 128).
+private struct SystemColorPickerPresenter: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
     let color: Color
     let onChange: (Color) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
-
-    func makeUIViewController(context: Context) -> UIColorPickerViewController {
-        let picker = UIColorPickerViewController()
-        picker.supportsAlpha = false
-        picker.selectedColor = UIColor(color)
-        picker.delegate = context.coordinator
-        return picker
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isPresented: $isPresented, onChange: onChange)
     }
 
-    func updateUIViewController(_ picker: UIColorPickerViewController, context: Context) {
+    func makeUIViewController(context: Context) -> AnchorViewController {
+        let controller = AnchorViewController()
+        controller.onMovedToWindow = {
+            context.coordinator.syncPresentation(from: controller, isPresented: isPresented, color: color)
+        }
+        return controller
+    }
+
+    func updateUIViewController(_ controller: AnchorViewController, context: Context) {
+        context.coordinator.isPresented = $isPresented
         context.coordinator.onChange = onChange
+        context.coordinator.syncPresentation(from: controller, isPresented: isPresented, color: color)
     }
 
-    final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
-        var onChange: (Color) -> Void
+    final class AnchorViewController: UIViewController {
+        var onMovedToWindow: (() -> Void)?
 
-        init(onChange: @escaping (Color) -> Void) {
+        override func loadView() {
+            view = UIView(frame: .zero)
+            view.backgroundColor = .clear
+            view.isUserInteractionEnabled = false
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            onMovedToWindow?()
+        }
+    }
+
+    final class Coordinator: NSObject, UIColorPickerViewControllerDelegate, UIAdaptivePresentationControllerDelegate {
+        var isPresented: Binding<Bool>
+        var onChange: (Color) -> Void
+        private weak var presentedPicker: UIColorPickerViewController?
+
+        init(isPresented: Binding<Bool>, onChange: @escaping (Color) -> Void) {
+            self.isPresented = isPresented
             self.onChange = onChange
+        }
+
+        func syncPresentation(from anchor: UIViewController, isPresented: Bool, color: Color) {
+            if isPresented {
+                guard presentedPicker == nil,
+                      anchor.view.window != nil,
+                      let host = topPresenter(from: anchor) else { return }
+                let picker = UIColorPickerViewController()
+                picker.supportsAlpha = false
+                picker.selectedColor = UIColor(color)
+                picker.delegate = self
+                if let popover = picker.popoverPresentationController {
+                    popover.sourceView = anchor.view
+                    popover.sourceRect = anchor.view.bounds
+                }
+                if let sheet = picker.sheetPresentationController {
+                    sheet.detents = [.medium(), .large()]
+                }
+                picker.presentationController?.delegate = self
+                presentedPicker = picker
+                DispatchQueue.main.async {
+                    guard host.presentedViewController == nil, !host.isBeingDismissed else {
+                        if self.presentedPicker === picker { self.presentedPicker = nil }
+                        return
+                    }
+                    host.present(picker, animated: true)
+                }
+            } else if let picker = presentedPicker, !picker.isBeingDismissed {
+                presentedPicker = nil
+                picker.dismiss(animated: true)
+            }
+        }
+
+        private func topPresenter(from anchor: UIViewController) -> UIViewController? {
+            var current: UIViewController? = anchor.view.window?.rootViewController ?? anchor
+            while let next = current?.presentedViewController, !next.isBeingDismissed {
+                current = next
+            }
+            return current
         }
 
         func colorPickerViewController(_ picker: UIColorPickerViewController, didSelect color: UIColor, continuously: Bool) {
             onChange(Color(uiColor: color))
+        }
+
+        func colorPickerViewControllerDidFinish(_ picker: UIColorPickerViewController) {
+            presentedPicker = nil
+            isPresented.wrappedValue = false
+        }
+
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            presentedPicker = nil
+            isPresented.wrappedValue = false
         }
     }
 }

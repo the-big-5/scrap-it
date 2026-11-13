@@ -191,9 +191,6 @@ private struct ColorWell: View {
         }
         .buttonStyle(.plain)
         .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
-        .sheet(isPresented: $isPickerPresented) {
-            SystemColorPicker(color: color) { color = $0 }
-                .presentationDetents([.medium, .large])
-        }
+        .systemColorPicker(isPresented: $isPickerPresented, color: color) { color = $0 }
     }
 }

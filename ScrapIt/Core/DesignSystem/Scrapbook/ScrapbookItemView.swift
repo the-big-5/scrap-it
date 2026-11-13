@@ -139,15 +139,17 @@ struct ScrapbookItemView: View {
                 missingAsset
             }
         case .text:
-            Text(item.text ?? "")
-                .font(item.page?.role != nil
-                      ? TextItemStyle.coverFont(size: normalizedWidth * pageSize.width)
-                      : TextItemStyle.font(size: normalizedWidth * pageSize.width))
-                .foregroundStyle(TextItemColor.from(item.textColor).color)
-                .multilineTextAlignment(.center)
-                // Text standing up along the spine wraps by the spine's length (change 026).
-                .frame(maxWidth: (abs(sin(item.rotation)) > 0.7 ? pageSize.height : pageSize.width) * TextItemStyle.maxWidthRatio)
-                .fixedSize(horizontal: false, vertical: true)
+            let angle = item.rotation + rotationDelta.radians
+            let maxTextWidth = (abs(sin(angle)) > 0.7 ? pageSize.height : pageSize.width) * TextItemStyle.maxWidthRatio
+            BoundedWidthLayout(maxWidth: maxTextWidth) {
+                Text(item.text ?? "")
+                    .font(item.page?.role != nil
+                          ? TextItemStyle.coverFont(size: normalizedWidth * pageSize.width)
+                          : TextItemStyle.font(size: normalizedWidth * pageSize.width))
+                    .foregroundStyle(TextItemColor.from(item.textColor).color)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         case .drawing:
             EmptyView()
         case .photo:
@@ -321,5 +323,22 @@ struct ItemMaskShape: Shape {
             path.closeSubpath()
         }
         return path
+    }
+}
+
+/// Ignores a narrow container width proposal (such as the book spine) so text stretches up to `maxWidth`
+/// before wrapping while keeping its bounding box tight to the rendered text (change 128).
+private struct BoundedWidthLayout: Layout {
+    let maxWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        return child.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let child = subviews.first else { return }
+        child.place(at: CGPoint(x: bounds.midX, y: bounds.midY), anchor: .center,
+                    proposal: ProposedViewSize(width: maxWidth, height: nil))
     }
 }

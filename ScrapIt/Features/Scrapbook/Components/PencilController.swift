@@ -183,4 +183,19 @@ final class PencilController {
         let tool = pkTool
         for board in boards { board.canvas.tool = tool }
     }
+
+    /// Combines multiple drawing-layer payloads on the same page into one drawing so older strokes stay erasable.
+    static func mergedDrawingData(_ payloads: [Data]) -> Data {
+        let nonEmpty = payloads.filter { !$0.isEmpty }
+        guard nonEmpty.count > 1 else { return nonEmpty.first ?? Data() }
+        var strokes: [PKStroke] = []
+        var parsedAny = false
+        for data in nonEmpty {
+            if let drawing = try? PKDrawing(data: data), !drawing.strokes.isEmpty {
+                parsedAny = true
+                strokes.append(contentsOf: drawing.strokes)
+            }
+        }
+        return parsedAny ? PKDrawing(strokes: strokes).dataRepresentation() : (nonEmpty.last ?? Data())
+    }
 }

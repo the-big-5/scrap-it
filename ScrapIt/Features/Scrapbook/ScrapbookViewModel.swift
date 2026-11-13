@@ -121,8 +121,8 @@ final class ScrapbookViewModel {
     static let pageFullMessage = "This page is full"
     static let maxUndoSteps = 50
     static let pageHintShownKey = "scrapbookPageHintShown"
-    /// Text on the spine: font size relative to the spine's width (about 20 pt on the 74 pt Figma spine).
-    static let spineTextSize: Double = 0.27
+    /// Text on the spine: font size relative to the spine's width (~30 pt on the 74 pt Figma spine, change 128).
+    static let spineTextSize: Double = 0.40
     /// Taps on letters within this time line up to the right (change 022).
     static let letterRunInterval: TimeInterval = 3
 
@@ -1430,14 +1430,14 @@ final class ScrapbookViewModel {
             return false
         }
         recordUndo()
-        // On the narrow spine a sheet-sized sticker would already be wider than the spine and couldn't grow; it lands
-        // at 60% of the spine's width so it can still be made bigger (change 103).
+        // On the narrow spine a sheet-sized sticker would already be wider than the spine; cap at 80% of the spine's
+        // width so it lands larger by default while still leaving room to scale (change 128).
         let isSpine = page.role == ScrapbookPage.Role.spine.rawValue
         let item = ScrapbookItem(
             stickerID: sticker.id,
             centerX: (center.x - pageFrame.minX) / pageFrame.width,
             centerY: (center.y - pageFrame.minY) / pageFrame.height,
-            width: isSpine ? min(width / pageFrame.width, 0.6) : width / pageFrame.width,
+            width: isSpine ? min(width / pageFrame.width, 0.8) : width / pageFrame.width,
             rotation: rotation,
             zIndex: frontZIndex(on: page)
         )
@@ -1589,14 +1589,27 @@ final class ScrapbookViewModel {
     /// The layer being drawn on the active page.
     var activeDrawingID: UUID? { currentPageID.flatMap { drawingLayerIDs[$0] } }
 
-    /// On every page that takes touches (both pages of the spread), strokes go into the frontmost item if it's a
-    /// drawing layer; otherwise a new layer is created in front, so drawings stack with photos in the order they
-    /// were added. `false` when no page has room.
+    /// On every page that takes touches (both pages of the spread), strokes reuse existing drawing layers on that page
+    /// (merging older ones if multiple exist) so prior strokes remain erasable even when stickers or text sit above
+    /// them; otherwise a new layer is created in front. `false` when no page has room.
     @discardableResult
     func beginDrawing() -> Bool {
         for page in editablePages {
-            if let top = page.sortedItems.last, top.kind == .drawing {
-                drawingLayerIDs[page.id] = top.id
+            let drawings = page.sortedItems.filter { $0.kind == .drawing }
+            if let primary = drawings.last {
+                if drawings.count > 1 {
+                    primary.drawingData = PencilController.mergedDrawingData(drawings.compactMap(\.drawingData))
+                    for extra in drawings.dropLast() {
+                        let extraID = extra.id
+                        modelContext.delete(extra)
+                        broadcast(ScrapbookEvent(type: .itemRemoved, pageIndex: pageIndex(of: page), senderID: senderID,
+                                                 itemID: extraID))
+                    }
+                    if save() {
+                        broadcastDrawingUpdated(primary)
+                    }
+                }
+                drawingLayerIDs[page.id] = primary.id
             } else if page.allItems.count < ScrapbookPage.maxItems {
                 let item = ScrapbookItem(centerX: 0.5, centerY: 0.5, width: 1, rotation: 0, zIndex: frontZIndex(on: page))
                 item.drawingData = Data()

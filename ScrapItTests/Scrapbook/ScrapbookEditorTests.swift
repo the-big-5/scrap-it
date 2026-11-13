@@ -809,17 +809,17 @@ struct ScrapbookEditorTests {
         #expect(vm.activeDrawingID == firstLayer)
         vm.selectTrayTool(.pencil)
 
-        // A photo on top: a new layer in front of it, the old drawing stays under the photo.
+        // Even after a photo is placed on top, re-entering Pencil reuses the drawing layer so old strokes remain erasable (change 128).
         vm.addPhoto(stillPhoto.id)
         vm.selectTrayTool(.pencil)
         let secondLayer = try #require(vm.activeDrawingID)
-        #expect(secondLayer != firstLayer)
+        #expect(secondLayer == firstLayer)
         vm.updateActiveDrawing(Data("second".utf8))
         vm.closeTray()
 
         let order = try #require(vm.currentPage?.sortedItems.map(\.kind))
-        #expect(order == [.drawing, .photo, .drawing])
-        #expect(vm.currentPage?.sortedItems.last?.drawingData == Data("second".utf8))
+        #expect(order == [.drawing, .photo])
+        #expect(vm.currentPage?.sortedItems.first?.drawingData == Data("second".utf8))
     }
 
     @Test func aStrokeOnBothPagesOfTheSpreadIsOneUndoStep() throws {
@@ -1657,5 +1657,95 @@ struct ScrapbookCoverTests {
         #expect(vm.zoom == .left)
         vm.ensureSpreadForLandscape()
         #expect(vm.zoom == .spread)
+    }
+
+    @Test func textWidthRangesAllowLargerTextOnSpineFrontAndPages() throws {
+        let vm = makeEditor(as: host)
+        vm.openSpread()
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "Page"
+        vm.commitTextEditor()
+        let pageText = try #require(vm.currentPage?.allItems.first { $0.kind == .text })
+        #expect(pageText.widthRange == 0.03...0.6)
+
+        vm.finishScrapbook()
+        vm.editCover()
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "Front"
+        vm.commitTextEditor()
+        let frontText = try #require(vm.coverPage(.front)?.allItems.first { $0.kind == .text })
+        #expect(frontText.widthRange == 0.03...0.6)
+
+        vm.showSpine()
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "Spine"
+        vm.commitTextEditor()
+        let spineText = try #require(vm.coverPage(.spine)?.allItems.first { $0.kind == .text })
+        #expect(spineText.widthRange == 0.1...1.5)
+    }
+
+    @Test func beginDrawingReusesAndMergesDrawingLayersWhenOtherItemsAreAbove() throws {
+        let vm = makeEditor(as: host)
+        vm.finishScrapbook()
+        vm.editCover()
+        vm.showSpine()
+
+        #expect(vm.beginDrawing())
+        let spine = try #require(vm.coverPage(.spine))
+        let firstDrawingID = try #require(vm.drawingLayerIDs[spine.id])
+        let initialStrokes = Data("spine-strokes".utf8)
+        vm.updateDrawing(initialStrokes, onPage: spine.id)
+        vm.endDrawing()
+
+        // Add text above the drawing, leave edit cover, and re-enter spine Pencil mode.
+        vm.selectTrayTool(.text)
+        vm.textEditor?.draft = "Trip"
+        vm.commitTextEditor()
+        vm.finishCoverEdit()
+        vm.editCover()
+        vm.showSpine()
+
+        #expect(vm.beginDrawing())
+        #expect(vm.drawingLayerIDs[spine.id] == firstDrawingID)
+        #expect(spine.allItems.filter { $0.kind == .drawing }.count == 1)
+        #expect(vm.drawingData(onPage: spine.id) == initialStrokes)
+
+        // Legacy multiple drawing layers on a spread page are consolidated when entering Pencil.
+        vm.endDrawing()
+        vm.finishCoverEdit()
+        vm.openSpread()
+        let page = try #require(vm.currentPage)
+        let extra = ScrapbookItem(centerX: 0.5, centerY: 0.5, width: 1, rotation: 0, zIndex: 10)
+        extra.drawingData = Data("top-layer".utf8)
+        let older = ScrapbookItem(centerX: 0.5, centerY: 0.5, width: 1, rotation: 0, zIndex: 1)
+        older.drawingData = Data("bottom-layer".utf8)
+        context.insert(older)
+        context.insert(extra)
+        older.page = page
+        extra.page = page
+
+        #expect(vm.beginDrawing())
+        #expect(page.allItems.filter { $0.kind == .drawing }.count == 1)
+        #expect(vm.drawingData(onPage: page.id) == Data("top-layer".utf8))
+    }
+
+    @Test func spineStickerCapsAtZeroPointEightWhileFrontCoverIsUncapped() throws {
+        let vm = makeEditor(as: host)
+        vm.finishScrapbook()
+        vm.editCover()
+        vm.showSpine()
+        vm.toggleStickerSheet(StickerCatalog.travel)
+        let sticker = try #require(vm.stickerSet.stickers.first)
+        let spineFrame = CGRect(x: 0, y: 0, width: 74, height: 462)
+        #expect(vm.placeSticker(sticker, center: CGPoint(x: 37, y: 200), width: 90, rotation: 0, pageFrame: spineFrame))
+        let spineSticker = try #require(vm.coverPage(.spine)?.allItems.first { $0.kind == .sticker })
+        #expect(spineSticker.width == 0.8)
+
+        vm.showFront()
+        let frontFrame = CGRect(x: 0, y: 0, width: 340, height: 468)
+        let secondSticker = try #require(vm.stickerSet.stickers.dropFirst().first)
+        #expect(vm.placeSticker(secondSticker, center: CGPoint(x: 170, y: 200), width: 170, rotation: 0, pageFrame: frontFrame))
+        let frontSticker = try #require(vm.coverPage(.front)?.allItems.first { $0.kind == .sticker })
+        #expect(frontSticker.width == 0.5)
     }
 }
