@@ -191,7 +191,7 @@ Figma page "Design System #2" (628:4011), Atoms and Molecules only. Code: `Core/
 - Camera: leather `#9A5531`, camera `#D2D0CB`, cognac `#6E3A20`
 - Scales Paper, Kraft, Green: light, lightHover, lightActive, normal, normalHover, normalActive, dark, darkHover, darkActive, darker (values in `DSColor.swift`)
 - Component: field `#EBE2D3`, surface `#FFFDF8`, placeholder `#6E6458`, textSecondary `#5E5449`, disabledText `#8A7F73`, disabledBackground `#E9E1D3`, inputError `#A8382A`, fillTertiary `#767680` 12%, labelTertiary `#3C3C43` 30%, toggleOffLabel `#B3B3B3`, white `#FFFFFF`
-- Dark mode: dark values equal light for now [Open]
+- Dark mode: dark values equal light for now, and `RootView` enforces `.preferredColorScheme(.light)` across the app so SwiftUI adaptive colors and navigation chrome stay in Light Mode (change 143) [Open]
 
 ### Typography (`DSTypography`, `.dsTypography(_:)`) — nodes 629:5503, 629:5466, 643:930
 - Headings, SF Pro, line height 1.1×: h1 56, h2 48, h3 40, h4 32, h5 24 (Bold); h6 20 (Medium)

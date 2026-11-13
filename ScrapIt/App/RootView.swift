@@ -57,6 +57,7 @@ struct RootView: View {
                     .ignoresSafeArea()
             }
         }
+        .preferredColorScheme(.light)
         .task {
             if authViewModel == nil {
                 let vm = AuthViewModel(modelContext: modelContext)
