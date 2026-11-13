@@ -1,6 +1,6 @@
 # 107: iPad Orientation & Responsive Layout Across Scrapbook Editor, Book, and Cover
 
-Status: Approved
+Status: Done  
 
 ## Why
 Although Change `105` enabled `.all` interface orientations on iPad, `ScrapbookEditorView`, `ScrapbookBookView`, `ScrapbookCoverScreen`, and `ToolTray` remain hardcoded for iPhone geometries:

@@ -20,16 +20,6 @@ struct CreateRollSetupView: View {
                 .ignoresSafeArea(edges: .top)
 
             VStack(alignment: .leading, spacing: 0) {
-                // Top navigation bar with Back button
-                HStack {
-                    BackCircleButton {
-                        dismiss()
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
                 // Large Title and Subtitle
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Create Roll")
@@ -115,6 +105,8 @@ struct CreateRollSetupView: View {
                 .padding(.bottom, 24)
             }
         }
-        .navigationBarBackButtonHidden(true)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .tint(DSColor.Brand.primary.color)
     }
 }

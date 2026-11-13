@@ -20,8 +20,13 @@ struct ScrapbookCoverScreen: View {
                 HStack(spacing: 10) {
                     // Back to the book, editing again, until this person is done (change 125, Figma 1563:33405).
                     if viewModel.coverActions != .finished {
-                        BackCircleButton(action: viewModel.backToEditing)
-                            .accessibilityLabel("Back to editing")
+                        Button(action: viewModel.backToEditing) {
+                            Image(systemName: "chevron.backward.circle.fill")
+                                .font(.system(size: 32))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+                        }
+                        .accessibilityLabel("Back to editing")
                     }
                     Spacer()
                     SpreadEditorButton(icon: .asset("ScrapbookPeople", template: false), width: 46,

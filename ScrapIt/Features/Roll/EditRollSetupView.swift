@@ -11,13 +11,6 @@ struct EditRollSetupView: View {
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    BackCircleButton(action: flowViewModel.cancelEditRoll)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Edit Roll")
                         .font(.system(size: 34, weight: .bold))
@@ -79,6 +72,8 @@ struct EditRollSetupView: View {
                     .padding(.bottom, 24)
             }
         }
-        .navigationBarBackButtonHidden(true)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .tint(DSColor.Brand.primary.color)
     }
 }

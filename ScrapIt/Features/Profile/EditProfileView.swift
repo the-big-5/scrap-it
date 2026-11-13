@@ -13,8 +13,6 @@ struct EditProfileView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                topBar
-
                 ScrollView {
                     VStack(spacing: 0) {
                         avatarPicker
@@ -31,7 +29,7 @@ struct EditProfileView: View {
                             editableRow(label: "Name") {
                                 TextField("Your name", text: $viewModel.draftName)
                                     .font(.system(size: 17, weight: .medium))
-                                    .foregroundStyle(Color.black)
+                                    .foregroundStyle(Color.primary)
                                     .multilineTextAlignment(.trailing)
                                     .textInputAutocapitalization(.words)
                                     .autocorrectionDisabled()
@@ -45,7 +43,7 @@ struct EditProfileView: View {
                             editableRow(label: "Bio") {
                                 TextField("Add a bio", text: $viewModel.draftBio)
                                     .font(.system(size: 17, weight: .medium))
-                                    .foregroundStyle(Color.black)
+                                    .foregroundStyle(Color.primary)
                                     .multilineTextAlignment(.trailing)
                             }
                         }
@@ -54,7 +52,7 @@ struct EditProfileView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Private Information")
                                 .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Color.black)
+                                .foregroundStyle(Color.primary)
                                 .padding(.leading, 8)
 
                             groupedCard {
@@ -88,7 +86,21 @@ struct EditProfileView: View {
             .ignoresSafeArea(.keyboard, edges: .bottom)
         }
         .navigationBarBackButtonHidden(true)
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle("Profile Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(DSColor.Kraft.lightActive.color, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("chevron.lef", action: viewModel.cancelEditProfile)
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save", action: viewModel.saveProfileChanges)
+                    .fontWeight(.semibold)
+            }
+        }
+        .tint(DSColor.Brand.primary.color)
         .onChange(of: selectedPhotoItem) { _, newItem in
             guard let newItem else { return }
             Task {
@@ -110,27 +122,7 @@ struct EditProfileView: View {
         }
     }
 
-    private var topBar: some View {
-        HStack {
-            BackCircleButton(action: viewModel.cancelEditProfile)
 
-            Spacer()
-
-            Text("Profile Settings")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(DSColor.Brand.primary.color)
-
-            Spacer()
-
-            CircleIconButton(
-                systemName: "checkmark",
-                accessibilityLabel: "Save profile",
-                action: viewModel.saveProfileChanges
-            )
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-    }
 
     private var avatarPicker: some View {
         PhotosPicker(selection: $selectedPhotoItem, matching: .images) {

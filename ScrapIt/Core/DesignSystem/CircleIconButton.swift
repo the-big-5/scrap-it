@@ -1,22 +1,6 @@
 import SwiftUI
 
-/// Round 44pt toolbar button with a hard offset shadow (same look as `BackCircleButton`),
-/// for any SF Symbol (Figma "Toolbar - Top" buttons: close, invite, more).
-struct CircleIconButton: View {
-    let systemName: String
-    let accessibilityLabel: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            CircleIconLabel(systemName: systemName)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
-/// The visual of `CircleIconButton`, also used as a `Menu` label.
+/// Round 44pt toolbar icon label with a hard offset shadow for SF Symbols (e.g. `Menu` label).
 struct CircleIconLabel: View {
     let systemName: String
 

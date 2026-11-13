@@ -15,27 +15,13 @@ struct JoinRollView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                ZStack {
-                    Text("Join Roll")
-                        .font(.headline)
-                        .foregroundStyle(DSColor.Brand.primary.color)
-                    HStack {
-                        BackCircleButton {
-                            dismiss()
-                        }
-                        .accessibilityLabel("Back")
-                        Spacer()
-                    }
-                }
-                .padding(.top, 4)
-
                 InviteFriendsIllustration()
                     .frame(maxWidth: 376)
                     .padding(.top, 4)
 
                 Text("Turn on AirDrop to accept the invite")
                     .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(Color.black)
+                    .foregroundStyle(Color.primary)
                     .multilineTextAlignment(.center)
                     .padding(.top, 8)
 
@@ -45,7 +31,7 @@ struct JoinRollView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Enter code")
                         .font(.system(size: 20, weight: .regular))
-                        .foregroundStyle(Color.black)
+                        .foregroundStyle(Color.primary)
 
                     codeField
 
@@ -77,7 +63,12 @@ struct JoinRollView: View {
             }
             .padding(.horizontal, 22)
         }
-        .navigationBarBackButtonHidden(true)
+        .navigationTitle("Join Roll")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(DSColor.Kraft.lightActive.color, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .tint(DSColor.Brand.primary.color)
         .onAppear { flowViewModel.prepareJoin() }
     }
 

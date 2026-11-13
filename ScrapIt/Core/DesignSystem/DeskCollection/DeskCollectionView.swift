@@ -15,8 +15,6 @@ struct DeskCollectionView<Content: View, EmptyState: View>: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                header
-
                 if isEmpty {
                     emptyState()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -30,24 +28,11 @@ struct DeskCollectionView<Content: View, EmptyState: View>: View {
                 }
             }
         }
-        .navigationBarBackButtonHidden(true)
-        .toolbar(.hidden, for: .navigationBar)
-    }
-
-    private var header: some View {
-        ZStack {
-            Text(title)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.black)
-                .lineLimit(1)
-
-            HStack {
-                BackCircleButton(action: onBack)
-                    .accessibilityLabel("Back")
-                Spacer()
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(DSColor.Kraft.lightActive.color, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .tint(DSColor.Brand.primary.color)
     }
 }

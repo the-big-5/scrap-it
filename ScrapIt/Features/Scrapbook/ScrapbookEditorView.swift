@@ -188,8 +188,13 @@ struct ScrapbookEditorView: View {
                     // Progress, Undo, Redo and ✓ on both sides.
                     HStack(spacing: 8) {
                         if viewModel.coverSide == .spine {
-                            BackCircleButton(action: viewModel.showFront)
-                                .accessibilityLabel("Back to the front cover")
+                            Button(action: viewModel.showFront) {
+                                Image(systemName: "chevron.backward.circle.fill")
+                                    .font(.system(size: 32))
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
+                            }
+                            .accessibilityLabel("Back to the front cover")
                         }
                         Spacer()
                         SpreadEditorButton(icon: .asset("ScrapbookPeople", template: false), width: 46,
