@@ -13,6 +13,11 @@ struct ScrapbookEditorView: View {
     @State private var isIslandOnLeading = true
     /// Two-finger zoom on the pages (change 114).
     @State private var pageZoom = PageZoom()
+    /// The closed tray button sits in the bottom left or right corner, like Freeform (change 127): its corner, the
+    /// live sideways drag, and whether a drag just happened (so letting go doesn't open the tray).
+    @State private var closedTraySide: HorizontalEdge = .leading
+    @State private var closedTrayDrag: CGFloat = 0
+    @State private var isDraggingClosedTray = false
     /// PencilKit-style iPad floating tray dock edge and minimized corner state (change 107).
     @State private var iPadTrayDock: ScrapbookEditorLayout.TrayDockEdge = .bottom
     @State private var iPadTrayCorner: ScrapbookEditorLayout.TrayCorner = .bottomLeading
@@ -364,6 +369,9 @@ struct ScrapbookEditorView: View {
                         if orientation == .landscapeRight { isIslandOnLeading = true }
                         if orientation == .landscapeLeft { isIslandOnLeading = false }
                     })
+                    // A turn of the phone puts the moved tray button back in its usual corner (change 127).
+                    .onChange(of: isLandscape) { resetClosedTray() }
+                    .onChange(of: isIslandOnLeading) { resetClosedTray() }
 
                 if isPad {
                     iPadEditLayout(geometry, isLandscape: isLandscape)
@@ -446,13 +454,24 @@ struct ScrapbookEditorView: View {
             ToolTray(
                 isOpen: viewModel.isTrayOpen,
                 activeTool: viewModel.raisedTool,
-                onOpen: viewModel.openTray,
+                onOpen: openTrayUnlessDragged,
                 onClose: viewModel.closeTray,
-                onSelect: viewModel.selectTrayTool
+                onSelect: viewModel.selectTrayTool,
+                onCloseSubTray: viewModel.closeSubTray,
+                closedAlignment: closedTraySide == .trailing ? .bottomTrailing : .bottomLeading,
+                onCloseSwipe: { translation in
+                    // Closing with a lean to one side sends the button to that corner (change 127).
+                    if translation.width > Self.closeLean { closedTraySide = .trailing }
+                    if translation.width < -Self.closeLean { closedTraySide = .leading }
+                }
             ) { tool in
                 subTray(for: tool)
             }
+            .frame(maxWidth: .infinity, alignment: closedTraySide == .trailing ? .bottomTrailing : .bottomLeading)
             .padding(.bottom, 4)
+            .modifier(SideSnapClosedTray(isOpen: viewModel.isTrayOpen, side: $closedTraySide,
+                                         drag: $closedTrayDrag, isDragging: $isDraggingClosedTray,
+                                         length: geometry.size.width, isVertical: false, towardOther: 1))
             .opacity(viewModel.isReadingPages ? 0 : 1)
             .allowsHitTesting(!viewModel.isReadingPages)
             .zIndex(1)
@@ -678,19 +697,30 @@ struct ScrapbookEditorView: View {
             ToolTray(
                 isOpen: viewModel.isTrayOpen,
                 activeTool: viewModel.raisedTool,
-                onOpen: viewModel.openTray,
+                onOpen: openTrayUnlessDragged,
                 onClose: viewModel.closeTray,
                 onSelect: viewModel.selectTrayTool,
-                closedAlignment: buttonsOnLeading ? .bottomLeading : .bottomTrailing,
-                closedButtonRotation: .degrees(buttonsOnLeading ? 90 : -90)
+                onCloseSubTray: viewModel.closeSubTray,
+                closedAlignment: landscapeClosedAlignment(buttonsOnLeading: buttonsOnLeading),
+                closedButtonRotation: .degrees(buttonsOnLeading ? 90 : -90),
+                onCloseSwipe: { translation in
+                    // The tray is turned on its side: its own sideways is the screen's up / down (change 127).
+                    let up = buttonsOnLeading ? translation.width : -translation.width
+                    if up > Self.closeLean { closedTraySide = .trailing }
+                    if up < -Self.closeLean { closedTraySide = .leading }
+                }
             ) { tool in
                 subTray(for: tool)
             }
-            .frame(width: fullHeight, height: trayDepth, alignment: buttonsOnLeading ? .bottomLeading : .bottomTrailing)
+            .frame(width: fullHeight, height: trayDepth, alignment: landscapeClosedAlignment(buttonsOnLeading: buttonsOnLeading))
             .rotationEffect(.degrees(buttonsOnLeading ? -90 : 90))
             .frame(width: trayDepth, height: fullHeight)
             .frame(maxWidth: .infinity, alignment: buttonsOnLeading ? .trailing : .leading)
             .ignoresSafeArea()
+            // Bottom (default) or top corner of the tray's side (change 127).
+            .modifier(SideSnapClosedTray(isOpen: viewModel.isTrayOpen, side: $closedTraySide,
+                                         drag: $closedTrayDrag, isDragging: $isDraggingClosedTray,
+                                         length: fullHeight, isVertical: true, towardOther: -1))
             .opacity(viewModel.isReadingPages ? 0 : 1)
             .allowsHitTesting(!viewModel.isReadingPages)
             .zIndex(1)
@@ -1040,6 +1070,28 @@ struct ScrapbookEditorView: View {
         return TrayStyle.trayHeight + 16
     }
 
+    /// Landscape: the closed button at the bottom of the screen (default) or at the top (change 127), in the turned
+    /// tray's own space.
+    private func landscapeClosedAlignment(buttonsOnLeading: Bool) -> Alignment {
+        let atBottom = closedTraySide == .leading
+        return (buttonsOnLeading == atBottom) ? .bottomLeading : .bottomTrailing
+    }
+
+    /// How far a closing swipe must lean sideways to send the tray button to that corner, from either corner
+    /// (change 127). The swipe still has to start downward (sideways starts scroll the tray).
+    private static let closeLean: CGFloat = 12
+
+    private func resetClosedTray() {
+        closedTraySide = .leading
+        closedTrayDrag = 0
+    }
+
+    /// The closed tray button opens the tray on a tap, not at the end of a drag (change 127).
+    private func openTrayUnlessDragged() {
+        guard !isDraggingClosedTray else { return }
+        viewModel.openTray()
+    }
+
     /// A point in a page's own space to its size on screen while the pages are zoomed (change 114).
     private func zoomed(_ point: CGPoint) -> CGPoint {
         CGPoint(x: point.x * pageZoom.scale, y: point.y * pageZoom.scale)
@@ -1305,5 +1357,50 @@ struct ScrapbookEditorLayout: Equatable {
                 ? min(container.width / 2, fitHeightWidth)
                 : min(container.width, fitHeightWidth)
         }
+    }
+}
+
+/// The closed tray button slides and settles in one of two corners, like Freeform (change 127): bottom left / right in
+/// portrait, bottom / top of the tray's side in landscape. The nearer corner when let go, or the one it was flicked
+/// toward. The open tray opens in its usual place. `leading` is the default corner.
+private struct SideSnapClosedTray: ViewModifier {
+    let isOpen: Bool
+    @Binding var side: HorizontalEdge
+    @Binding var drag: CGFloat
+    @Binding var isDragging: Bool
+    /// The length the button travels along (screen width, or the landscape screen height).
+    let length: CGFloat
+    /// Landscape: it moves up and down.
+    let isVertical: Bool
+    /// The screen direction from the default corner to the other: +1 right / down, -1 up.
+    let towardOther: CGFloat
+
+    func body(content: Content) -> some View {
+        let travel = max(length - TrayStyle.closedSize - 12, 0)
+        // Along the way to the other corner, from where it rests.
+        let along = drag * towardOther
+        let shown = side == .leading ? min(max(along, 0), travel) : min(max(along, -travel), 0)
+        let distance = isOpen ? 0 : shown * towardOther
+        content
+            .offset(x: isVertical ? 0 : distance, y: isVertical ? distance : 0)
+            .simultaneousGesture(isOpen ? nil : DragGesture(minimumDistance: 8, coordinateSpace: .global)
+                .onChanged { value in
+                    isDragging = true
+                    drag = isVertical ? value.translation.height : value.translation.width
+                }
+                .onEnded { value in
+                    let start: CGFloat = side == .trailing ? travel : 0
+                    let flick = isVertical ? value.predictedEndTranslation.height : value.predictedEndTranslation.width
+                    let landing = start + flick * towardOther
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        side = landing > travel / 2 ? .trailing : .leading
+                        drag = 0
+                    }
+                    // The button's tap comes right after the drag ends; it's ignored until then.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(150))
+                        isDragging = false
+                    }
+                })
     }
 }

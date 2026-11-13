@@ -56,9 +56,10 @@ struct PageBackgroundView: View {
                 }
                 context.fill(dots, with: .color(ink))
             case .paperDots:
-                // Figma page (1274:33452): r 1 pt dots every 22 pt on a 201 pt page, #4F4121 at 50% × 20%.
-                let step = size.width * 22 / 201
-                let radius = size.width / 201
+                // Paper dots, #4F4121 at 50% × 20%, the same at any page size (change 127): r 0.75 pt every 16 pt, a
+                // little smaller and denser than Figma's r 1 pt / 22 pt (user decision).
+                let step: CGFloat = 16
+                let radius: CGFloat = 0.75
                 var dots = Path()
                 var y = radius
                 while y < size.height {
