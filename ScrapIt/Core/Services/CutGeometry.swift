@@ -51,6 +51,90 @@ nonisolated enum CutGeometry {
         return pieces.count > 1 ? pieces : nil
     }
 
+    /// A cut with auto-complete (change 126): an edge-to-edge stroke splits as before; otherwise a rough loop inside
+    /// the polygon cuts out what it encloses (the rest keeps a hole); otherwise the stroke's ends are continued
+    /// straight to the polygon's edge. Only strokes that touch the polygon are completed.
+    static func autoCompletedPieces(_ polygon: [CGPoint], by path: [CGPoint], minimumArea: CGFloat,
+                                    maxPieces: Int = 12) -> [[CGPoint]]? {
+        if let pieces = splitAll(polygon, by: path, minimumArea: minimumArea, maxPieces: maxPieces) {
+            return pieces
+        }
+        guard maxPieces >= 2, path.count >= 2, path.contains(where: { contains(polygon, $0) }) else { return nil }
+        if let loop = closedLoop(path, in: polygon),
+           let pieces = cutOut(loop, from: polygon, minimumArea: minimumArea) {
+            return pieces
+        }
+        return splitAll(polygon, by: extendedToEdges(path), minimumArea: minimumArea, maxPieces: maxPieces)
+    }
+
+    /// The stroke as a closed loop when it's long enough, comes back near its start and stays inside the polygon.
+    static func closedLoop(_ path: [CGPoint], in polygon: [CGPoint]) -> [CGPoint]? {
+        guard path.count >= 3 else { return nil }
+        let length = zip(path, path.dropFirst()).reduce(0) { $0 + distance($1.0, $1.1) }
+        let gap = distance(path[0], path[path.count - 1])
+        guard length >= 0.3, gap <= min(0.2, length * 0.35),
+              path.allSatisfy({ contains(polygon, $0) }) else { return nil }
+        return gap < 0.005 ? Array(path.dropLast()) : path
+    }
+
+    /// The loop's inside as its own piece, and the polygon with a hole where it was. The hole is joined to the
+    /// outline by a zero-width bridge so the result stays one polygon (`ItemMaskShape` draws it as two rings).
+    static func cutOut(_ loop: [CGPoint], from polygon: [CGPoint],
+                       minimumArea: CGFloat) -> [[CGPoint]]? {
+        let inner = limited(loop)
+        guard inner.count >= 3, area(inner) >= minimumArea, area(polygon) - area(inner) >= minimumArea else { return nil }
+        return [bridged(outer: limited(polygon), hole: inner), inner]
+    }
+
+    /// Outer ring … O, H … H, O … ring: the hole runs the other way round, so a nonzero fill leaves it empty.
+    static func bridged(outer: [CGPoint], hole: [CGPoint]) -> [CGPoint] {
+        var ring = hole
+        if (signedArea(ring) > 0) == (signedArea(outer) > 0) { ring.reverse() }
+        var best = (outer: 0, hole: 0, distance: CGFloat.infinity)
+        for (i, o) in outer.enumerated() {
+            for (j, h) in ring.enumerated() where distance(o, h) < best.distance {
+                best = (i, j, distance(o, h))
+            }
+        }
+        let rotated = Array(ring[best.hole...] + ring[..<best.hole])
+        return Array(outer[...best.outer]) + rotated + [rotated[0]] + Array(outer[best.outer...])
+    }
+
+    /// Splits a bridged polygon back into its outer ring and its hole; `nil` when it has no hole.
+    static func rings(of polygon: [CGPoint]) -> (outer: [CGPoint], hole: [CGPoint])? {
+        for a in polygon.indices where a + 1 < polygon.count {
+            for b in (a + 3)..<max(a + 3, polygon.count) where polygon[b] == polygon[a] && polygon[b - 1] == polygon[a + 1] {
+                let hole = Array(polygon[(a + 1)...(b - 2)])
+                let outer = Array(polygon[...a]) + Array(polygon[(b + 1)...])
+                guard hole.count >= 3, outer.count >= 3 else { continue }
+                return (outer, hole)
+            }
+        }
+        return nil
+    }
+
+    /// Both ends continued straight, in the direction of the stroke's last stretch, well past the polygon.
+    static func extendedToEdges(_ path: [CGPoint]) -> [CGPoint] {
+        guard path.count >= 2 else { return path }
+        func continued(_ end: CGPoint, inward points: [CGPoint]) -> CGPoint {
+            let neighbor = points.first { distance($0, end) >= 0.05 } ?? points[0]
+            return extend(end, awayFrom: neighbor, by: 3)
+        }
+        let start = continued(path[0], inward: Array(path.dropFirst()))
+        let end = continued(path[path.count - 1], inward: Array(path.dropLast().reversed()))
+        return [start] + path + [end]
+    }
+
+    private static func signedArea(_ polygon: [CGPoint]) -> CGFloat {
+        guard polygon.count >= 3 else { return 0 }
+        var sum: CGFloat = 0
+        for i in polygon.indices {
+            let a = polygon[i], b = polygon[(i + 1) % polygon.count]
+            sum += a.x * b.y - b.x * a.y
+        }
+        return sum / 2
+    }
+
     static func split(_ polygon: [CGPoint], by path: [CGPoint],
                       minimumArea: CGFloat = 0) -> (first: [CGPoint], second: [CGPoint])? {
         guard polygon.count >= 3, path.count >= 2 else { return nil }

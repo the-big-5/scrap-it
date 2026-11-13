@@ -310,9 +310,16 @@ struct ItemMaskShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         guard let points, points.count >= 3 else { return Path(rect) }
+        func mapped(_ ring: [CGPoint]) -> [CGPoint] {
+            ring.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + $0.y * rect.height) }
+        }
         var path = Path()
-        path.addLines(points.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + $0.y * rect.height) })
-        path.closeSubpath()
+        // A piece with a hole (a scissors loop, change 126): outline and hole as two rings, no bridge line.
+        let rings = CutGeometry.rings(of: points).map { [$0.outer, $0.hole] } ?? [points]
+        for ring in rings {
+            path.addLines(mapped(ring))
+            path.closeSubpath()
+        }
         return path
     }
 }
