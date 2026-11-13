@@ -52,10 +52,10 @@ Figma nodes 1537:26016 (populated) & 1537:25997 (empty); change 106.
 - Empty (`1537:25997`): `DeskEmptyStateView` with `RollEmptyIllustration` (camera, 200/400 canisters, winding amber film leader, 3 yellow star characters), `"No roll in progress...yet!"`, `"Your next little moments are waiting to be captured. Start a roll and make memories with your friends."`, and `"Create Roll"` primary pill (`DSButton`) → `CreateRollSetupView`.
 
 ## Screen: Create Roll Setup [Locked]
-Figma node 984:3556
-- Warm gradient header with stationery decorations (CreateRollHeaderDecoration).
-- "Name your roll" input field.
-- "Choose your shots" film strip selector: 24, 36, 48, 72, nothing picked at first; guidance under it per pick: "suitable for 2-3 friends" (24), "4-6" (36), "7-8" (48), "8+" (72), nothing before a pick (change 081).
+Figma node 1717:68794 (change 138; replaces 984:3556)
+- Native Liquid Glass navigation bar back button (`.toolbarColorScheme(.light)`), no header decoration (`Kraft.lightActive` background), "Create Roll" (34 pt Bold) and "Capture moments with limited shots, revealed when the roll is complete." (15 pt Medium).
+- "Name your roll" (20 pt Regular, black) input field: 52 pt high, 20 pt corner radius, 1 pt black border, 15 pt italic placeholder "A trip, a night out, a season.".
+- "Pick how many photos to shot" (17 pt Regular, black) full-width edge-to-edge film strip selector (`FilmSprocketStrip` holes span edge-to-edge): 24, 36, 48, 72, nothing picked at first; centered italic guidance under it per pick: "suitable for 2-3 friends" (24), "4-6" (36), "7-8" (48), "8+" (72), nothing before a pick (changes 081, 138).
 - Shot picker frames (Figma "Shot Picker" 1717:63264, change 081; also on Edit Roll): the picked frame is `Brand.primary` with a white 34 pt heavy number and four viewfinder corner brackets (`ShotBracket…`, 14 pt, 8 pt in from the corners); the others `Kraft.darker` with a 30 pt heavy number in `Paper.dark`; 2 pt black between frames, 80 pt high; light selection haptic; VoiceOver "<n> shots" with the selected trait
 - "Next" (design-system primary button), disabled in the Figma disabled look until the name has text and a count is picked (change 081).
 
@@ -95,7 +95,7 @@ Figma 768:1623, from the lobby's "⋯" → Share Room (host and participant): Ai
 
 ## Screen: Join a Roll [Locked]
 Figma node 1187:9697 (change 019)
-- Back button, title "Join Roll", the invite illustration (change 081), "Turn on AirDrop to accept the invite", divider, "Enter code" with 6 boxes (49×58) left-aligned with the label, "Join Roll" button (design-system primary), disabled until all 6 characters are in (Figma 1663:46361, change 081). No header decoration
+- Native Liquid Glass back button, title "Join Roll" (`.toolbarColorScheme(.light)`), the invite illustration (change 081), centered "Turn on AirDrop to accept the invite" (black), `#E6E6E6` divider, horizontally centered 319 pt code block with "Enter code" (20 pt Regular, black) left-aligned to the 6 boxes (49×58, directly beneath the start of "Turn on AirDrop...") across device widths, "Join Roll" button (design-system primary), disabled until all 6 characters are in (Figma 1663:46361, changes 081, 138). No header decoration
 - One hidden text field holds the code; the boxes display it, the next box is outlined while typing; tapping a box opens the keyboard
 - Joining overlay (change 024): full screen on `Paper.light`; `FilterCanisterColor` / `FilterCanisterBW` (switching every 2.4 s cycle) bobs and pulls `FilmStripAmber` out of its slit and back; status text 17 pt semibold `Brand.primary` [Draft text]: "Finding the roll…" (0 s), "Loading the film…" (3 s), "Almost there…" (8 s); "Cancel" (`Brand.tertiary`) at the bottom. Also for invite links. Reduce Motion: canister still, film strip fades
 - Messages under the boxes, short only [Draft]: "No roll found for this code", "This roll has ended", "You're offline. Connect to the internet to join.", "Couldn't join. Make sure you're signed in to iCloud and try again." Cleared when the code changes. No "Enter all 6 characters" since the button waits for the full code (change 081)

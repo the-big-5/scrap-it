@@ -9,18 +9,8 @@ struct CreateRollSetupView: View {
             DSColor.Kraft.lightActive.color
                 .ignoresSafeArea()
 
-            // Header decoration from Figma node 984:3556
-            Image("CreateRollHeaderDecoration")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 206)
-                .clipped()
-                .allowsHitTesting(false)
-                .ignoresSafeArea(edges: .top)
-
             VStack(alignment: .leading, spacing: 0) {
-                // Large Title and Subtitle
+                // Large Title and Subtitle (Figma 1717:68794)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Create Roll")
                         .font(.system(size: 34, weight: .bold))
@@ -31,50 +21,42 @@ struct CreateRollSetupView: View {
                         .foregroundStyle(DSColor.Brand.primary.color.opacity(0.65))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.top, 10)
-                .padding(.bottom, 28)
 
                 // Section 1: Name your roll
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Name your roll")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(DSColor.Brand.primary.color)
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(Color.black)
 
-                    Text("A trip, a night out, a season.")
-                        .font(.system(size: 15, weight: .regular))
-                        .italic()
-                        .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
-                        .padding(.bottom, 6)
-
-                    TextField("Bali ’27", text: $flowViewModel.draftRollName)
-                        .font(.system(size: 17))
-                        .foregroundStyle(DSColor.Brand.primary.color)
-                        .padding(.horizontal, 14)
-                        .frame(height: 48)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(DSColor.Paper.light.color)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(DSColor.Brand.primary.color.opacity(0.3), lineWidth: 1)
-                                )
-                        )
+                    TextField(
+                        "",
+                        text: $flowViewModel.draftRollName,
+                        prompt: Text("A trip, a night out, a season.")
+                            .font(.system(size: 15))
+                            .italic()
+                            .foregroundStyle(Color(red: 60 / 255, green: 60 / 255, blue: 67 / 255, opacity: 0.3))
+                    )
+                    .font(.system(size: 17))
+                    .foregroundStyle(DSColor.Brand.primary.color)
+                    .padding(.horizontal, 16)
+                    .frame(height: 52)
+                    .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .background(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.black, lineWidth: 1)
+                    )
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 28)
+                .padding(.horizontal, 16)
+                .padding(.top, 36)
 
-                // Section 2: Choose your shots
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Choose your shots.")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(DSColor.Brand.primary.color)
-
-                    Text("How many memories?")
-                        .font(.system(size: 15, weight: .regular))
-                        .italic()
-                        .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
-                        .padding(.bottom, 12)
+                // Section 2: Pick how many photos to shot
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Pick how many photos to shot")
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(Color.black)
+                        .padding(.horizontal, 16)
 
                     FilmStripShotSelector(selectedCount: $flowViewModel.draftShotCount)
 
@@ -88,10 +70,10 @@ struct CreateRollSetupView: View {
                                 .foregroundStyle(DSColor.Brand.primary.color.opacity(0.6))
                             Spacer()
                         }
-                        .padding(.top, 10)
+                        .padding(.top, 2)
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.top, 34)
 
                 Spacer()
 
@@ -107,6 +89,7 @@ struct CreateRollSetupView: View {
         }
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.light, for: .navigationBar)
         .tint(DSColor.Brand.primary.color)
     }
 }
