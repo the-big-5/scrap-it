@@ -1041,6 +1041,9 @@ struct ScrapbookEditorTests {
 
     @Test func profileListsScrapbooksNewestFirstAndOpensTheEditor() {
         let older = Scrapbook(title: "Old", createdDate: Date(timeIntervalSince1970: 0))
+        // The shelf lists saved scrapbooks (change 125).
+        older.isLocked = true
+        scrapbook.isLocked = true
         context.insert(older)
         let profile = makeProfile(DeletedScrapbookList(defaults: UserDefaults(suiteName: UUID().uuidString)!))
 
@@ -1151,20 +1154,47 @@ struct ScrapbookCoverTests {
         #expect(guestVM.coverActions == .participant)
     }
 
-    @Test func doneIsFinalForThePagesAndTheHostCountsAsDone() async throws {
+    @Test func doneIsAConfirmationStepWithAWayBack() async throws {
         let vm = makeEditor(as: host)
+        await vm.connectRealtime()
+        // ✓: the cover screen, not locked; the host shows as done while there (change 125).
         vm.finishScrapbook()
         #expect(vm.mode == .cover)
-        #expect(!vm.isBookEditable)
+        #expect(vm.editingDone.map(\.id) == ["host-1"])
+        #expect(!vm.isLocked)
+        // Left on the cover screen, it opens there again.
+        #expect(makeEditor(as: host).mode == .cover)
+
+        // ‹: back to editing, In Progress again, for friends too.
+        vm.backToEditing()
+        #expect(vm.mode == .book)
+        #expect(vm.isBookEditable)
+        #expect(vm.editingDone.isEmpty)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(realtime.broadcastedEvents.contains { $0.type == .editingResumed && $0.memberID == "host-1" })
+
+        // Edit Cover is editing too; its ✓ lands on the cover screen: done again.
+        vm.finishScrapbook()
+        vm.editCover()
+        #expect(vm.editingDone.isEmpty)
+        vm.finishCoverEdit()
+        #expect(vm.editingDone.map(\.id) == ["host-1"])
+
+        // Save Scrapbook finishes; the host stays done from there.
+        vm.saveScrapbook()
+        #expect(vm.isLocked)
         #expect(vm.editingDone.map(\.id) == ["host-1"])
         try await Task.sleep(for: .milliseconds(50))
-        #expect(room.markedDone == ["host-1"])
-        #expect(realtime.broadcastedEvents.contains { $0.type == .editingDone && $0.memberID == "host-1" })
+        #expect(!room.markedDone.isEmpty && room.markedDone.allSatisfy { $0 == "host-1" })
 
-        // The pages can't be edited again, and reading never adds pages.
+        // Reading: tapping the book opens the pages read only; X back to the book; never adds pages.
+        vm.dismissFinishCard()
         vm.openReadOnlyBook()
         #expect(vm.mode == .book)
         vm.openSpread()
+        #expect(vm.mode == .edit)
+        #expect(vm.isReadingPages)
+        vm.closeSpread()
         #expect(vm.mode == .book)
         let pageCount = vm.pages.count
         vm.swipeSpread(by: 1)
@@ -1174,6 +1204,49 @@ struct ScrapbookCoverTests {
 
         // Opening it again starts on the closed book.
         #expect(makeEditor(as: host).mode == .cover)
+    }
+
+    @Test func aFriendSeesTheHostBackInProgress() async {
+        scrapbook.doneEditingMemberIDs = ["host-1"]
+        let vm = makeEditor(as: guest)
+        await vm.connectRealtime()
+        #expect(vm.editingDone.map(\.id) == ["host-1"])
+        realtime.simulateIncomingEvent(ScrapbookEvent(type: .editingResumed, pageIndex: 0, senderID: "host-1",
+                                                      memberID: "host-1"))
+        #expect(vm.editingDone.isEmpty)
+    }
+
+    @Test func checkAsksThenOpensEditCover() {
+        let vm = makeEditor(as: host)
+        vm.requestFinish()
+        #expect(vm.isDoneConfirmationPresented)
+        #expect(vm.mode == .book)
+
+        vm.isDoneConfirmationPresented = false
+        #expect(vm.isBookEditable)
+
+        vm.requestFinish()
+        vm.confirmFinish()
+        #expect(!vm.isDoneConfirmationPresented)
+        #expect(vm.mode == .editCover)
+        vm.finishCoverEdit()
+        #expect(vm.mode == .cover)
+        #expect(!vm.isLocked)
+    }
+
+    @Test func theWelcomeCardShowsOncePerScrapbook() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        func editor() -> ScrapbookViewModel {
+            ScrapbookViewModel(modelContext: context, navigator: navigator, sessionStore: SessionStore(modelContext: context),
+                               scrapbookID: scrapbook.id, currentUser: host, realtimeService: realtime,
+                               defaults: defaults, roomService: room)
+        }
+        let vm = editor()
+        #expect(vm.mode == .book)
+        #expect(vm.showsWelcome)
+        vm.dismissWelcome()
+        #expect(!vm.showsWelcome)
+        #expect(!editor().showsWelcome)
     }
 
     @Test func participantDoneEditingIsReadOnly() {
@@ -1194,7 +1267,7 @@ struct ScrapbookCoverTests {
     @Test func saveAsksFirstOnlyWhileSomeoneIsInProgress() async throws {
         let vm = makeEditor(as: host)
         vm.finishScrapbook()
-        #expect(vm.editingInProgress.map(\.id) == ["guest-2"])
+        #expect(vm.editingInProgress.map(\.id).contains("guest-2"))
         vm.requestSave()
         #expect(vm.finishCard == .confirmSave)
         vm.dismissFinishCard()

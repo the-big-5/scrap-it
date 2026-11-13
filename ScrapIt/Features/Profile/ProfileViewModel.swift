@@ -160,7 +160,8 @@ final class ProfileViewModel {
 
     func reload() {
         let descriptor = FetchDescriptor<Scrapbook>(sortBy: [SortDescriptor(\.createdDate, order: .reverse)])
-        scrapbooks = (try? modelContext.fetch(descriptor)) ?? []
+        // The shelf holds saved scrapbooks only; the rest are in Resume Editing (change 125).
+        scrapbooks = ((try? modelContext.fetch(descriptor)) ?? []).filter(\.isLocked)
     }
 
     func coverPage(of scrapbook: Scrapbook) -> ScrapbookPage? {

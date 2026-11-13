@@ -141,12 +141,18 @@ final class ScrapbookViewModel {
     var selectedItemID: UUID?
     var isSaveErrorPresented = false
     // Book view and spreads (change 025)
-    private(set) var mode: ScrapbookEditorMode = .book
+    private(set) var mode: ScrapbookEditorMode = .book {
+        didSet { updateHostDoneStatus() }
+    }
     private(set) var spreadIndex = 0
     private(set) var zoom: SpreadZoom = .spread
     /// "More pages to fill!" under the book, once per user.
     private(set) var showsPageHint: Bool
+    /// "Welcome to your scrapbook!" on the book (change 125): once per scrapbook on this phone.
+    private(set) var showsWelcome = false
     var isBackConfirmationPresented = false
+    /// "Done editing your pages?" after ✓ in the book view (change 125, Figma 1708:45425).
+    var isDoneConfirmationPresented = false
     var isWhosHerePresented = false
     // Cover and finishing (change 026)
     private(set) var coverSide: CoverSide = .front
@@ -255,6 +261,20 @@ final class ScrapbookViewModel {
         if mode == .book, hasFinishedPages || isReadOnly {
             mode = .cover
         }
+        showWelcomeIfNeeded()
+    }
+
+    private var welcomeShownKey: String { "scrapbookWelcomeShown-\(scrapbookID.uuidString)" }
+
+    private func showWelcomeIfNeeded() {
+        guard mode == .book, isBookEditable, !defaults.bool(forKey: welcomeShownKey) else { return }
+        showsWelcome = true
+    }
+
+    /// A tap anywhere dismisses the welcome card, for good on this phone.
+    func dismissWelcome() {
+        showsWelcome = false
+        defaults.set(true, forKey: welcomeShownKey)
     }
 
     var title: String { scrapbook?.title ?? "" }
@@ -363,17 +383,21 @@ final class ScrapbookViewModel {
     /// The pages can still change: not done with them, and not locked (change 026).
     var isBookEditable: Bool { !hasFinishedPages && !isReadOnly }
 
-    /// Tapping the book zooms into the edit view for the spread on screen, showing both pages.
+    /// Reading a finished book's pages zoomed in: the two-page view without tools (change 125).
+    var isReadingPages: Bool { mode == .edit && !isBookEditable }
+
+    /// Tapping the book zooms into the edit view for the spread on screen, showing both pages; a finished book
+    /// opens it read only (change 125).
     func openSpread() {
         // The Add page spread has no pages to edit yet (change 121).
-        guard isBookEditable, !isAtAddPageSpread else { return }
+        guard isBookEditable || isReadOnly || hasFinishedPages, !isAtAddPageSpread else { return }
         dismissPageHint()
         zoom = .spread
         currentPageID = leftPage?.id
         selectedItemID = nil
         clearHistory()
         mode = .edit
-        updatePresence()
+        if isBookEditable { updatePresence() }
     }
 
     /// X in the edit view: back to the book view on the same spread.
@@ -507,18 +531,37 @@ final class ScrapbookViewModel {
         return page
     }
 
-    /// Done in the book view: the pages are finished for this user, and the book closes on the cover screen.
-    /// The host counts as done from here (they have no Done Editing button).
+    /// ✓ in the book view (change 125): the book closes on the cover screen, the confirmation step. Nothing is
+    /// finished yet: Done Editing (participant) or Save Scrapbook (host) finish; ‹ goes back to editing.
     func finishScrapbook() {
         guard let scrapbook, !isReadOnly else { return }
         closeTray()
         selectedItemID = nil
         scrapbook.hasFinishedPages = true
         save()
-        if isHost {
-            markDoneEditing()
-        }
         mode = .cover
+    }
+
+    /// ✓ in the book view asks first (change 125, Figma 1708:45425).
+    func requestFinish() {
+        guard !isReadOnly else { return }
+        dismissPageHint()
+        isDoneConfirmationPresented = true
+    }
+
+    /// "Edit Cover" on that card: the pages wait on the cover screen, and Edit Cover opens to finish the cover.
+    func confirmFinish() {
+        isDoneConfirmationPresented = false
+        finishScrapbook()
+        editCover()
+    }
+
+    /// ‹ on the cover screen (change 125): back to the book, editing again.
+    func backToEditing() {
+        guard let scrapbook, !isReadOnly else { return }
+        scrapbook.hasFinishedPages = false
+        save()
+        mode = .book
     }
 
     /// Edit Cover: the front, with the tray already open.
@@ -589,7 +632,8 @@ final class ScrapbookViewModel {
     /// Host: Save Scrapbook asks first only while someone is still In Progress.
     func requestSave() {
         guard isHost, !isLocked else { return }
-        if editingInProgress.isEmpty {
+        // Asks only while someone else is still editing: the host is In Progress until Save (change 125).
+        if editingInProgress.allSatisfy(\.isMe) {
             saveScrapbook()
         } else {
             finishCard = .confirmSave
@@ -639,6 +683,35 @@ final class ScrapbookViewModel {
         mode = .cover
     }
 
+    /// The host is done while on the cover screen (with Edit Cover and Save Scrapbook) and In Progress while on the
+    /// pages or in Edit Cover, until Save Scrapbook (change 125).
+    private func updateHostDoneStatus() {
+        guard isHost, !isLocked, let scrapbook else { return }
+        let isDone = scrapbook.doneEditingMemberIDs.contains(senderID)
+        if mode == .cover, !isDone {
+            markDoneEditing()
+        } else if mode != .cover, isDone {
+            resumeEditingStatus()
+        }
+    }
+
+    private func resumeEditingStatus() {
+        guard let scrapbook else { return }
+        scrapbook.doneEditingMemberIDs.removeAll { $0 == senderID }
+        save()
+        broadcast(ScrapbookEvent(type: .editingResumed, pageIndex: 0, senderID: senderID, memberID: senderID))
+        if let roomService, let room = roomLocation {
+            let userID = senderID
+            Task { try? await roomService.resumeEditing(userID: userID, inRoom: room.code, zoneOwnerName: room.owner) }
+        }
+    }
+
+    private var hostUserID: String? {
+        guard let sessionID = scrapbook?.sourceSessionID else { return nil }
+        return (try? modelContext.fetch(FetchDescriptor<CaptureSession>(predicate: #Predicate { $0.id == sessionID })))?
+            .first?.hostUserID
+    }
+
     private func markDoneEditing() {
         guard let scrapbook else { return }
         if !scrapbook.doneEditingMemberIDs.contains(senderID) {
@@ -668,6 +741,12 @@ final class ScrapbookViewModel {
             if let avatar = participant.avatarData { memberAvatars[participant.userID] = avatar }
         }
         applyFinishStatus(doneIDs: snapshot.doneEditingUserIDs, locked: snapshot.scrapbookLocked)
+        // The host's status goes both ways (change 125): on friends' phones it follows the room.
+        if !isHost, let scrapbook, let hostID = hostUserID, !snapshot.scrapbookLocked,
+           !snapshot.doneEditingUserIDs.contains(hostID), scrapbook.doneEditingMemberIDs.contains(hostID) {
+            scrapbook.doneEditingMemberIDs.removeAll { $0 == hostID }
+            save()
+        }
     }
 
     private func applyFinishStatus(doneIDs: [String], locked: Bool) {
@@ -1953,6 +2032,11 @@ final class ScrapbookViewModel {
         case .editingDone:
             guard let memberID = event.memberID else { return }
             applyFinishStatus(doneIDs: [memberID], locked: false)
+
+        case .editingResumed:
+            guard let memberID = event.memberID, let scrapbook, !scrapbook.isLocked else { return }
+            scrapbook.doneEditingMemberIDs.removeAll { $0 == memberID }
+            save()
 
         case .scrapbookLocked:
             applyFinishStatus(doneIDs: [event.senderID], locked: true)

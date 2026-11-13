@@ -31,18 +31,32 @@ struct ScrapbookBookView: View {
                     }
                         .accessibilityLabel("Back")
                     Spacer()
+                    // ✓ instead of the Done button (change 125, Figma 1518:30319): on to the cover screen.
+                    if viewModel.isBookEditable {
+                        CircleIconButton(systemName: "checkmark", accessibilityLabel: "Done",
+                                         action: viewModel.requestFinish)
+                    }
                 }
                 .padding(.horizontal, 22)
                 Spacer()
-                if viewModel.isBookEditable {
-                    Button("Done", action: viewModel.finishScrapbook)
-                        .buttonStyle(.ds(.primary, size: .large, fullWidth: true))
-                        .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 358 : .infinity)
-                        .padding(.horizontal, 22)
-                        .padding(.bottom, 24)
-                }
+            }
+            // Welcome card (change 125, Figma 1444:23742), once per scrapbook; a tap anywhere dismisses it.
+            if viewModel.showsWelcome {
+                StarCard(
+                    starImage: "StarCharacterHappy",
+                    starSize: CGSize(width: 85, height: 108),
+                    titleSize: 24,
+                    messageSize: 15,
+                    title: "Welcome to your scrapbook!",
+                    message: "Tap the scrapbook to start editing. Add photos, get creative, and make it yours together.",
+                    actions: [],
+                    onDismiss: viewModel.dismissWelcome
+                )
+                .contentShape(Rectangle())
+                .onTapGesture(perform: viewModel.dismissWelcome)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: viewModel.showsWelcome)
         .animation(.easeInOut(duration: 0.25), value: viewModel.showsPageHint)
     }
 
@@ -146,7 +160,8 @@ struct ScrapbookBookView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            guard turn == 0, viewModel.isBookEditable else { return }
+            // A finished book opens its pages read only (change 125).
+            guard turn == 0 else { return }
             viewModel.openSpread()
         }
         .gesture(turnGesture(pageWidth: pageWidth))
@@ -251,6 +266,10 @@ struct ScrapbookBookView: View {
                 if viewModel.spreadIndex == 0 { progress = min(progress, 0) }
                 // On the Add page spread the right page doesn't lift: "+ Add page" is the only way on (change 121).
                 if viewModel.isAtAddPageSpread { progress = max(progress, 0) }
+                // Reading a finished book, its last spread has nothing after it (change 125).
+                if !viewModel.isBookEditable, viewModel.spreadIndex >= viewModel.spreadCount - 1 {
+                    progress = max(progress, 0)
+                }
                 turn = max(-1, min(1, progress))
             }
             .onEnded { value in

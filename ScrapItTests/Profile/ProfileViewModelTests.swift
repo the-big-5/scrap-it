@@ -181,8 +181,11 @@ struct ProfileViewModelTests {
                 title: "Book \(index)",
                 createdDate: Date(timeIntervalSince1970: TimeInterval(index))
             )
+            // Only saved scrapbooks are on the shelf (change 125).
+            book.isLocked = true
             context.insert(book)
         }
+        context.insert(Scrapbook(title: "Still editing", createdDate: Date(timeIntervalSince1970: 100)))
         try context.save()
 
         let router = AppRouter()
