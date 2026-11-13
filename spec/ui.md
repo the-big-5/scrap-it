@@ -3,13 +3,11 @@ Figma file: https://www.figma.com/design/ujlkuWobqxyvtQwh5plhGF/The-Big-Five (fi
 Frames are 402x874 (iPhone) unless noted. Style: warm cream background, hand-drawn film-camera illustrations, black pill buttons with a drop shadow, "film" theme. Terms: session = "Roll", photo = "shot".
 
 ## Screen: Welcome / Sign in [Locked]
-Figma node 676:3703
-- Logo placeholder at top, camera illustration
-- Headline "Shoot together. Keep it forever."
-- Subtext: "Sign in to start a shared roll with friends and keep every scrapbook on your shelf."
-- Button "Sign in With Apple", terms/privacy text
+Figma node 1545:40827; change 142
+- Background: Kraft light active (`#F7F2EB`)
+- Centered craft collage illustration (`315×301` coordinate frame): reuses `ToolboxEmptyStarburst`, `RollEmptyStarTop`, `RollEmptyStarLeft`, `RollEmptyStarRight`, `DeskDisposableCamera` (with `0px 4px 10px rgba(0,0,0,0.25)` shadow), `DeskFilmRollYellow` (with `0px 4px 10px rgba(0,0,0,0.25)` shadow), `ToolboxEmptyNotebook`, `ToolboxEmptyRuler`, plus `SignInPhotoBack` and `SignInPhotoFront`
+- Bottom actions (`22` pt horizontal padding, `16` pt spacing): black capsule `SignInWithAppleButton(.signIn)` (`52` pt height) and static `13` pt footnote `"By continuing, you agree to our Terms of Use and Privacy Policy."` (`DSColor.Component.textSecondary`, with Semibold `DSColor.Brand.primary` for `Terms of Use` and `Privacy Policy`)
 - Message above the button [Draft]: error "Couldn't sign in. Please try again."; offline "You're offline. Connect to the internet to sign in." (offline also disables the button)
-- Logo is still a placeholder box [Open]
 
 ## Screen: Onboarding Slides [Locked]
 Figma nodes 1248:21648 (OB1), 1249:22041 (OB2), 1255:22152 (OB3); changes 053, 054, 074
@@ -225,6 +223,7 @@ Figma page "Design System #2" (628:4011), Atoms and Molecules only. Code: `Core/
 ## Assets
 All illustrations are real Figma artwork in Assets.xcassets (@1x/@2x/@3x PNG, transparent):
 - HeroCamera (678:4897): Welcome and Camera Roll camera
+- Auth (folder `Auth/`, Figma 1545:40827, change 142): `SignInPhotoBack` and `SignInPhotoFront` (SVGs preserving vector representation); Welcome / Sign in collage reuses existing `DeskDisposableCamera`, `DeskFilmRollYellow`, `RollEmptyStarTop/Left/Right`, and `ToolboxEmptyNotebook/Ruler/Starburst`.
 - Workbench (folder `Workbench/`, Figma 853:1703): DeskWood (JPEG), DeskMatShadow, DeskShading, DeskCuttingMat, DeskMeasurements, DeskWoodGrain, DeskToolbox, DeskBookBottom, DeskBookTutorial, DeskRuler, DeskFilmRoll2..4, DeskPaperBall1..2, DeskStationery1..5. Exports are cut at the Figma frame edge; those parts are never on screen
 - Workbench interactive & iPad landscape additions (changes 104, 105, 106): `Workbench/DeskToolboxBase` + 8 loose tool sprites (`DeskToolboxRuler`, `DeskToolboxPencils`, `DeskToolboxCutter`, `DeskToolboxScissors`, `DeskToolboxEraser`, `DeskToolboxTapePink`, `DeskToolboxTapeBlue`, `DeskToolboxNotes`); `Workbench/DeskWoodLandscape`, `Workbench/DeskBookBottomLandscape` (`1563:34278`); `Workbench/DeskFilmRollYellow`, `Workbench/DeskFilmRollGreen`, `DeskFilmRollRed` (`1235:21168`).
 - DeskCollection (folder `DeskCollection/`, changes 104, 106): folder `Back`, `Flap`, and `FolderEdgeHighlight` layers for Burgundy/Kraft/Navy (`1537:25855`), `ToolboxEmptyNotebook/Pencil/Ruler/Scissors/Starburst/PhotoBack/PhotoFront` (`1537:25830`), and `RollEmptyLeader`, `RollEmptyStarLeft`, `RollEmptyStarTop`, `RollEmptyStarRight` (`1537:25997`).

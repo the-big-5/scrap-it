@@ -93,7 +93,7 @@ struct EditProfileView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("chevron.left", action: viewModel.cancelEditProfile)
+                Button("Kembali", systemImage: "chevron.left", action: viewModel.cancelEditProfile)
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save", action: viewModel.saveProfileChanges)
