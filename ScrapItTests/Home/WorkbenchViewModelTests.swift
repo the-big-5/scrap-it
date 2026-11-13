@@ -227,6 +227,17 @@ struct WorkbenchViewModelTests {
         #expect(vm.formattedDate(for: book) == "02/11/2026")
     }
 
+    @Test func resumeEditingListsOnlyScrapbooksNotSavedYet() throws {
+        let saved = Scrapbook(title: "Saved", createdDate: .now)
+        saved.isLocked = true
+        context.insert(saved)
+        context.insert(Scrapbook(title: "Editing", createdDate: .now))
+        try context.save()
+
+        let (vm, _, _) = makeViewModel()
+        #expect(vm.scrapbooks.map(\.title) == ["Editing"])
+    }
+
     @Test func emptyStateRoutesAndLocalDeviceRemovalCleanUpLocalStorageOnly() throws {
         let (defaults, suite) = makeDefaults()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }

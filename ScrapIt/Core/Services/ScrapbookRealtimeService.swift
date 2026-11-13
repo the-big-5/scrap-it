@@ -102,6 +102,8 @@ enum ScrapbookEventType: String, Codable, Sendable {
     /// Change 026: a member finished editing (`memberID`), the host locked the scrapbook, the cover color changed
     /// (`coverColor`). Cover items use the item events with page index -1 (front) and -2 (spine).
     case editingDone = "editing_done"
+    /// Change 125: the host left the cover screen to edit again (`memberID`): In Progress again.
+    case editingResumed = "editing_resumed"
     case scrapbookLocked = "scrapbook_locked"
     case coverColor = "cover_color"
 }

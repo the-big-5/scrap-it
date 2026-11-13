@@ -55,10 +55,25 @@ struct ScrapbookEditorView: View {
                 )
                 .zIndex(10)
             }
+
+            // After ✓ in the book view (change 125, Figma 1708:45425).
+            if viewModel.isDoneConfirmationPresented {
+                BookStarCard(
+                    title: "Done editing your pages?",
+                    message: "Nice work! Now let’s finish it with a cover.",
+                    actions: [
+                        .init(title: "Cancel", style: .plain, action: { viewModel.isDoneConfirmationPresented = false }),
+                        .init(title: "Edit Cover", style: .primary, action: viewModel.confirmFinish),
+                    ],
+                    onDismiss: { viewModel.isDoneConfirmationPresented = false }
+                )
+                .zIndex(10)
+            }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.86),
                    value: viewModel.mode)
         .animation(.easeInOut(duration: 0.2), value: viewModel.isBackConfirmationPresented)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.isDoneConfirmationPresented)
         .animation(.easeInOut(duration: 0.2), value: viewModel.finishCard)
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: viewModel.coverSide)
         // The page zoom starts over on another view or screen (change 114).
@@ -81,7 +96,9 @@ struct ScrapbookEditorView: View {
             }
         }
         .sheet(isPresented: $viewModel.isWhosHerePresented) {
-            WhosHereSheet(onThisSpread: viewModel.whosHereOnThisSpread,
+            // Titled Editing Progress (change 125).
+            WhosHereSheet(title: "Editing Progress",
+                          onThisSpread: viewModel.whosHereOnThisSpread,
                           onOtherPages: viewModel.whosHereOnOtherPages,
                           onClose: { viewModel.isWhosHerePresented = false })
         }
@@ -436,6 +453,8 @@ struct ScrapbookEditorView: View {
                 subTray(for: tool)
             }
             .padding(.bottom, 4)
+            .opacity(viewModel.isReadingPages ? 0 : 1)
+            .allowsHitTesting(!viewModel.isReadingPages)
             .zIndex(1)
 
             trashCan
@@ -597,6 +616,8 @@ struct ScrapbookEditorView: View {
             )
             .animation(.spring(response: 0.35, dampingFraction: 0.82), value: iPadTrayDock)
             .animation(.spring(response: 0.35, dampingFraction: 0.82), value: iPadTrayCorner)
+            .opacity(viewModel.isReadingPages ? 0 : 1)
+            .allowsHitTesting(!viewModel.isReadingPages)
             .zIndex(1)
 
             trashCan
@@ -670,6 +691,8 @@ struct ScrapbookEditorView: View {
             .frame(width: trayDepth, height: fullHeight)
             .frame(maxWidth: .infinity, alignment: buttonsOnLeading ? .trailing : .leading)
             .ignoresSafeArea()
+            .opacity(viewModel.isReadingPages ? 0 : 1)
+            .allowsHitTesting(!viewModel.isReadingPages)
             .zIndex(1)
 
             trashCan
@@ -706,23 +729,33 @@ struct ScrapbookEditorView: View {
         SpreadEditorButton(icon: .system("xmark"), accessibilityLabel: "Close", action: viewModel.closeSpread)
     }
 
+    // Reading a finished book's pages has no editing buttons (change 125).
+    @ViewBuilder
     private var whosHereButton: some View {
-        SpreadEditorButton(icon: .asset("ScrapbookPeople", template: false), width: 46,
-                           accessibilityLabel: "Who's here") {
-            viewModel.isWhosHerePresented = true
+        if !viewModel.isReadingPages {
+            SpreadEditorButton(icon: .asset("ScrapbookPeople", template: false), width: 46,
+                               accessibilityLabel: "Editing progress") {
+                viewModel.isWhosHerePresented = true
+            }
         }
     }
 
+    @ViewBuilder
     private var undoButton: some View {
-        SpreadEditorButton(icon: .system("arrow.uturn.backward"), width: 47, accessibilityLabel: "Undo",
-                           action: viewModel.undo)
-            .disabled(!viewModel.canUndo)
+        if !viewModel.isReadingPages {
+            SpreadEditorButton(icon: .system("arrow.uturn.backward"), width: 47, accessibilityLabel: "Undo",
+                               action: viewModel.undo)
+                .disabled(!viewModel.canUndo)
+        }
     }
 
+    @ViewBuilder
     private var redoButton: some View {
-        SpreadEditorButton(icon: .system("arrow.uturn.forward"), width: 47, accessibilityLabel: "Redo",
-                           action: viewModel.redo)
-            .disabled(!viewModel.canRedo)
+        if !viewModel.isReadingPages {
+            SpreadEditorButton(icon: .system("arrow.uturn.forward"), width: 47, accessibilityLabel: "Redo",
+                               action: viewModel.redo)
+                .disabled(!viewModel.canRedo)
+        }
     }
 
     private var zoomIconName: String {
@@ -855,7 +888,7 @@ struct ScrapbookEditorView: View {
                     .frame(width: pageSize.width, height: pageSize.height)
                     .coordinateSpace(name: ScrapbookPageView.coordinateSpace)
                     .offset(x: CGFloat(entry.pageIndex) * pageSize.width)
-                    .allowsHitTesting(viewModel.editablePages.contains { $0.id == entry.page.id })
+                    .allowsHitTesting(!viewModel.isReadingPages && viewModel.editablePages.contains { $0.id == entry.page.id })
                 }
             }
         }

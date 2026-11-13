@@ -89,6 +89,8 @@ protocol RollRoomServicing: AnyObject {
     func markDoneEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws
     /// The host saved the scrapbook: locked for everyone (change 026).
     func lockScrapbook(inRoom code: String, zoneOwnerName: String?) async throws
+    /// The host left the cover screen to edit again: no longer done (change 125).
+    func resumeEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws
 }
 
 extension RollRoomServicing {
@@ -116,6 +118,7 @@ extension RollRoomServicing {
     ) async throws {}
     func markDoneEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws {}
     func lockScrapbook(inRoom code: String, zoneOwnerName: String?) async throws {}
+    func resumeEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws {}
 }
 
 extension Notification.Name {
@@ -581,6 +584,12 @@ final class CloudKitRollRoomService: RollRoomServicing {
                               recordID: CKRecord.ID(recordName: "ScrapbookLock", zoneID: location.zoneID))
         record["lockedAt"] = Date.now
         try await saveScrapbookRecord(record, location: location)
+    }
+
+    func resumeEditing(userID: String, inRoom code: String, zoneOwnerName: String?) async throws {
+        let location = RollRoomLocation(rollCode: code, zoneOwnerName: zoneOwnerName)
+        let recordID = CKRecord.ID(recordName: "Done-\(userID)", zoneID: location.zoneID)
+        _ = try await location.database(in: container).modifyRecords(saving: [], deleting: [recordID])
     }
 
     private func saveScrapbookRecord(_ record: CKRecord, location: RollRoomLocation) async throws {

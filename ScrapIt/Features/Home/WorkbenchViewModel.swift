@@ -96,7 +96,8 @@ final class WorkbenchViewModel {
         let descriptor = FetchDescriptor<Scrapbook>(
             sortBy: [SortDescriptor(\.createdDate, order: .reverse)]
         )
-        return (try? modelContext.fetch(descriptor)) ?? []
+        // Resume Editing: scrapbooks not saved yet; saved ones are on the Library shelf (change 125).
+        return ((try? modelContext.fetch(descriptor)) ?? []).filter { !$0.isLocked }
     }
 
     var activeRolls: [CaptureSession] {
