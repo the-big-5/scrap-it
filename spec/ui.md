@@ -56,6 +56,7 @@ Figma node 984:3556
 - Warm gradient header with stationery decorations (CreateRollHeaderDecoration).
 - "Name your roll" input field.
 - "Choose your shots" film strip selector: 24, 36, 48, 72, nothing picked at first; guidance under it per pick: "suitable for 2-3 friends" (24), "4-6" (36), "7-8" (48), "8+" (72), nothing before a pick (change 081).
+- Shot picker frames (Figma "Shot Picker" 1717:63264, change 081; also on Edit Roll): the picked frame is `Brand.primary` with a white 34 pt heavy number and four viewfinder corner brackets (`ShotBracket…`, 14 pt, 8 pt in from the corners); the others `Kraft.darker` with a 30 pt heavy number in `Paper.dark`; 2 pt black between frames, 80 pt high; light selection haptic; VoiceOver "<n> shots" with the selected trait
 - "Next" (design-system primary button), disabled in the Figma disabled look until the name has text and a count is picked (change 081).
 
 ## Screen: Create Roll Filter [Locked]

@@ -14,6 +14,7 @@ flows.md (F3 steps 2–5, Resume Roll), ui.md (Create Roll Setup, Create Roll Fi
 
 ## Changes
 - MODIFIED Create Roll Setup (F3 step 2): no shot count is picked at first (no 36 default). "Next" is disabled, in the disabled button color, until the name has text (not only spaces) and a count is picked. The guidance under the strip follows the pick: 24 → "suitable for 2-3 friends", 36 → "4-6 friends", 48 → "7-8 friends", 72 → "8+ friends"; nothing shows before a pick.
+- MODIFIED Shot picker (Create Roll and Edit Roll, Figma 1187:8290 / "Shot Picker" 1717:63264, added after the first merge): the picked frame is `Brand.primary` with a white 34 pt heavy number and four viewfinder corner brackets (14 pt, 8 pt in from the corners, assets from Figma); the others are `Kraft.darker` with a 30 pt heavy number in `Paper.dark`; 2 pt black between frames; 80 pt high; a light selection haptic; VoiceOver "<n> shots", selected trait.
 - MODIFIED Create Roll Filter (F3 step 3, Figma 1571:48191): title "Create Roll" with ‹, "Pick a filter", both films show their sample photos. The picked film's photos move by themselves like a carousel and its canister grows; the other stays still at normal size. The button is "Done" (goes to the lobby, as "Next" did).
 - ADDED Edit Roll (host, lobby "⋯" → Edit Room, Figma 1599:49098): only while the roll hasn't started.
   - Edit Roll setup (1599:49590): ‹, "Edit Roll" (large title), "Capture moments with limited shots, revealed when the roll is complete.", "Name your roll" field and "Pick how many photos to shot" strip with the roll's current name and count, the same guidance and Next validation.
@@ -31,8 +32,9 @@ flows.md (F3 steps 2–5, Resume Roll), ui.md (Create Roll Setup, Create Roll Fi
 - [x] Edit Roll: Edit Room → setup → filter → Done saves (name, shots, filter) and syncs; ‹ behavior; no Edit Room after start
 - [x] Download the invite illustration from Figma 1599:49022; use it in Invite Friends and Join Roll
 - [x] Delete Roll card (1600:50620) for lobby and Resume Roll; Roll Deleted card (1600:50745) on the Workbench for the host and the removed people; download the star assets from Figma
+- [x] Shot picker: viewfinder brackets on the picked frame (assets from Figma), Figma sizes and colors, haptic, VoiceOver
 - [x] Resume Roll: live roll → lobby with Continue Roll → camera without the start step
-- [x] Tests (validation, guidance, edit save, continue vs start); build and run all tests (370 passed); test on device
+- [x] Tests (validation, guidance, edit save, continue vs start); build and run all tests (378 passed); test on device
 
 ## Notes
 - Next / Done use the design system's primary button, which has the Figma disabled look (Create Roll's Next was the white offset pill). The filter step has no header decoration, as in Figma 1571:48191.
