@@ -10,6 +10,8 @@ struct ScrapbookItemActions {
     var toggleMotion: (UUID) -> Void
     var remove: (UUID) -> Void
     var deselect: () -> Void
+    /// A tap on the paper (point and page size): may pick a pencil drawing (change 150). `nil` = `deselect`.
+    var tapPaper: ((CGPoint, CGSize) -> Void)?
     /// Double tap: full-screen photo, or edit a text (change 022).
     var doubleTap: (UUID) -> Void = { _ in }
     var editText: (UUID) -> Void = { _ in }
@@ -39,6 +41,8 @@ struct ScrapbookPageView: View {
     var aspectRatio: CGFloat = 3 / 4
     /// Cover sides draw the cover art behind instead of the paper (change 026).
     var drawsBackground = true
+    /// Drawing layers shown with other data, by item (a selected pencil drawing, change 150).
+    var drawingDataOverrides: [UUID: Data] = [:]
 
     var body: some View {
         GeometryReader { geometry in
@@ -50,7 +54,13 @@ struct ScrapbookPageView: View {
                         Color.clear.contentShape(Rectangle())
                     }
                 }
-                .onTapGesture { actions?.deselect() }
+                .onTapGesture { location in
+                    if let tapPaper = actions?.tapPaper {
+                        tapPaper(location, geometry.size)
+                    } else {
+                        actions?.deselect()
+                    }
+                }
 
                 ForEach(page.sortedItems, id: \.id) { item in
                     ScrapbookItemView(
@@ -62,7 +72,8 @@ struct ScrapbookPageView: View {
                         shouldPlay: { shouldPlay(item, $0) },
                         actions: actions,
                         isHidden: item.id == activeDrawingID,
-                        isOverTrash: isTrashTargeted && draggedItemID == item.id
+                        isOverTrash: isTrashTargeted && draggedItemID == item.id,
+                        drawingDataOverride: drawingDataOverrides[item.id]
                     )
                 }
 

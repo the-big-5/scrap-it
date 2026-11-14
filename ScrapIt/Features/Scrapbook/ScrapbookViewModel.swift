@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import Observation
+import PencilKit
 import SwiftData
 
 /// Main tray tools, left to right as in Figma (change 022).
@@ -142,7 +143,10 @@ final class ScrapbookViewModel {
     var isSaveErrorPresented = false
     // Book view and spreads (change 025)
     private(set) var mode: ScrapbookEditorMode = .book {
-        didSet { updateHostDoneStatus() }
+        didSet {
+            updateHostDoneStatus()
+            if mode != oldValue { deselectDrawing() }
+        }
     }
     private(set) var spreadIndex = 0
     private(set) var zoom: SpreadZoom = .spread
@@ -201,6 +205,8 @@ final class ScrapbookViewModel {
     /// Each page's frame on screen (global), for the trash drop target (change 025: two pages on the spread).
     var pageGlobalFrames: [UUID: CGRect] = [:]
     private(set) var trashedItemCount = 0
+    /// The pencil drawing picked with a tap (change 150), moved / resized / rotated / removed as one.
+    private(set) var drawingSelection: DrawingSelection?
 
     init(
         modelContext: ModelContext,
@@ -930,6 +936,7 @@ final class ScrapbookViewModel {
 
     /// Selecting an item brings it to the front and makes its page the active page.
     func selectItem(_ id: UUID?) {
+        if id != nil { deselectDrawing() }
         selectedItemID = id
         guard let id, let item = item(id), let page = item.page else { return }
         activatePage(page.id)
@@ -1170,6 +1177,7 @@ final class ScrapbookViewModel {
 
     /// Tap on an empty spot of a page: deselect, close the second tray, and make that page active.
     func tapEmptyPage(_ pageID: UUID? = nil) {
+        deselectDrawing()
         selectedItemID = nil
         setActiveTool(nil)
         activatePage(pageID)
@@ -1177,6 +1185,7 @@ final class ScrapbookViewModel {
 
     private func setActiveTool(_ tool: ScrapbookTool?) {
         guard tool != activeTool else { return }
+        if tool != nil { deselectDrawing() }
         cancelItemDrag()
         switch activeTool {
         case .pencil: endDrawing()
@@ -1600,6 +1609,7 @@ final class ScrapbookViewModel {
     /// them; otherwise a new layer is created in front. `false` when no page has room.
     @discardableResult
     func beginDrawing() -> Bool {
+        deselectDrawing()
         for page in editablePages {
             let drawings = page.sortedItems.filter { $0.kind == .drawing }
             if let primary = drawings.last {
@@ -1706,6 +1716,106 @@ final class ScrapbookViewModel {
         flushDrawingBroadcasts()
     }
 
+    // MARK: - Selecting a pencil drawing (change 150)
+
+    /// A tap on the paper: with no tool on, a pencil stroke under the finger picks its drawing; otherwise, or on
+    /// empty paper, as before. Items above the stroke took the tap already.
+    func tapPaper(pageID: UUID, at point: CGPoint, pageSize: CGSize, displayScale: CGFloat) {
+        let canSelect = activeTool == nil && !isCutting && (mode == .editCover || (mode == .edit && !isReadingPages))
+        if canSelect, selectDrawing(onPage: pageID, at: point, pageSize: pageSize, displayScale: displayScale) {
+            return
+        }
+        tapEmptyPage(pageID)
+    }
+
+    /// Picks the drawing whose stroke passes within 10 pt of the point (front layer first). `true` if one was found.
+    @discardableResult
+    func selectDrawing(onPage pageID: UUID, at point: CGPoint, pageSize: CGSize, displayScale: CGFloat) -> Bool {
+        guard pageSize.height > 0, let page = pagesAndCover.first(where: { $0.id == pageID }) else { return false }
+        let units = ScrapbookPage.canvasSize.height / pageSize.height
+        let drawingPoint = CGPoint(x: point.x * units, y: point.y * units)
+        for layer in page.sortedItems.reversed() where layer.kind == .drawing {
+            guard let data = layer.drawingData, !data.isEmpty, let drawing = try? PKDrawing(data: data),
+                  let hit = DrawingSelectionGeometry.strokeIndex(at: drawingPoint, in: drawing, tolerance: 10 * units)
+            else { continue }
+            deselectDrawing()
+            selectedItemID = nil
+            activatePage(pageID)
+            drawingSelection = DrawingSelection(layer: layer, pageID: pageID, drawing: drawing,
+                                                strokes: DrawingSelectionGeometry.cluster(from: hit, in: drawing),
+                                                pageSize: pageSize, displayScale: displayScale)
+            return true
+        }
+        return false
+    }
+
+    /// Lets the drawing go; its layer shows all its strokes again (rendered first, so nothing flashes).
+    func deselectDrawing() {
+        guard let selection = drawingSelection else { return }
+        if let data = item(selection.layerID)?.drawingData {
+            ScrapbookDrawingImage.prerender(data, pageSize: selection.pageSize, displayScale: selection.displayScale)
+        }
+        drawingSelection = nil
+    }
+
+    /// While the selected drawing is dragged: the trashcan shows and opens over it, as for items.
+    func updateDrawingDrag(pageLocation: CGPoint) {
+        guard let selection = drawingSelection else { return }
+        updateItemDrag(itemID: selection.layerID, pageLocation: pageLocation)
+    }
+
+    func cancelDrawingDrag() {
+        guard let selection = drawingSelection else { return }
+        cancelItemDrag(for: selection.layerID)
+    }
+
+    /// End of a move / resize / rotate of the selected drawing (page points, radians); dropped on the trashcan it's
+    /// removed. Written into the strokes' transforms: one undo step, sent to friends as the layer's new drawing.
+    func commitDrawingTransform(translation: CGSize, scale: CGFloat, rotation: Double) {
+        guard var selection = drawingSelection, let layer = item(selection.layerID),
+              let data = layer.drawingData, let drawing = try? PKDrawing(data: data) else { return }
+        let trashed = draggedItemID == selection.layerID && isTrashTargeted
+        cancelItemDrag(for: selection.layerID)
+        if trashed {
+            removeSelectedDrawing()
+            trashedItemCount &+= 1
+            return
+        }
+        let units = ScrapbookPage.canvasSize.height / selection.pageSize.height
+        // Sizes stay between 5% and 150% of the page width; turns within ±3° snap back straight.
+        let canvasWidth = ScrapbookPage.canvasSize(for: selection.pageSize).width
+        let size = max(selection.bounds.width, selection.bounds.height, 1)
+        let clampedScale = min(max(scale, canvasWidth * 0.05 / size), canvasWidth * 1.5 / size)
+        let snappedRotation = abs(rotation) < .pi / 60 ? 0 : rotation
+        guard translation != .zero || abs(clampedScale - 1) > 0.001 || snappedRotation != 0 else { return }
+        let transform = DrawingSelectionGeometry.transform(
+            translation: CGSize(width: translation.width * units, height: translation.height * units),
+            scale: clampedScale, rotation: snappedRotation,
+            around: CGPoint(x: selection.bounds.midX, y: selection.bounds.midY)
+        )
+        recordUndo()
+        let moved = DrawingSelectionGeometry.applying(transform, to: selection.strokes, in: drawing)
+        selection.update(with: moved)
+        drawingSelection = selection
+        layer.drawingData = moved.dataRepresentation()
+        guard save() else { return }
+        broadcastDrawingUpdated(layer)
+    }
+
+    /// "Remove from Page" or the trashcan: the drawing's strokes leave the layer.
+    func removeSelectedDrawing() {
+        guard let selection = drawingSelection, let layer = item(selection.layerID),
+              let data = layer.drawingData, let drawing = try? PKDrawing(data: data) else { return }
+        recordUndo()
+        let rest = DrawingSelectionGeometry.removing(selection.strokes, from: drawing)
+        let restData = rest.strokes.isEmpty ? Data() : rest.dataRepresentation()
+        ScrapbookDrawingImage.prerender(restData, pageSize: selection.pageSize, displayScale: selection.displayScale)
+        drawingSelection = nil
+        layer.drawingData = restData
+        guard save() else { return }
+        broadcastDrawingUpdated(layer)
+    }
+
     private func broadcastDrawingUpdated(_ item: ScrapbookItem) {
         broadcast(ScrapbookEvent(
             type: .drawingUpdated,
@@ -1792,6 +1902,7 @@ final class ScrapbookViewModel {
     /// Puts the spread back as it was and tells friends with the existing events (last write wins).
     private func restore(_ target: EditorSnapshot) {
         cancelItemDrag()
+        drawingSelection = nil
         let pagesByID = Dictionary(undoPages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var currentItems: [UUID: ScrapbookItem] = [:]
         for page in pagesByID.values {
@@ -2045,6 +2156,7 @@ final class ScrapbookViewModel {
         case .itemRemoved:
             guard let itemID = event.itemID else { return }
             cancelItemDrag(for: itemID)
+            if drawingSelection?.layerID == itemID { drawingSelection = nil }
             if let item = (try? modelContext.fetch(FetchDescriptor<ScrapbookItem>(predicate: #Predicate { $0.id == itemID })))?.first {
                 if selectedItemID == itemID { selectedItemID = nil }
                 if let pageID = drawingLayerIDs.first(where: { $0.value == itemID })?.key {
@@ -2066,6 +2178,8 @@ final class ScrapbookViewModel {
                     ?? (event.pageIndex < 0 ? ensureCoverPage(event.pageIndex == Self.frontCoverEventIndex ? .front : .spine) : nil)
             else { return }
             if let itemID = event.itemID {
+                // A friend changed the layer of the selected drawing: its strokes may have moved (change 150).
+                if drawingSelection?.layerID == itemID { drawingSelection = nil }
                 let nextData = event.drawingData ?? Data()
                 if let existing = page.allItems.first(where: { $0.id == itemID }) {
                     existing.drawingData = nextData
@@ -2252,4 +2366,38 @@ struct SpreadItem: Identifiable {
     let page: ScrapbookPage
     let item: ScrapbookItem
     var id: UUID { item.id }
+}
+
+/// The pencil drawing picked on a page (change 150): its layer, which strokes, their bounds (drawing space), and the
+/// layer without them / only them, which the page and the selection box show (rendered ahead, so nothing flashes).
+struct DrawingSelection: Equatable {
+    let layerID: UUID
+    let pageID: UUID
+    let strokes: [Int]
+    private(set) var bounds: CGRect
+    let baseData: Data
+    private(set) var selectedData: Data
+    let pageSize: CGSize
+    let displayScale: CGFloat
+
+    init(layer: ScrapbookItem, pageID: UUID, drawing: PKDrawing, strokes: [Int], pageSize: CGSize, displayScale: CGFloat) {
+        layerID = layer.id
+        self.pageID = pageID
+        self.strokes = strokes
+        bounds = DrawingSelectionGeometry.bounds(of: strokes, in: drawing)
+        let base = DrawingSelectionGeometry.removing(strokes, from: drawing)
+        baseData = base.strokes.isEmpty ? Data() : base.dataRepresentation()
+        selectedData = DrawingSelectionGeometry.strokes(strokes, of: drawing).dataRepresentation()
+        self.pageSize = pageSize
+        self.displayScale = displayScale
+        ScrapbookDrawingImage.prerender(baseData, pageSize: pageSize, displayScale: displayScale)
+        ScrapbookDrawingImage.prerender(selectedData, pageSize: pageSize, displayScale: displayScale)
+    }
+
+    /// After a move: the same strokes (same order in the layer), at their new place.
+    mutating func update(with drawing: PKDrawing) {
+        bounds = DrawingSelectionGeometry.bounds(of: strokes, in: drawing)
+        selectedData = DrawingSelectionGeometry.strokes(strokes, of: drawing).dataRepresentation()
+        ScrapbookDrawingImage.prerender(selectedData, pageSize: pageSize, displayScale: displayScale)
+    }
 }
