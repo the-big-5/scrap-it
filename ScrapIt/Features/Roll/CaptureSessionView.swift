@@ -40,10 +40,26 @@ struct CaptureSessionView: View {
         deviceOrientation.isPortrait
     }
 
+    /// Landscape with the Dynamic Island on the right: the body shows upside down (change 157).
+    private var isLandscapeRight: Bool {
+        deviceOrientation == .landscapeRight
+    }
+
+    /// Back: landscape round well at the top corner on the Dynamic Island's side (Figma 1531:23280: left 62, top 28;
+    /// upside down: top 402 - 28 - 60); portrait tab on the screen's left edge = the body's bottom edge
+    /// (Figma 1458:25970: 60x66.67) (change 157).
+    private var backButtonCenter: CGPoint {
+        if isPortraitOrientation {
+            return CGPoint(x: 62 + 60 / 2, y: 402 + 1 - 66.667 / 2)
+        }
+        return CGPoint(x: 62 + 60 / 2, y: isLandscapeRight ? 402 - 28 - 60 / 2 : 28 + 60 / 2)
+    }
+
     private var liveBadgeCenter: CGPoint {
         if isPortraitOrientation {
-            // Visual width becomes 20.21, visual height becomes 44.57 -> 10pt top & leading margin
-            return CGPoint(x: 10 + 20.21 / 2, y: 10 + 44.57 / 2)
+            // Visual width becomes 20.21, visual height becomes 44.57; the screen's top left is the preview's
+            // bottom left -> 10pt margins (Figma 1458:25902, change 157)
+            return CGPoint(x: 10 + 20.21 / 2, y: 318 - 10 - 44.57 / 2)
         } else {
             // Visual width is 44.57, visual height is 20.21 -> 10pt top & leading margin
             return CGPoint(x: 10 + 44.57 / 2, y: 10 + 20.21 / 2)
@@ -196,31 +212,36 @@ struct CaptureSessionView: View {
                 .frame(width: 874, height: 402)
                 .position(x: 874 / 2, y: 402 / 2)
 
-            // 2. Left Column: Upper Flash Button Well (Figma Group 73: left 62, top 33, 60x120)
+            // 2. Left Column: Middle Flash Button Well (Figma 1531:23380: left 64, top 138, 60x120; change 157)
             flashButtonView
                 .frame(width: 60, height: 120)
-                .position(x: 62 + 60 / 2, y: 33 + 120 / 2)
+                .position(x: 64 + 60 / 2, y: 138 + 120 / 2)
 
-            // 3. Left Column: Lower Back Navigation Button (aligned flush to bottom of viewfinder margin at y: 370)
+            // 3. Back (see `backButtonCenter`)
             backButtonView
-                .frame(width: 60, height: 60)
-                .position(x: 62 + 60 / 2, y: 310 + 60 / 2)
+                .frame(width: 60, height: isPortraitOrientation ? 66.667 : 60)
+                .position(backButtonCenter)
+                .animation(.easeInOut(duration: 0.3), value: deviceOrientation)
 
             // 4. Center: Viewfinder Screen Bezel & Live Preview (Figma Group 67: left 136, top 33, 444.4x337)
             screenBezelView
                 .frame(width: 444.406, height: 337)
                 .position(x: 136 + 444.406 / 2, y: 33 + 337 / 2)
 
-            // 5. Right Area: Zoom Control (Figma 1477:26750: left 594, top 14, 172x83)
+            // 5. Right Area: Zoom Control (Figma 1531:23322: left 594, top 31, 172x83; change 157)
             zoomControlView
                 .frame(width: 172, height: 83)
-                .position(x: 594 + 172 / 2, y: 14 + 83 / 2)
+                .position(x: 594 + 172 / 2, y: 31 + 83 / 2)
 
-            // 6. Right Area: Dedicated Host End Roll Button (aligned with middle of zoom wheel at y: 63)
+            // 6. Right Area: Host End Roll Button on the screen's edge (change 157): landscape top right
+            // (Figma 1531:23339: left 774, top 29, 115x72, past the edge cut); portrait the screen's bottom right
+            // = the body's top edge (Figma 1458:25966: left 785, top 0, 72x115)
             if isHost {
                 endRollButton
-                    .frame(width: 36, height: 48)
-                    .position(x: 874 - 36 / 2, y: 63)
+                    .frame(width: isPortraitOrientation ? 72 : 115, height: isPortraitOrientation ? 115 : 72)
+                    .position(x: isPortraitOrientation ? 785 + 72 / 2 : 774 + 115 / 2,
+                              y: isPortraitOrientation ? 115 / 2 : 29 + 72 / 2)
+                    .animation(.easeInOut(duration: 0.3), value: isPortraitOrientation)
             }
 
             // 7. Right Area: Recessed Shutter Well & Button (Figma Group 68: left 594, top 128, 154x154)
@@ -356,32 +377,43 @@ struct CaptureSessionView: View {
             }
         } label: {
             ZStack {
-                Circle()
-                    .withInnerShadow(
-                        fill: RadialGradient(
-                            stops: [
-                                .init(color: Color(red: 88 / 255, green: 88 / 255, blue: 88 / 255), location: 0.0),
-                                .init(color: Color(red: 66 / 255, green: 66 / 255, blue: 66 / 255), location: 0.5),
-                                .init(color: Color(red: 44 / 255, green: 44 / 255, blue: 44 / 255), location: 1.0)
-                            ],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 30
-                        ),
-                        shadowColor: Color.black.opacity(0.35),
-                        radius: 5.0,
-                        x: 0,
-                        y: 2.0
-                    )
-                    .shadow(color: Color.black.opacity(0.25), radius: 4, x: 0, y: 2)
+                // Landscape: round well; portrait: a tab on the screen's edge (the body's bottom edge), its two
+                // corners away from the edge rounded (change 157).
+                UnevenRoundedRectangle(
+                    topLeadingRadius: isPortraitOrientation ? 20 : 30,
+                    bottomLeadingRadius: isPortraitOrientation ? 0 : 30,
+                    bottomTrailingRadius: isPortraitOrientation ? 0 : 30,
+                    topTrailingRadius: isPortraitOrientation ? 20 : 30
+                )
+                .withInnerShadow(
+                    fill: RadialGradient(
+                        stops: [
+                            .init(color: Color(red: 88 / 255, green: 88 / 255, blue: 88 / 255), location: 0.0),
+                            .init(color: Color(red: 66 / 255, green: 66 / 255, blue: 66 / 255), location: 0.5),
+                            .init(color: Color(red: 44 / 255, green: 44 / 255, blue: 44 / 255), location: 1.0)
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 30
+                    ),
+                    shadowColor: Color.black.opacity(0.35),
+                    radius: 5.0,
+                    x: 0,
+                    y: 2.0
+                )
+                // Figma portrait drop shadow 0 / 4 / 5 on screen = +x on the body.
+                .shadow(color: Color.black.opacity(0.25), radius: isPortraitOrientation ? 5 : 4,
+                        x: isPortraitOrientation ? 4 : 0, y: isPortraitOrientation ? 0 : 2)
 
-                Image(systemName: "chevron.backward")
-                    .font(.system(size: 20, weight: .semibold))
+                // Points to the screen edge it sits on: with the Dynamic Island on the right the body is upside down,
+                // so the arrow isn't turned and shows pointing right (change 157).
+                Image(systemName: "arrow.left")
+                    .font(.system(size: 25, weight: .regular))
                     .foregroundStyle(Color(red: 228 / 255, green: 228 / 255, blue: 228 / 255))
-                    .rotationEffect(.degrees(symbolRotation))
+                    .rotationEffect(.degrees(isLandscapeRight ? 0 : symbolRotation))
                     .animation(.easeInOut(duration: 0.3), value: symbolRotation)
             }
-            .frame(width: 60, height: 60)
+            .frame(width: 60, height: isPortraitOrientation ? 66.667 : 60)
         }
         .buttonStyle(.plain)
         .disabled(flowViewModel.cameraReturnPhase != .idle || isClosingIrisOnReturn)
@@ -478,9 +510,8 @@ struct CaptureSessionView: View {
         .accessibilityLabel(camera.isLivePhotoEnabled ? "Live Photo Enabled" : "Live Photo Disabled")
     }
 
-    // MARK: - Zoom Control (Figma 1477:26750)
-    // Container at (594 + 172/2, 14 + 83/2) = (680, 55.5), y spans 14...97
-    // Wheel top is at y = 14 + 19 = 33, exactly flush with Viewfinder bezel top (y = 33)
+    // MARK: - Zoom Control (Figma 1531:23322, change 157)
+    // Container at (594 + 172/2, 31 + 83/2), y spans 31...114: wheel on top, "ZOOM" text under it
 
     private var zoomControlView: some View {
         ZStack {
@@ -490,7 +521,8 @@ struct CaptureSessionView: View {
                 .foregroundStyle(Color(red: 185 / 255, green: 181 / 255, blue: 173 / 255))
                 .modifier(ZoomTextVerticalFlipModifier(angle: zoomTextRotation))
                 .animation(.easeInOut(duration: 0.35), value: zoomTextRotation)
-                .position(x: 86, y: 7)
+                // Under the wheel (Figma 1531:23338: top 66.5, 13 high; change 157)
+                .position(x: 86, y: 66.5 + 13 / 2)
 
             KnurledZoomWheelView(
                 capabilities: camera.zoomCapabilities,
@@ -499,12 +531,12 @@ struct CaptureSessionView: View {
                 onZoomChanged: { camera.setZoomFactor($0) }
             )
             .frame(width: 160, height: 60)
-            .position(x: 86, y: 49)
+            .position(x: 86, y: 3.5 + 60 / 2)
         }
         .frame(width: 172, height: 83)
     }
 
-    // MARK: - Dedicated Host End Roll Button (Figma Group 72: low profile)
+    // MARK: - Host End Roll Button on the screen's edge (Figma 1531:23339 / 1458:25966, change 157)
 
     private var endRollButton: some View {
         Button {
@@ -512,10 +544,12 @@ struct CaptureSessionView: View {
             flowViewModel.presentEndRollConfirmation()
         } label: {
             ZStack {
+                // Corners away from the screen's edge rounded: landscape the leading ones, portrait (the body's
+                // top edge) the bottom ones. Inner shadow 0 / 2 / 10 on screen.
                 UnevenRoundedRectangle(
-                    topLeadingRadius: 14,
-                    bottomLeadingRadius: 14,
-                    bottomTrailingRadius: 0,
+                    topLeadingRadius: isPortraitOrientation ? 0 : 20,
+                    bottomLeadingRadius: 20,
+                    bottomTrailingRadius: isPortraitOrientation ? 20 : 0,
                     topTrailingRadius: 0
                 )
                 .withInnerShadow(
@@ -526,25 +560,27 @@ struct CaptureSessionView: View {
                         ],
                         center: .center,
                         startRadius: 0,
-                        endRadius: 28
+                        endRadius: 57.5
                     ),
-                    shadowColor: Color.black.opacity(0.35),
-                    radius: 3.0,
-                    x: -1,
-                    y: 1
+                    shadowColor: Color.black.opacity(0.25),
+                    radius: 5.0,
+                    x: isPortraitOrientation ? 2 : 0,
+                    y: isPortraitOrientation ? 0 : 2
                 )
-                .shadow(color: Color.black.opacity(0.2), radius: 2, x: -1, y: 1)
-                .frame(width: 36, height: 48)
 
+                // Reads across the screen; centered on the visible part (landscape: 15 pt are past the edge).
                 Text("End Roll")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .tracking(-0.43)
                     .foregroundStyle(Color(red: 254 / 255, green: 253 / 255, blue: 251 / 255))
                     .lineLimit(1)
                     .fixedSize()
-                    .rotationEffect(.degrees(-90))
+                    .rotationEffect(.degrees(symbolRotation))
+                    .animation(.easeInOut(duration: 0.3), value: symbolRotation)
+                    .offset(x: isPortraitOrientation ? 0 : -5, y: isPortraitOrientation ? 0 : -0.5)
             }
-            .frame(width: 36, height: 48)
+            .frame(width: isPortraitOrientation ? 72 : 115, height: isPortraitOrientation ? 115 : 72)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("End Roll")
