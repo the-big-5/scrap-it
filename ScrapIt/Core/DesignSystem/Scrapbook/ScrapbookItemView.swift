@@ -17,6 +17,9 @@ struct ScrapbookItemView: View {
     var isHidden = false
     /// Shrinks and dims the element while hovering over the trash drop zone.
     var isOverTrash = false
+    /// A drawing layer shown with other data: without the strokes of a selected drawing, which the selection box
+    /// draws itself (change 150).
+    var drawingDataOverride: Data?
 
     @State private var image: UIImage?
     @State private var movieURL: URL?
@@ -55,7 +58,7 @@ struct ScrapbookItemView: View {
     }
 
     private var drawingLayer: some View {
-        ScrapbookDrawingImage(data: isHidden ? nil : item.drawingData)
+        ScrapbookDrawingImage(data: isHidden ? nil : (drawingDataOverride ?? item.drawingData))
             .frame(width: pageSize.width, height: pageSize.height)
             .position(x: pageSize.width / 2, y: pageSize.height / 2)
             .allowsHitTesting(false)

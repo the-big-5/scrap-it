@@ -23,6 +23,7 @@ struct ScrapbookEditorView: View {
     @State private var iPadTrayCorner: ScrapbookEditorLayout.TrayCorner = .bottomLeading
     @State private var iPadTrayDragOffset: CGSize = .zero
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     /// The spread zooms from the book into the editor and back (change 025).
     @Namespace private var spreadNamespace
     @State private var readOnlyHinge: ReadOnlyHingeState?
@@ -379,7 +380,8 @@ struct ScrapbookEditorView: View {
                     draggedItemID: viewModel.draggedItemID,
                     isTrashTargeted: viewModel.isTrashTargeted,
                     aspectRatio: role.aspectRatio,
-                    drawsBackground: false
+                    drawsBackground: false,
+                    drawingDataOverrides: viewModel.drawingSelection.map { [$0.layerID: $0.baseData] } ?? [:]
                 )
                 .onFrameChange(in: .global) { frame in
                     viewModel.pageGlobalFrames[page.id] = frame
@@ -392,6 +394,14 @@ struct ScrapbookEditorView: View {
                 .overlay {
                     GeometryReader { geometry in
                         pageOverlay(for: page, size: geometry.size)
+                    }
+                }
+                .overlay {
+                    // The selected pencil drawing on this cover side (change 150).
+                    if let selection = viewModel.drawingSelection, selection.pageID == page.id {
+                        GeometryReader { geometry in
+                            drawingSelectionOverlay(selection, pageSize: geometry.size)
+                        }
                     }
                 }
             }
@@ -877,11 +887,17 @@ struct ScrapbookEditorView: View {
         return ZStack {
             HStack(spacing: 0) {
                 ForEach(viewModel.currentSpreadPages, id: \.id) { page in
-                    PageBackgroundView(background: page.pageBackground)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .onTapGesture { viewModel.tapEmptyPage(page.id) }
-                        .simultaneousGesture(TapGesture(count: 2).onEnded { resetPageZoom() })
-                        .allowsHitTesting(viewModel.editablePages.contains { $0.id == page.id })
+                    GeometryReader { paper in
+                        PageBackgroundView(background: page.pageBackground)
+                            // A tap on a pencil stroke picks its drawing; on empty paper, deselects (change 150).
+                            .onTapGesture { location in
+                                viewModel.tapPaper(pageID: page.id, at: location, pageSize: paper.size,
+                                                   displayScale: displayScale)
+                            }
+                            .simultaneousGesture(TapGesture(count: 2).onEnded { resetPageZoom() })
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(viewModel.editablePages.contains { $0.id == page.id })
                 }
             }
             .gesture(PageZoomPinch(zoom: pageZoom))
@@ -1006,14 +1022,44 @@ struct ScrapbookEditorView: View {
                         shouldPlay: { viewModel.shouldPlay(item, isInteracting: $0) },
                         actions: itemActions(for: entry.page),
                         isHidden: viewModel.drawingLayerIDs.values.contains(item.id),
-                        isOverTrash: viewModel.isTrashTargeted && viewModel.draggedItemID == item.id
+                        isOverTrash: viewModel.isTrashTargeted && viewModel.draggedItemID == item.id,
+                        drawingDataOverride: drawingDataOverride(for: item)
                     )
                     .frame(width: pageSize.width, height: pageSize.height)
                     .coordinateSpace(name: ScrapbookPageView.coordinateSpace)
                     .offset(x: CGFloat(entry.pageIndex) * pageSize.width)
                     .allowsHitTesting(!viewModel.isReadingPages && viewModel.editablePages.contains { $0.id == entry.page.id })
                 }
+                // The selected pencil drawing over its page (change 150).
+                if let selection = viewModel.drawingSelection,
+                   let index = viewModel.currentSpreadPages.firstIndex(where: { $0.id == selection.pageID }) {
+                    drawingSelectionOverlay(selection, pageSize: pageSize)
+                        .offset(x: CGFloat(index) * pageSize.width)
+                }
             }
+        }
+    }
+
+    /// The selected drawing's layer shows without its strokes; the selection box draws them (change 150).
+    private func drawingDataOverride(for item: ScrapbookItem) -> Data? {
+        guard let selection = viewModel.drawingSelection, selection.layerID == item.id else { return nil }
+        return selection.baseData
+    }
+
+    /// The selection box of a picked pencil drawing on its page (change 150); not while reading.
+    @ViewBuilder
+    private func drawingSelectionOverlay(_ selection: DrawingSelection, pageSize: CGSize) -> some View {
+        if !viewModel.isReadingPages {
+            DrawingSelectionOverlay(
+                selection: selection,
+                pageSize: pageSize,
+                isOverTrash: viewModel.isTrashTargeted && viewModel.draggedItemID == selection.layerID,
+                onDragChanged: { viewModel.updateDrawingDrag(pageLocation: zoomed($0)) },
+                onCommit: { viewModel.commitDrawingTransform(translation: $0, scale: $1, rotation: $2) },
+                onCancel: viewModel.cancelDrawingDrag,
+                onRemove: viewModel.removeSelectedDrawing
+            )
+            .id(selection.layerID)
         }
     }
 
@@ -1175,6 +1221,9 @@ struct ScrapbookEditorView: View {
             toggleMotion: viewModel.toggleMotion,
             remove: viewModel.removeItem,
             deselect: { viewModel.tapEmptyPage(page.id) },
+            tapPaper: { point, size in
+                viewModel.tapPaper(pageID: page.id, at: point, pageSize: size, displayScale: displayScale)
+            },
             doubleTap: viewModel.doubleTapItem,
             editText: viewModel.editText,
             dragChanged: { id, location in viewModel.updateItemDrag(itemID: id, pageLocation: zoomed(location)) },
