@@ -5,6 +5,8 @@ struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var authViewModel: AuthViewModel?
     @State private var showOnboarding: Bool
+    /// After "Let's Try It", before Welcome (change 152).
+    @State private var showCameraTutorial = false
 
     init(authViewModel: AuthViewModel? = nil, showOnboarding: Bool = true) {
         _authViewModel = State(initialValue: authViewModel)
@@ -28,6 +30,7 @@ struct RootView: View {
                         onSignOut: {
                             withAnimation(.easeInOut(duration: 0.35)) {
                                 showOnboarding = true
+                                showCameraTutorial = false
                             }
                             authViewModel.signOut()
                         }
@@ -39,6 +42,16 @@ struct RootView: View {
                                 onComplete: {
                                     withAnimation(.easeInOut(duration: 0.35)) {
                                         showOnboarding = false
+                                        showCameraTutorial = true
+                                    }
+                                }
+                            )
+                            .transition(.opacity)
+                        } else if showCameraTutorial {
+                            CameraTutorialView(
+                                onFinish: {
+                                    withAnimation(.easeInOut(duration: 0.35)) {
+                                        showCameraTutorial = false
                                     }
                                 }
                             )
@@ -51,6 +64,7 @@ struct RootView: View {
                         }
                     }
                     .animation(.easeInOut(duration: 0.35), value: showOnboarding)
+                    .animation(.easeInOut(duration: 0.35), value: showCameraTutorial)
                 }
             } else {
                 ScrapTheme.creamBackground

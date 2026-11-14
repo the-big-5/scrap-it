@@ -1,10 +1,16 @@
 import SwiftData
 import SwiftUI
+import TipKit
 
 @main
 struct ScrapIt: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     private let modelContainer = ScrapIt.makeModelContainer()
+
+    init() {
+        // Camera tutorial tips (change 152): shown as soon as the tutorial asks.
+        try? Tips.configure([.displayFrequency(.immediate)])
+    }
 
     var body: some Scene {
         WindowGroup {
