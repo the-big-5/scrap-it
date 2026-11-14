@@ -48,6 +48,8 @@ final class CameraController {
     var shutterFlashOpacity: Double = 0.0
     /// "Turn On Camera Adjustments" alert.
     var showsCameraAdjustmentsPrompt: Bool = false
+    /// Camera access is off: iOS won't ask again, so the capture session offers Settings (change 152).
+    var showsCameraAccessAlert: Bool = false
 
     let engine = CameraEngine()
     @ObservationIgnored private var prompt = CameraAdjustmentsPrompt()
@@ -99,6 +101,7 @@ final class CameraController {
             }
         default:
             isCameraAuthorized = false
+            showsCameraAccessAlert = true
             return
         }
         isCameraAuthorized = true
@@ -110,6 +113,13 @@ final class CameraController {
         zoomCapabilities = await engine.resetZoom()
         zoomFactor = 1
         scheduleCameraAdjustmentsPrompt()
+    }
+
+    /// Back in the app: if access was turned on in Settings meanwhile, the camera starts (change 152).
+    func startIfAccessGranted() async {
+        guard !isCameraAuthorized, AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { return }
+        showsCameraAccessAlert = false
+        await startSession()
     }
 
     func stopSession() {
